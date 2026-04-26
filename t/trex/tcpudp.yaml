@@ -109,9 +109,6 @@
       w: 1
       limit: 200
 
-
-
-
     - name: traffic/xmas.pcap
       cps: 1000.0
       ipg: 10000
@@ -208,9 +205,6 @@
       rtt: 10000
       w: 1
       limit: 200
-
-
-
 
     - name: traffic/urg.pcap
       cps: 1000.0
@@ -309,9 +303,6 @@
       w: 1
       limit: 200
 
-
-
-
     - name: traffic/synack.pcap
       cps: 1000.0
       ipg: 10000
@@ -409,143 +400,102 @@
       w: 1
       limit: 200
 
-
-
-
-# Use only one of two Mellanox ports because of bug (#129).
-# server_addr : "192.168.254.107" probably will be added after fixing the bug.
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
     - name: traffic/syn.pcap
       cps: 1000.0
       ipg: 10000
       rtt: 10000
       w: 1
       limit: 200
-      server_addr : "192.168.253.107"
-      one_app_server : true
-
-
-
-
 
     - name: traffic/rst.pcap
       cps: 1000.0
@@ -644,9 +594,6 @@
       w: 1
       limit: 200
 
-
-
-
     - name: traffic/null.pcap
       cps: 1000.0
       ipg: 10000
@@ -744,9 +691,6 @@
       w: 1
       limit: 200
 
-
-
-
     - name: traffic/fin.pcap
       cps: 1000.0
       ipg: 10000
@@ -843,9 +787,6 @@
       rtt: 10000
       w: 1
       limit: 200
-
-
-
 
     - name: traffic/ack.pcap
       cps: 1000.0

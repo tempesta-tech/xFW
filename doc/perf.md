@@ -47,8 +47,8 @@ sudo apt install -y gcc-10 g++-10
 
 > Alternatively you can build TRex in a Docker container (see [instructions](https://github.com/cisco-system-traffic-generator/trex-core))
 
-2. Download latest TRex version from Github (it is very important because only master branch
-contains fix for ConnectX-6, which is not included in latest release version!):
+2. Download latest TRex version from [Github](https://github.com/cisco-system-traffic-generator/trex-core)
+(only the master branch contains fix for ConnectX-6, which is not included in latest release version!):
 ```
 mkdir /trex && cd /trex # specify you own folder, but not /root
 git clone https://github.com/cisco-system-traffic-generator/trex-core.git && cd trex-core
@@ -87,14 +87,7 @@ python3 -m http.server 8080 -b 192.168.2.1 &
 python3 -m http.server 8080 -b 192.168.3.1 &
 ```
 
-4. Enable SYN cookies for every SYN packet:
-```
-sysctl -w net.ipv4.tcp_syncookies=2
-```
-
-5. The NIC is attached to the 2nd processor package. Each of the processors has 28
-   cores (56 hyperthreads). So use 14 cores for each of the NIC ports
-   (use [irq.sh](https://github.com/tempesta-tech/xFW/blob/main/t/trex/irq.sh)):
+4. Run [irq.sh](https://github.com/tempesta-tech/xFW/blob/main/t/trex/irq.sh)):
 ```
 ethtool -L enp202s0f1np1 combined 14
 ethtool -L enp202s0f0np0 combined 14
@@ -172,7 +165,7 @@ rm -rf venv
 ```
 cd /trex/trex-core/scripts
 sudo -i
-source ./venv/bin/activate # could fail in your case
+source ./venv/bin/activate
 ./trex-cfg
 apt install -y dpdk
 dpdk-hugepages.py --setup 2G
@@ -285,37 +278,37 @@ start -f icmpv6_fix_cs.py -m 122000000
 
 You should see something like this on TRex info panel:
 ```
--Per port stats table 
-      ports |               0 |               2 
+-Per port stats table
+      ports |               0 |               2
  -----------------------------------------------------------------------------------------
-   opackets |      1539202331 |      1541720718 
-     obytes |    126214591142 |    126421098876 
-   ipackets |               0 |               0 
-     ibytes |               0 |               0 
-    ierrors |               0 |               0 
-    oerrors |               0 |               0 
-      Tx Bw |      66.64 Gbps |      66.83 Gbps 
+   opackets |      1704026304 |      1700013447
+     obytes |    139730156928 |    139401102654
+   ipackets |            8689 |               5
+     ibytes |          817218 |             922
+    ierrors |               0 |               0
+    oerrors |               0 |               0
+      Tx Bw |      64.66 Gbps |      64.32 Gbps
 
--Global stats enabled 
- Cpu Utilization : 74.6  %  7.8 Gb/core 
- Platform_factor : 1.0  
- Total-Tx        :     133.47 Gbps  
- Total-Rx        :       0.00  bps  
- Total-PPS       :     203.46 Mpps  
- Total-CPS       :       0.00  cps  
+-Global stats enabled
+ Cpu Utilization : 67.4  %  8.3 Gb/core
+ Platform_factor : 1.0
+ Total-Tx        :     128.97 Gbps
+ Total-Rx        :     405.98 Kbps
+ Total-PPS       :     196.61 Mpps
+ Total-CPS       :       0.00  cps
 
- Expected-PPS    :       0.00  pps  
- Expected-CPS    :       0.00  cps  
- Expected-BPS    :       0.00  bps  
+ Expected-PPS    :       0.00  pps
+ Expected-CPS    :       0.00  cps
+ Expected-BPS    :       0.00  bps
 
- Active-flows    :        0  Clients :        0   Socket-util : 0.0000 %    
- Open-flows      :        0  Servers :        0   Socket :        0 Socket/Clients :  -nan 
- Total_queue_full : 321246752         
- drop-rate       :     133.47 Gbps   
- current time    : 37.0 sec  
- test duration   : 0.0 sec  
+ Active-flows    :        0  Clients :        0   Socket-util : 0.0000 %
+ Open-flows      :        0  Servers :        0   Socket :        0 Socket/Clients :  -nan
+ Total_queue_full : 376921385
+ drop-rate       :     128.97 Gbps
+ current time    : 81.5 sec
+ test duration   : 0.0 sec
 ```
-* Workload is ~130 Gbps and ~200 Mpps.
+* Workload is 129 Gbps and 196 Mpps.
 * No `ierrors` and `oerrors`.
 
 On SUT server in `bmon` or `ifconfig` we see that amount of traffic passed to kernel is about zero
@@ -348,37 +341,37 @@ scp -r traffic/ tcpudp.yaml gen:/trex/trex-core/scripts
 
 You should see something like this on TRex info panel:
 ```
--Per port stats table 
-      ports |               0 |               2 
+-Per port stats table
+      ports |               0 |               2
  -----------------------------------------------------------------------------------------
-   opackets |       552946710 |       553663783 
-     obytes |    125580328244 |    125743176476 
-   ipackets |         1369324 |         2197350 
-     ibytes |       112284568 |       180182700 
-    ierrors |               0 |               0 
-    oerrors |               0 |               0 
-      Tx Bw |      69.58 Gbps |      69.94 Gbps 
+   opackets |      1148508744 |      1148933658
+     obytes |    427244952632 |    427403180584
+   ipackets |               2 |               2
+     ibytes |             338 |             338
+    ierrors |               0 |               0
+    oerrors |               0 |               0
+      Tx Bw |      88.32 Gbps |      87.30 Gbps
 
--Global stats enabled 
- Cpu Utilization : 58.2  %  10.4 Gb/core 
- Platform_factor : 1.0  
- Total-Tx        :     139.52 Gbps  
- Total-Rx        :     190.76 Mbps  
- Total-PPS       :      76.79 Mpps  
- Total-CPS       :       0.00  cps  
+-Global stats enabled
+ Cpu Utilization : 83.6  %  9.1 Gb/core
+ Platform_factor : 1.0
+ Total-Tx        :     175.62 Gbps
+ Total-Rx        :       0.00  bps
+ Total-PPS       :      59.01 Mpps
+ Total-CPS       :       0.00  cps
 
- Expected-PPS    :      39.60 Mpps  
- Expected-CPS    :      39.60 Mcps  
- Expected-BPS    :      71.95 Gbps  
+ Expected-PPS    :      52.00 Mpps
+ Expected-CPS    :      52.00 Mcps
+ Expected-BPS    :     154.75 Gbps
 
- Active-flows    :     7200  Clients :    65535   Socket-util : 0.0002 %    
- Open-flows      :     7200  Servers :      500   Socket :     7200 Socket/Clients :  0.1 
- Total_queue_full : 129480281         
- drop-rate       :     139.33 Gbps   
- current time    : 16.3 sec  
- test duration   : 3583.7 sec  
+ Active-flows    :    32000  Clients :    65535   Socket-util : 0.0008 %
+ Open-flows      :    32000  Servers :      499   Socket :    32000 Socket/Clients :  0.5
+ Total_queue_full : 1081051726
+ drop-rate       :     175.62 Gbps
+ current time    : 40.8 sec
+ test duration   : 3559.2 sec
 ```
-* Workload is ~140 Gbps and ~75 Mpps.
+* Workload is ~176 Gbps and ~59 Mpps.
 * No `ierrors` and `oerrors`.
 
 On SUT server in `bmon` or `ifconfig` we see that amount of traffic passed to kernel is low

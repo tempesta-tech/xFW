@@ -31,6 +31,14 @@ cpu_to_mask() {
     ' "$1"
 }
 
+# Enable Linux syncookies
+sysctl -w net.ipv4.tcp_syncookies=2
+
+# The NIC is attached to the 2nd processor package. Each of the processors has 28
+# cores (56 hyperthreads). So use 14 cores for each of the NIC ports.
+ethtool -L enp202s0f1np1 combined 14
+ethtool -L enp202s0f0np0 combined 14
+
 mapfile -t PORT0_IRQS < <(get_irqs "$PORT0_PCI" | awk 'NR<=14 {print $1}')
 mapfile -t PORT1_IRQS < <(get_irqs "$PORT1_PCI" | awk 'NR<=14 {print $1}')
 
