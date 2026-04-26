@@ -124,40 +124,24 @@ index bc7003de2..646c15909 100755
              self.set_mtu_mlx(dev_id,mtu);
 ```
 
-2. Create config:
+2. Determine NIC ports' PCI IDs:
 ```
-sudo tee /etc/trex_cfg.yaml <<EOF
-- version: 2
-  interfaces: ['98:00.0', 'dummy'] #, '98:00.1', 'dummy']
-  low_end: false
-  port_info:
-      - ip: 192.168.2.2 # Generator port 1
-        default_gw: 192.168.2.1 # SUT port 2
-      - ip: 192.168.3.2 # Dummy port, fake IPs
-        default_gw: 192.168.3.1
-#      - ip: 192.168.254.106 # Generator port 2
-#        default_gw: 192.168.254.107 # SUT port 2
-#      - ip: 192.168.254.116 # Dummy port, fake IPs
-#        default_gw: 192.168.254.117
+lspci |grep 'ConnectX-6 Dx'
+98:00.0 Ethernet controller: Mellanox Technologies MT2892 Family [ConnectX-6 Dx]
+98:00.1 Ethernet controller: Mellanox Technologies MT2892 Family [ConnectX-6 Dx]
+```
 
-  platform:
-      master_thread_id: 67
-      latency_thread_id: 65
-      dual_if:
-        - socket: 1
-          threads: [1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41,43,45,47,49,51,53,55,57,59,61,63]
-#        - socket: 1
-#          threads: [57,59,61,63,65,67,69,71,73,75,77,79,81,83,85,87,89,91,93,95,97,99,101,103,105,107,109,111]
-EOF
+3. Copy TRex config amd adjust NIC ports in it if necessary:
+```
+cp ~/xFW/t/trex/trex_cfg.yaml /etc
 ```
 
 > Dummy interfaces allow to use both ports for sending packets, and non of them for receiving.
 
 4. If you have Python > 3.11 (Ubuntu 24):
 
-You could face problems with Python version and dependencies. On Ubuntu 24, in particular with
-Python 3.12, TRex doesn't work. It produces some errors about Scapy libs, "unable to start Scapy
-server" - something like this. You need to install Python 3.11 first of all:
+Ubuntu 24 is shipped with Python 3.12, so TRex doesn't work out of the box due to legacy Scapy
+module and you need to install Python 3.11:
 ```
 sudo add-apt-repository ppa:deadsnakes/ppa
 sudo apt update && sudo apt install python3.11 python3.11-venv
@@ -171,17 +155,15 @@ source ./venv/bin/activate
 python --version # ensure 3.11
 ```
 
-Now you could run TRex Python scripts (`./t-rex-64`, `./trex-console`, `./trex-cfg` etc.). But
-remember that sudo doesn't work with venv, so don't forget to type `sudo -i` before venv
-activation.
+Now you can run TRex Python scripts (`./t-rex-64`, `./trex-console`, `./trex-cfg` etc.). But
+`sudo` doesn't work with `venv`, so use `sudo -i` before venv activation.
 
-If you won't have some dependencies, you must install it inside venv, if you will use `apt get`, it
-won't work:
+Install dependencies inside venv:
 ```
 venv/bin/python venv/bin/pip install cffi
 ```
 
-If you need to remove venv, just remove directory:
+You can remove `venv` just removing the directory:
 ```
 rm -rf venv
 ```

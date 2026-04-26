@@ -1,0 +1,21 @@
+- version: 2
+  interfaces: ['98:00.0', 'dummy', '98:00.1', 'dummy']
+  low_end: false
+  port_info:
+      - ip: 192.168.2.2 # Generator port 1
+        default_gw: 192.168.2.1 # SUT port 2
+      - ip: 192.168.2.20 # Dummy port, fake IPs
+        default_gw: 192.168.2.10
+      - ip: 192.168.3.2 # Generator port 2
+        default_gw: 192.168.3.1 # SUT port 2
+      - ip: 192.168.3.20 # Dummy port, fake IPs
+        default_gw: 192.168.3.10
+ 
+  platform:
+      master_thread_id: 0
+      latency_thread_id: 1
+      dual_if:
+        - socket: 0
+          threads: [2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54]
+        - socket: 1
+          threads: [3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41,43,45,47,49,51,53,55]
