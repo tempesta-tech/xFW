@@ -87,10 +87,8 @@ python3 -m http.server 8080 -b 192.168.2.1 &
 python3 -m http.server 8080 -b 192.168.3.1 &
 ```
 
-4. Run [irq.sh](https://github.com/tempesta-tech/xFW/blob/main/t/trex/irq.sh)):
+4. Run [irq.sh](https://github.com/tempesta-tech/xFW/blob/main/t/trex/irq.sh):
 ```
-ethtool -L enp202s0f1np1 combined 14
-ethtool -L enp202s0f0np0 combined 14
 ./irq.sh
 ```
 
@@ -226,11 +224,11 @@ You should see something like this:
 * Total-Rx ~0 - we don't receive packets, only create powerful flood.
 * Cpu Utilization is low.
 
-> On `-c 24` I got some assert error, but 46 cores (23 * 2 real ports) should be enough to produce
-~200 Gbps:
+> On `-c 24` and larger TRex error like
 ```
 src/trex_global.h:913 assert(size<=MAX_PKT_ALIGN_BUF_9K);
 ```
+appear. However, but 46 cores (23 * 2 real ports) is enough to produce ~200 Gbps.
 
 See load on SUT in `bmon`, for example:
 ```
@@ -246,7 +244,12 @@ See CPU utilization on SUT in `htop`, for example.
 
 You should see about 8,9 Gib per port (which corresponds to ~190 Gbps in Total-Tx).
 
-## Run xfw ICMP flood test
+> Note non-zero `Total_queue_full` values. This is generally not recommended, but for
+> DDoS stress testing this is acceptable since TRex still reports actual wired
+> traffic.
+
+
+## Run ICMP flood test
 
 > We separately generate ICMP traffic and TCP/UDP flood traffic. It doesn't have much sense other
 than to save some time. TCP/UDP config was written before and we don't have much time to fully
@@ -276,7 +279,7 @@ scp icmpv6_fix_cs.py gen:/trex/trex-core/scripts
 start -f icmpv6_fix_cs.py -m 122000000
 ```
 
-You should see something like this on TRex info panel:
+You should see something like this at TRex info panel:
 ```
 -Per port stats table
       ports |               0 |               2
@@ -314,7 +317,8 @@ You should see something like this on TRex info panel:
 On SUT server in `bmon` or `ifconfig` we see that amount of traffic passed to kernel is about zero
 (we rate limit it, don't drop) and CPU load is adequate (less than 35% on any core).
 
-## Run xfw TCP & UDP flood test
+
+## Run TCP & UDP flood test
 
 This test generates UDP traffic (packet length 1514 bytes) and various types of TCP flood traffic
 (length 54 bytes):
@@ -339,41 +343,6 @@ scp -r traffic/ tcpudp.yaml gen:/trex/trex-core/scripts
 ./t-rex-64 --ipv6 -f tcpudp.yaml -m 650 -c 23
 ```
 
-You should see something like this on TRex info panel:
-```
--Per port stats table
-      ports |               0 |               2
- -----------------------------------------------------------------------------------------
-   opackets |      1148508744 |      1148933658
-     obytes |    427244952632 |    427403180584
-   ipackets |               2 |               2
-     ibytes |             338 |             338
-    ierrors |               0 |               0
-    oerrors |               0 |               0
-      Tx Bw |      88.32 Gbps |      87.30 Gbps
-
--Global stats enabled
- Cpu Utilization : 83.6  %  9.1 Gb/core
- Platform_factor : 1.0
- Total-Tx        :     175.62 Gbps
- Total-Rx        :       0.00  bps
- Total-PPS       :      59.01 Mpps
- Total-CPS       :       0.00  cps
-
- Expected-PPS    :      52.00 Mpps
- Expected-CPS    :      52.00 Mcps
- Expected-BPS    :     154.75 Gbps
-
- Active-flows    :    32000  Clients :    65535   Socket-util : 0.0008 %
- Open-flows      :    32000  Servers :      499   Socket :    32000 Socket/Clients :  0.5
- Total_queue_full : 1081051726
- drop-rate       :     175.62 Gbps
- current time    : 40.8 sec
- test duration   : 3559.2 sec
-```
-* Workload is ~176 Gbps and ~59 Mpps.
-* No `ierrors` and `oerrors`.
-
 On SUT server in `bmon` or `ifconfig` we see that amount of traffic passed to kernel is low
 (9-10 MiB ~ 70-80 Mbps, because we rate limit it, don't drop).
 
@@ -389,6 +358,17 @@ cpu85 0.662393 cpu87 0.607457 cpu89 0.692358 cpu91 0.624437 cpu93 0.664391 cpu95
 cpu99 0.63043 cpu101 0.646412 cpu103 0.669385 cpu105 0.649408 cpu107 0.629432 cpu109 0.599466 cpu111 0.66539
 cpu 0.526783
 ```
+
+## Run TCP SYN flood
+
+Use [run_servers.sh](https://github.com/tempesta-tech/xFW/blob/main/t/trex/run_servers.sh) to assign
+enough IP addresses on both the NIC ports and run a Python TCP server on each of
+them.
+
+[syncookies.conf](https://github.com/tempesta-tech/xFW/blob/main/t/trex/syncookies.conf) is the
+xFW configuration and [syn_flood.yaml](https://github.com/tempesta-tech/xFW/blob/main/t/trex/syn_flood.yaml)
+is the TRex generation configuration.
+
 
 ## Test bonding interface setup
 
