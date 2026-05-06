@@ -31,8 +31,7 @@ cpu_to_mask() {
     ' "$1"
 }
 
-# Enable Linux syncookies
-sysctl -w net.ipv4.tcp_syncookies=2
+# net.ipv4.tcp_syncookies sysctl is set by xfwctl script.
 
 # The NIC is attached to the 2nd processor package. Each of the processors has 28
 # cores (56 hyperthreads). So use 14 cores for each of the NIC ports.

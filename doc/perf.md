@@ -81,10 +81,11 @@ ESCUDO_PATH=~/ak/escudo_install/ TFW_CFG_FILE=~/ak/xfw.json ~/ak/escudo_install/
 ./bin/tfw push -c ../src_150k_wl.conf
 ```
 
-3. Run any HTTP services on both the NIC addresses, just to provision a listening sockets:
+3. Assign additional IP addresses (required at least for TCP SYN cookies testing)
+   and run TCP listening daemons (required for registering listening sockets)
+   on the addresses with [run_servers.sh](https://github.com/tempesta-tech/xFW/blob/main/t/trex/run_servers.sh):
 ```
-python3 -m http.server 8080 -b 192.168.2.1 &
-python3 -m http.server 8080 -b 192.168.3.1 &
+./run_servers.sh
 ```
 
 4. Run [irq.sh](https://github.com/tempesta-tech/xFW/blob/main/t/trex/irq.sh):
