@@ -186,6 +186,25 @@ mlx5_common: Failed to load driver mlx5_eth
 EAL: Requested device 0000:98:00.1 cannot be used
 ```
 
+
+## Monitoring
+
+Check NIC receive buffer overflow with:
+```
+ethtool -S <dev> | grep rx_out_of_buffer
+```
+High non-zero values mean that CPU (XDP prog) is not in time to process all ingress
+packets.
+
+For traffic performance statistics use `bmon` or `dstat`, e.g.
+```
+bmon -p 'enp202s0f*'
+```
+```
+dstat --cpu-adv --net -N enp202s0f1np1 -N enp202s0f0np0 --net-packets --sys --bits --time --int -I RES
+```
+
+
 ## Run TRex native scenario (baseline)
 ```
 ./t-rex-64 -f cap2/imix_1518.yaml -m 2000 -d 20 -c 23
@@ -230,11 +249,6 @@ You should see something like this:
 src/trex_global.h:913 assert(size<=MAX_PKT_ALIGN_BUF_9K);
 ```
 appear. However, but 46 cores (23 * 2 real ports) is enough to produce ~200 Gbps.
-
-See load on SUT in `bmon`, for example:
-```
-bmon -p 'enp202s0f*'
-```
 
 On SUT you could measure average cpu load doing during test:
 ```

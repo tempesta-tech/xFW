@@ -1,4 +1,5 @@
 # DDOS emulation with `TRex` and `trafgen`
+
 - Trafgen is a part of [netsniff-ng](https://github.com/netsniff-ng/netsniff-ng). Generates traffic
 or PCAPs based on a template (config).
 - TRex is a Cisco software, see [trex-tgn](https://trex-tgn.cisco.com/trex/doc/trex_manual.html).
@@ -26,13 +27,13 @@ chapter why (just use `drnd()`):
     * `ipv4(saddr=drnd(), daddr=drnd())`
     * `tcp|udp(sport=drnd())`
 
-> TRex in Stateful mode doesn't work with other L4 protocols than TCP/UDP. You could get error
+TRex in Stateful mode doesn't work with other L4 protocols than TCP/UDP. You could get error
 message if you provide something else:
 ```
 ERROR packet 1 is not supported, should be Ethernet/IP(0x0800)/(TCP|UDP) format try to convert it
 using Wireshark !
 ```
-> Also it lies about packet number, be careful :-)
+
 
 2. Run trafgen to write traffic to PCAP:
 ```
@@ -46,7 +47,7 @@ trafgen -c syn-flood.conf -o syn-flood.pcap -n 1
 TRex can send trafgen generated PCAP files at enormous speeds, effectively utilizing the bandwidth
 of the network interface.
 
-What you need to understand TRex fast (Stateful mode only, Stateless and ASTF are out of scope):
+TRex Stateful mode (Stateless and ASTF are out of scope):
 
 1. Basically, you create PCAPs with trafgen as described above. One packet should be enough for
 monotonous traffic (SYN flood, RST flood etc.), because TRex allows to multiply traffic (see `cps`,
