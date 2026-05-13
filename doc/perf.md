@@ -204,6 +204,8 @@ bmon -p 'enp202s0f*'
 dstat --cpu-adv --net -N enp202s0f1np1 -N enp202s0f0np0 --net-packets --sys --bits --time --int -I RES
 ```
 
+Also `htop` is good to observe CPU utilization.
+
 
 ## Run TRex native scenario (baseline)
 ```
@@ -249,13 +251,6 @@ You should see something like this:
 src/trex_global.h:913 assert(size<=MAX_PKT_ALIGN_BUF_9K);
 ```
 appear. However, but 46 cores (23 * 2 real ports) is enough to produce ~200 Gbps.
-
-On SUT you could measure average cpu load doing during test:
-```
-trex/perf/cpuaverage.sh
-```
-
-See CPU utilization on SUT in `htop`, for example.
 
 You should see about 8,9 Gib per port (which corresponds to ~190 Gbps in Total-Tx).
 
@@ -358,21 +353,6 @@ scp -r traffic/ tcpudp.yaml gen:/trex/trex-core/scripts
 ./t-rex-64 --ipv6 -f tcpudp.yaml -m 650 -c 23
 ```
 
-On SUT server in `bmon` or `ifconfig` we see that amount of traffic passed to kernel is low
-(9-10 MiB ~ 70-80 Mbps, because we rate limit it, don't drop).
-
-**CPU load on SUT:
-```
-cpu1 0.778258 cpu3 0.801231 cpu5 0.779257 cpu7 0.849176 cpu9 0.702347 cpu11 0.76827 cpu13 0.732312
-cpu15 0.266854 cpu17 0.221906 cpu19 0.256865 cpu21 0.214914 cpu23 0.258863 cpu25 0.213915 cpu27 0.279839
-cpu29 0.224903 cpu31 0.220907 cpu33 0.216912 cpu35 0.238886 cpu37 0.264856 cpu39 0.239885 cpu41 0.266854
-cpu43 0.257864 cpu45 0.266854 cpu47 0.242882 cpu49 0.244879 cpu51 0.220907 cpu53 0.21891 cpu55 0.230896
-cpu57 0.745297 cpu59 0.79424 cpu61 0.840186 cpu63 0.830198 cpu65 0.730314 cpu67 0.757283 cpu69 0.732312
-cpu71 0.671383 cpu73 0.672381 cpu75 0.643415 cpu77 0.617445 cpu79 0.618444 cpu81 0.641418 cpu83 0.657399
-cpu85 0.662393 cpu87 0.607457 cpu89 0.692358 cpu91 0.624437 cpu93 0.664391 cpu95 0.657399 cpu97 0.669385
-cpu99 0.63043 cpu101 0.646412 cpu103 0.669385 cpu105 0.649408 cpu107 0.629432 cpu109 0.599466 cpu111 0.66539
-cpu 0.526783
-```
 
 ## Run TCP SYN flood
 
@@ -385,106 +365,15 @@ xFW configuration and [syn_flood.yaml](https://github.com/tempesta-tech/xFW/blob
 is the TRex generation configuration.
 
 
-## Test bonding interface setup
-
-* Go with [Configure SUT](#configure-sut) steps, but replace steps 1, 3, 5 with:
-
-1. Setup bonding interface:
-```
-sudo ip link add bond0 type bond
-sudo ip link set dev bond0 type bond mode balance-rr
-sudo ip link set enp202s0f0np0 master bond0
-sudo ip link set enp202s0f1np1 master bond0
-sudo ip link set bond0 up
-sudo ip address add 192.168.255.107/24 dev bond0
-```
-
-2. Run HTTP servers:
-```
-python3 -m http.server 8080 -b 192.168.255.107 &
-```
-
-* Go with [Configure Generator](#configure-generator) steps, but replace step 3 with:
-
-3. Create config:
-```
-sudo tee /etc/trex_cfg.yaml <<EOF
-- version: 2
-  interfaces: ['98:00.0', 'dummy', '98:00.1', 'dummy']
-  port_info:
-      - ip: 192.168.255.106 # Generator port 1
-        default_gw: 192.168.255.107 # SUT port 2
-      - ip: 192.168.253.116 # Dummy port, fake IPs
-        default_gw: 192.168.253.117
-      - ip: 192.168.255.108 # Generator port 2
-        default_gw: 192.168.255.107 # SUT port 2
-      - ip: 192.168.254.116 # Dummy port, fake IPs
-        default_gw: 192.168.254.117
-
-  platform:
-      master_thread_id: 0
-      latency_thread_id: 2
-      dual_if:
-        - socket: 1
-          threads: [1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41,43,45,47,49,51,53,55]
-        - socket: 1
-          threads: [57,59,61,63,65,67,69,71,73,75,77,79,81,83,85,87,89,91,93,95,97,99,101,103,105,107,109,111]
-EOF
-```
-
-Additionally, replace SYN flood destination IP address:
-```
-cd /trex/trex-core/scripts
-sed -i 's/192\.168\.253\.107/192\.168\.255\.107/g' tcpudp.yaml
-```
-
-* Run whatever tests you want, you should get the same results with separate dual NIC setup runned
-before.
-
-
 ## Run latency test
 
-1. Run wrk on Generator with xfw loaded:
+We use TRex for [latency testing](https://trex-tgn.cisco.com/trex/doc/trex_manual.html#_measuring_jitter_latency).
+In this test we generate a small DDoS-like workload in parallel with ICMP echo probes:
 ```
-wrk --latency -c 8192 -d 30 -t 8 http://192.168.253.107:8080/
-```
-
-2. Then unload xFW on SUT and repeat:
-```
-wrk --latency -c 8192 -d 30 -t 8 http://192.168.253.107:8080/
+./t-rex-64 -f syn_flood_lat.yaml -m 1000 -c 23 -l 1 --l-pkt-mode 1 -d 60
 ```
 
-Results are pretty the same (with and without xFW), but could vary from test to test:
-```
-Running 30s test @ http://192.168.2.2:8080/
-  8 threads and 8192 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   247.23ms  353.88ms   1.96s    90.45%
-    Req/Sec    32.16     22.30   160.00     77.86%
-  Latency Distribution
-     50%  109.72ms
-     75%  246.42ms
-     90%  571.20ms
-     99%    1.78s 
-  6678 requests in 30.07s, 8.50MB read
-  Socket errors: connect 7179, read 0, write 0, timeout 229
-Requests/sec:    222.05
-Transfer/sec:    289.28KB
-```
-
-```
-Running 30s test @ http://192.168.2.2:8080/
-  8 threads and 8192 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   209.59ms  324.77ms   2.00s    91.89%
-    Req/Sec    30.87     20.10   170.00     66.40%
-  Latency Distribution
-     50%   95.76ms
-     75%  195.97ms
-     90%  490.86ms
-     99%    1.77s 
-  6767 requests in 30.07s, 8.61MB read
-  Socket errors: connect 7179, read 0, write 0, timeout 171
-Requests/sec:    225.08
-Transfer/sec:    293.21KB
-```
+It's hard to make TRex to correctly use both the interfase for ICMP probbing, so we
+use single socket traffic profile
+[syn_flood_lat.yaml](https://github.com/tempesta-tech/xFW/blob/main/t/trex/syn_flood_lat.yamla)
+and [TRex config](https://github.com/tempesta-tech/xFW/blob/main/t/trex/trex_lat_cfg.yaml)

@@ -1,0 +1,15 @@
+- duration: 60
+  generator:
+    distribution: "seq"
+    servers_start: "192.168.2.10"
+    servers_end: "192.168.2.59"
+    clients_start: "16.2.0.1"
+    clients_end: "16.2.255.255"
+
+  cap_info:
+    - name: traffic/syn.pcap
+      cps: 1000
+      ipg: 0
+      rtt: 10000
+      w: 1
+      limit: 100000
