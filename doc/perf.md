@@ -207,7 +207,7 @@ dstat --cpu-adv --net -N enp202s0f1np1 -N enp202s0f0np0 --net-packets --sys --bi
 Also `htop` is good to observe CPU utilization.
 
 
-## Run TRex native scenario (baseline)
+## TRex native scenario (baseline)
 ```
 ./t-rex-64 -f cap2/imix_1518.yaml -m 2000 -d 20 -c 23
 ```
@@ -259,7 +259,7 @@ You should see about 8,9 Gib per port (which corresponds to ~190 Gbps in Total-T
 > traffic.
 
 
-## Run ICMP flood test
+## ICMP flood
 
 > We separately generate ICMP traffic and TCP/UDP flood traffic. It doesn't have much sense other
 than to save some time. TCP/UDP config was written before and we don't have much time to fully
@@ -328,7 +328,7 @@ On SUT server in `bmon` or `ifconfig` we see that amount of traffic passed to ke
 (we rate limit it, don't drop) and CPU load is adequate (less than 35% on any core).
 
 
-## Run TCP & UDP flood test
+## TCP & UDP flood
 
 This test generates UDP traffic (packet length 1514 bytes) and various types of TCP flood traffic
 (length 54 bytes):
@@ -354,7 +354,7 @@ scp -r traffic/ tcpudp.yaml gen:/trex/trex-core/scripts
 ```
 
 
-## Run TCP SYN flood
+## TCP SYN flood
 
 Use [run_servers.sh](https://github.com/tempesta-tech/xFW/blob/main/t/trex/run_servers.sh) to assign
 enough IP addresses on both the NIC ports and run a Python TCP server on each of
@@ -365,7 +365,7 @@ xFW configuration and [syn_flood.yaml](https://github.com/tempesta-tech/xFW/blob
 is the TRex generation configuration.
 
 
-## Run latency test
+## Latency
 
 We use TRex for [latency testing](https://trex-tgn.cisco.com/trex/doc/trex_manual.html#_measuring_jitter_latency).
 In this test we generate a small DDoS-like workload in parallel with ICMP echo probes:
