@@ -207,6 +207,85 @@ dstat --cpu-adv --net -N enp202s0f1np1 -N enp202s0f0np0 --net-packets --sys --bi
 Also `htop` is good to observe CPU utilization.
 
 
+## Profiling
+
+Standard `bpftool` shipped with Ubuntu 24 LTS doesn't have JIT disassembly and
+profiling (skeletons) support, so you need to build it from source code:
+```
+git clone --depth 1 --branch v6.8 https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux-6.8
+cd linux-6.8/tools/bpf/bpftool
+make -j"$(nproc)"
+# ./bpftool --version
+bpftool v7.4.0
+using libbpf v1.4
+features: llvm, skeletons
+```
+
+You should see 'llvm' and 'skeletons' in the features list (for the standard bpftool
+it is empty).
+
+Also standard `perf` doesn't have BPF annotation support, so you need to build it
+from sources as well:
+```
+apt install -y build-essential flex bison pkg-config libelf-dev libdw-dev \
+  libunwind-dev libslang2-dev libperl-dev python3-dev libzstd-dev libcap-dev \
+  libnuma-dev binutils-dev libbabeltrace-dev libtraceevent-dev libtracefs-dev
+cd linux-6.8/tools/perf/
+make clean
+make -j"$(nproc)" BUILD_NONDISTRO=1 WERROR=0
+```
+Check that all the requested options are 'on':
+```
+./perf version --build-options | grep -Ei 'bfd|opcode|disassembler|libelf|dwarf|bpf'
+                 dwarf: [ on  ]  # HAVE_DWARF_SUPPORT
+    dwarf_getlocations: [ on  ]  # HAVE_DWARF_GETLOCATIONS_SUPPORT
+                libbfd: [ on  ]  # HAVE_LIBBFD_SUPPORT
+                libelf: [ on  ]  # HAVE_LIBELF_SUPPORT
+    libdw-dwarf-unwind: [ on  ]  # HAVE_DWARF_SUPPORT
+                   bpf: [ on  ]  # HAVE_LIBBPF_SUPPORT
+               libpfm4: [ on  ]  # HAVE_LIBPFM
+         bpf_skeletons: [ on  ]  # HAVE_BPF_SKEL
+```
+
+Get program ID with ('199' is used hereafter):
+```
+bpftool prog show | grep -A2 xfw_xdp
+```
+
+Collect x86-64 and eBPF disassembly with C code references for mapping samples to interpret profiling results:
+```
+./bpftool prog dump jited id 199 linum opcodes > /tmp/xfw.jit
+./bpftool prog dump xlated id 199 linum opcodes > /tmp/xfw.bpf
+```
+
+Run workload and start profiling:
+```
+./bpftool prog profile id 199 duration 60 cycles instructions llc_misses dtlb_misses
+
+        1172580977 run_cnt
+     1261619554721 cycles
+     3280698993346 instructions        #     2.60 insns per cycle
+         227773681 llc_misses          #    69.43 LLC misses per million insns
+          96098822 dtlb_misses         #    29.29 dtlb misses per million insns
+```
+which means:
+1. duration:              60 sec
+2. run rate:              1,172,580,977 / 60 = 19.54 Mpps
+3. cycles per run:        1,261,619,554,721 / 1,172,580,977 ≈ 1076 cycles/packet
+4. instructions per run:  3,280,698,993,346 / 1,172,580,977 ≈ 2798 insns/packet
+5. LLC misses per run:    227,773,681 / 1,172,580,977 ≈ 0.194
+6. DTLB misses per run:   96,098,822 / 1,172,580,977 ≈ 0.082
+
+You can get annotated assembly code with:
+```
+linux-6.8/tools/perf/perf record -a -g -e cycles:k -c 100000 -m 1024 -- sleep 60
+linux-6.8/tools/perf/perf annotate --stdio --symbol=bpf_prog_0798899db6da08a4_xfw_xdp
+```
+
+The most of our code has `__always_inline` for functions, so we can get a
+analytics-friendly call stacks and can use annotated assembly only at the moment.
+
+
 ## TRex native scenario (baseline)
 ```
 ./t-rex-64 -f cap2/imix_1518.yaml -m 2000 -d 20 -c 23
