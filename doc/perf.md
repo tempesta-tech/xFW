@@ -286,52 +286,25 @@ The most of our code has `__always_inline` for functions, so we can get a
 analytics-friendly call stacks and can use annotated assembly only at the moment.
 
 
-## TRex native scenario (baseline)
-```
-./t-rex-64 -f cap2/imix_1518.yaml -m 2000 -d 20 -c 23
-```
+## The Baseline
 
-You should see something like this:
-```
-      ports |               0 |               2 
- -----------------------------------------------------------------------------------------
-   opackets |       149042154 |       149190468 
-     obytes |    226245986884 |    226471127536 
-   ipackets |               1 |               2 
-     ibytes |              92 |             184 
-    ierrors |               0 |               0 
-    oerrors |               0 |               0 
-      Tx Bw |      96.48 Gbps |      96.95 Gbps 
+We have dual 100Gbps port NIC.
 
--Global stats enabled 
- Cpu Utilization : 9.3  %  90.4 Gb/core 
- Platform_factor : 1.0  
- Total-Tx        :     193.43 Gbps  
- Total-Rx        :       1.85  bps  
- Total-PPS       :      15.93 Mpps  
- Total-CPS       :       0.00  cps  
+For a TCP SYN segment we have 74 bytes for Ethernet, IPv4 and TCP headers - this is
+what xFW accounts as a packet length. Meantime, there are also FCS, Preamble + SFD
+and nter-frame gap, which add about 24 bytes of overhead resulting to 98 bytes on
+wire. I.e. the theoretical peak for the adapter is about 255Mpps, but
+[NVIDIA announced](https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/documents/nvidia-connectx-6-dx-en-hpe-datasheet.pdf)
+215Mpps.
 
- Expected-PPS    :       8.00 Mpps  
- Expected-CPS    :       8.00 Mcps  
- Expected-BPS    :      97.15 Gbps  
+To estimate performance baselines for the current setup we created the
+[xdp_baseline](https://github.com/tempesta-tech/xFW/blob/main/t/trex/xdp_baseline.c) program -
+a minimal XDP module to run TRex load against to.
 
- Active-flows    :     1600  Clients :      255   Socket-util : 0.0100 %    
- Open-flows      :     1600  Servers :    65535   Socket :     1600 Socket/Clients :  6.3 
- Total_queue_full : 73725658         
- drop-rate       :     193.43 Gbps   
-```
-* No `ierrors` and `oerrors`.
-* Total-Tx ~200 Gbps (10% overhead is OK).
-* Total-Rx ~0 - we don't receive packets, only create powerful flood.
-* Cpu Utilization is low.
-
-> On `-c 24` and larger TRex error like
+For TRex we use `-c 23` since it rejects larger values with:
 ```
 src/trex_global.h:913 assert(size<=MAX_PKT_ALIGN_BUF_9K);
 ```
-appear. However, but 46 cores (23 * 2 real ports) is enough to produce ~200 Gbps.
-
-You should see about 8,9 Gib per port (which corresponds to ~190 Gbps in Total-Tx).
 
 > Note non-zero `Total_queue_full` values. This is generally not recommended, but for
 > DDoS stress testing this is acceptable since TRex still reports actual wired
