@@ -1,0 +1,7 @@
+{
+    "devices": "enp202s0f0np0 enp202s0f1np1",
+    "devices-mode": "native",
+    "verbose": true,
+    "sysctl-tcp-max-syn-backlog": 4096,
+    "sysctl-tcp-syncookies": 1
+}
