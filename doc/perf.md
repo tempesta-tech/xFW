@@ -69,6 +69,11 @@ CC=gcc-10 CXX=g++-10 ./b build
 
 ## Run xFW on SUT
 
+0. Install xFW by a custom path:
+```
+PREFIX=/root/ak/escudo_install/ make install
+```
+
 1. [Start xFW](/Basic-Administration/#run-amp-stop) and load configuration. It's
    useful to run xFW from a local (`main`) build:
 ```
