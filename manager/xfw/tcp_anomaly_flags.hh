@@ -1,0 +1,14 @@
+/**
+ *	Tempesta Xfw prohibited by rfc and suspecious flags.
+ *
+ * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+
+#pragma once
+
+#include "../../lib/bitset.hh"
+#include "../../lib/proto/tcp_control_bits.h"
+
+extern const BitSet<TcpControlBits, XFW_BIT_CONTROL_MAX> xfw_prohibited_rules;
+extern const BitSet<TcpControlBits, XFW_BIT_CONTROL_MAX> xfw_suspicious_rules;

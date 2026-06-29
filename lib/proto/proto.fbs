@@ -1,0 +1,203 @@
+// vim: set syntax=c:
+//
+//	Tempesta Management RPC Protocol
+//
+// SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+namespace TempestaRPC;
+
+enum ReqRecType: byte {
+	// TL prog object
+	RRT_TL_OBJ		= 0,
+
+	// Tempesta xFW configuration
+	RRT_XFW_CFG,
+
+	// Tempesta FW configuration
+	RRT_TFW_CFG,
+
+	// Requesting the system status/statistics
+	RRT_STATUS,
+
+	// Requesting configuration reload
+	RRT_TFW_CFG_RLD
+}
+
+enum ReqStatusType: byte {
+	// The list of blocked by xFW addresses could be pretty big.
+	BLOCKED_ADDRESSES	= 0,
+
+	// TODO: add more statuses
+}
+
+// Binary TL eBPF CO-RE object.
+table TLProg {
+	text: [ubyte];
+}
+
+enum XFWOpt : byte {
+	XFW_CONFIG_PATCH		= 0,
+	TCP_ANOMALY_FILTER_OFF		= 1,
+	TCP_AUTH_FILTER_ON		= 2,
+	TCP_AUTH_FILTER_OFF		= 3,
+	EVALUATION_MODE_ON		= 4,
+	EVALUATION_MODE_OFF		= 5,
+	TCP_SYNCOOKIE_FILTER_OFF	= 6,
+	TCP_SYN_FLAGS_FILTER_OFF	= 7,
+	TCP_RST_FLAGS_FILTER_OFF	= 8,
+	DNS_FILTER_ON               	= 9,
+	DNS_FILTER_OFF             	= 10,
+	IP_PROTO_FILTER_OFF		=11
+}
+
+table Syncookie {
+	passive_timer: uint32;
+	flood_timer: uint32;
+}
+
+table TcpAnomaly {
+	features: [ubyte];  // Array to represent the bitset as bytes
+	bad_tcp_flags: [ubyte];  // Array to represent the bitset as bytes
+	seqno_value: uint32;
+}
+
+table IpProto {
+	protocols: [ubyte]; // Representing the bitset for protocols
+}
+
+enum TcpFlagType: byte {
+	ALL	= 0,
+	SYN	= 1,
+	RST	= 2
+}
+
+table TcpFlagsFilter {
+	flag: TcpFlagType;
+	ratelimit: string;
+}
+
+table Net4 {
+	addr: [uint8]; // 4 uint8 (IPv4)
+	port: uint16;
+	prefix: uint8;
+}
+
+table Net6 {
+	addr: [uint8]; // 16 uint8 (IPv6)
+	port: uint16;
+	prefix: uint8;
+}
+
+table NetCode {
+	port: uint16;
+	code: uint16; // 2 bytes (for 2 characters)
+}
+
+enum NetRuleOpt : byte {
+	IPV6 = 0,
+	TCP = 1,
+	SRC = 2,
+	ALLOW = 3,
+	REPLACE = 4,
+	DELETE = 5,
+	PROTECTED_NET = 6
+}
+
+table PortPair {
+	port: uint16;
+	port_end: uint16 = 0;
+}
+
+table NetRule {
+	alias: string;
+	flags: [ubyte];  // Array to represent the bitset as bytes
+	net6s: [Net6];
+	net4s: [Net4];
+	nets: [NetCode];
+	ports: [PortPair];
+	ratelimit: string;
+}
+
+enum IcmpRuleOpt : byte {
+	IPV6 = 0,
+	ALLOW = 1,
+	REPLACE = 2,
+	DELETE = 3
+
+}
+
+table IcmpRule {
+	alias: string;
+	flags: [ubyte];  // Array to represent the bitset as bytes
+	types: [ubyte];
+	ratelimit: string;
+}
+
+enum RatelimitOpt : byte {
+	DELETE = 0
+}
+
+table Ratelimit {
+	alias: string;
+	flags: [ubyte];  // Array to represent the bitset as bytes
+	pps: uint64;
+	bps: uint64;
+}
+
+table DefaultAction {
+	flags: [ubyte];  // Array to represent the BitSet<DefaultIndex> as bytes
+	allow: bool;
+	ratelimit: string;
+}
+
+table XFWCfg {
+	flags: [ubyte];	// Representing the bitset for flags
+	ip_proto: IpProto;
+	syncookie: Syncookie;
+	tcp_flags: [TcpFlagsFilter];
+	net_rules: [NetRule];
+	icmp_rules: [IcmpRule];
+	ratelimits: [Ratelimit];
+	defaults: [DefaultAction];
+	tcp_anomaly: TcpAnomaly;
+}
+
+// Tempesta FW configuration
+table TFWCfg {
+	text: string;
+}
+
+// Requesting the system status/statistics
+table StatusReq {
+	type: ReqStatusType;
+}
+
+union ReqRecordBody {
+	tl_prog:	TLProg,
+	xfw_cfg:	XFWCfg,
+	tfw_cfg:	TFWCfg,
+	stat_req:	StatusReq,
+}
+
+table ReqRecord {
+	type:		ReqRecType;
+	data:		ReqRecordBody;
+}
+
+table Request {
+	proto_ver:	uint32 = 0;  // Current protocol version is 0
+	records:	[ReqRecord];
+}
+
+root_type Request;
+
+table Response {
+	proto_ver:	uint32 = 0;	// Current protocol version is 0
+	code:		uint32;		// Regular http code
+	message:	string;		// Text description of the success/error message
+}
+
+rpc_service ManagerService {
+	send(Request):	Response;
+}

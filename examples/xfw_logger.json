@@ -1,0 +1,13 @@
+{
+    "log_path": "/var/log/tempesta/tfw_logger.log",
+    "xfw_events": {
+	"plugin_path": "/opt/tempesta/lib/incident_log.so",
+	"user": "default",
+	"password": "",
+        "host": "127.0.0.1",
+        "port": 9000,
+        "db_name": "default",
+        "table_name": "xfw_events",
+        "max_events": 100000
+    }
+}

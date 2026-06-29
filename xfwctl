@@ -1,0 +1,746 @@
+#!/usr/bin/env bash
+#
+#	Tempesta xFW management script
+#
+# SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
+# SPDX-License-Identifier: GPL-2.0-or-later
+declare version="1.1.0"
+
+declare devs=""
+declare mgr_args=""
+declare devmode="native"
+declare cfg_file="${TFW_CFG_FILE:-/etc/tempesta/xfw.json}"
+declare cfg_file_override=""
+# Default pid_file and mgr_log were taken from defalts args for ./tempesta_mgr.
+declare pid_file="/var/run/tempesta_mgr.pid"
+declare mgr_log="/var/log/tempesta/manager.log"
+declare -A cfg
+declare -i v=0
+declare -i is_event_logging_on=1
+
+user="$(whoami)"
+if [ "x$user" = "xroot" ]; then
+	user="$(who am i)";
+	user="${user%% *}";
+	home="/root";
+else
+	home="/home/$user";
+fi
+
+declare project_path=""
+# 1) User-provided path (may be empty)
+declare escudo_path="${ESCUDO_PATH:-}"
+# 2) Default path
+declare default_path="/opt/tempesta"
+# TODO #10: move to /sys/fs/bpf/xfw
+declare -r xfw_bpf_path="/sys/fs/bpf/tc/globals"
+
+declare -r pin_dispatchers_log="/tmp/tempesta/xfw/pin_dispatchers"
+declare -r version_file="/tmp/tempesta/xfw/version"
+declare -r status_dir="/tmp/tempesta/xfw/status/"
+
+# Select the first existing directory
+if [ -n "$escudo_path" ] && [ -d "$escudo_path" ]; then
+	project_path="$escudo_path"
+elif [ -d "$default_path" ]; then
+	project_path="$default_path"
+else
+	echo "Error: neither \$escudo_path nor $default_path exist" >&2
+	exit 1
+fi
+
+declare -r mgr_name="tfw_mgr"
+declare -r mgr_bin_path="$project_path/sbin/$mgr_name"
+
+declare -r logger_name="tfw_logger"
+declare -r logger_bin_path="$project_path/sbin/$logger_name"
+declare -r logger_cfg_file="${TFW_LOG_CFG_FILE:-/etc/tempesta/xfw_logger.json}"
+declare -i start_stop_timeout=5 # 5s timeout for daemons to start/stop
+
+PATH="${project_path}/sbin:$PATH"
+
+declare -r kconfig_file="/boot/config-$(uname -r)"
+declare -r kconfig_reqs=(
+	"CONFIG_BPF_SYSCALL"
+	"CONFIG_BPF_JIT"
+	"CONFIG_SYN_COOKIES"
+	"CONFIG_HAVE_EBPF_JIT"
+	"CONFIG_DEBUG_INFO_BTF"
+	"CONFIG_BPF_EVENTS"
+)
+
+usage()
+{
+	echo -e "\nUsage: $0 [-c config] action\n"
+	echo -e "\nOptions:"
+	echo -e "  -c, --config <path>  Path to configuration file"
+	echo -e "                       (default: /etc/tempesta/xfw.json or \$TFW_CFG_FILE)"
+	echo -e "\nActions:"
+	echo -e "  --load-bpf           Load BPF programs (they stay inactive until rules"
+	echo -e "                       are loaded)."
+	echo -e "  --unload-bpf         Detach and remove loaded xFW eBPF programs."
+	echo -e "  --reload-bpf         Refresh loaded xFW datapath programs."
+	echo -e "  --start-mgr          Start the management daemon."
+	echo -e "  --stop-mgr           Stop the management daemon."
+	echo -e "  --restart-mgr        Restart the management daemon."
+	echo -e "  --start              Load the BPF programs, the manager and incident logger."
+	echo -e "  --stop               Unload BPF programs, stop the manager and incident"
+	echo -e "                       logger, and clean BPF maps. Note that this command"
+	echo -e "                       unloads all eBPF programs loaded using xdp-loader"
+	echo -e "                       on all configured devices."
+	echo -e "  --restart            Reload eBPF programs and restart the manager and"
+	echo -e "                       incident logger."
+	echo -e "  --status             Show the Tempesta xFW state."
+	echo -e "  --check-req          Validate kernel and userspace prerequisites."
+	echo -e "  --help               Print this help text."
+}
+#	For internal use: The arguments for the manager can be passed through the
+#	config entry "mgr-args"
+
+error()
+{
+	echo -e "ERROR: $1" >&2
+	exit 1
+}
+
+# We need the log file name to display its contents in the status.
+# The pid file name may be useful when stopping the process.
+parse_mgr_args()
+{
+	saved_args="$@"
+
+	set -- $mgr_args
+
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			-P|--pidfile)
+				shift
+				[ $# -gt 0 ] && pid_file=$1
+				;;
+			-L|--log)
+				shift
+				[ $# -gt 0 ] && mgr_log=$1
+				;;
+		esac
+		shift
+	done
+
+	set -- $saved_args
+}
+
+read_config()
+{
+	# If we already filled it up, skip the second time.
+	# Some functions may call "read_config" as an initialization step.
+	if [ ${#cfg[@]} -ne 0 ]; then
+		return 0
+	fi
+
+	# Use override if provided via command line
+	if [ -n "$cfg_file_override" ]; then
+		cfg_file="$cfg_file_override"
+	fi
+
+	if [ ! -f "$cfg_file" ]; then
+		error "Configuration file not found: $cfg_file"
+	fi
+
+	echo "Loading configuration from $cfg_file..."
+	while IFS="=" read -r key value; do
+		cfg["$key"]="$value"
+	done < <(cat "$cfg_file" | jq -r 'to_entries | .[] | "\(.key)=\(.value)"')
+
+	devs="${cfg[devices]}"
+	mgr_args="${cfg[mgr-args]}"
+
+	parse_mgr_args;
+
+	if [[ -v "cfg[devices-mode]" ]]; then
+		devmode="${cfg[devices-mode]}"
+	fi
+
+	if [[ -v "cfg[verbose]" ]]; then
+		case "${cfg[verbose]}" in
+			true)
+				v=1
+				;;
+			false)
+				v=0
+				;;
+			*)
+				echo "WARNING: Invalid value for 'verbose' in config: '${cfg[verbose]}'. Expected 'true' or 'false'. Using default (false)." >&2
+				v=0
+				;;
+		esac
+	fi
+
+	local event_logging_flag="${cfg[event-logging]:-on}"
+	case "$event_logging_flag" in
+		on) 
+			is_event_logging_on=1 ;;
+		off)
+			is_event_logging_on=0 ;;
+		*)
+			echo "WARNING: Invalid value for 'event-logging': '$event_logging_flag'. Using default (on)." >&2
+			is_event_logging_on=1
+			;;
+	esac
+
+	local event_logging_status=$([ "$is_event_logging_on" -eq 1 ] && echo "on" || echo "off")
+	[ $v -eq 1 ] && echo -e "Using project directory: $project_path"
+	echo "Configuration: -devices $devs"
+	echo "               -devices-mode $devmode"
+	echo "               -mgr-args $mgr_args (log path $mgr_log, pidfile $pid_file)"
+	echo "               -verbose $([ $v -eq 1 ] && echo "true" || echo "false")"
+	echo "               -event-logging $event_logging_status"
+}
+
+is_bpf_attached_to_dev()
+{
+	local hook="$1"
+	local dev="$2"
+
+	if bpftool net -j 2>/dev/null | \
+		jq -e --arg hook "$hook" --arg dev "$dev" '
+			.[][$hook][]?
+			| select(.devname == $dev)
+		' >/dev/null; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+# Exit the script in case of error (absent ot duplicate maps) or
+# normally return to the caller otherwise.
+bpf_maps_check()
+{
+	local maps="$(bpftool map | awk -v prefix='xfw_' 'index($0, prefix) {print $4}')"
+	local pr_err="${1:-echo -e}"
+
+	if [ -z "$maps" ]; then
+		$pr_err "BPF maps:\t\t\tnot loaded"
+		return 1
+	fi
+
+	local dup_maps="$(printf '%s\n' "$maps" | awk 'seen[$0]++ {print}')"
+	if [ -n "$dup_maps" ]; then
+		$pr_err "BPF maps:\t\t\tduplicated (ERROR!)"
+		return 1
+	fi
+
+	if [ "$pr_err" != "error" ]; then
+		echo -e "BPF maps:\t\t\tavailable"
+	fi
+	return 0
+}
+
+maps_clean()
+{
+	find "$xfw_bpf_path" -name "xfw_*" -type f -delete
+}
+
+update_status()
+{
+	local devmode=$1
+
+	mkdir -p $status_dir
+
+	echo "$devmode" > "$status_dir/devmode"
+}
+
+load_and_print_status()
+{
+	local is_bpf_loaded=$1
+	if [ "$is_bpf_loaded" -eq 0 ]; then
+		return 0
+	fi
+
+	if [ -f "$status_dir/devmode" ]; then
+		echo -e "Device mode:\t\t\t$(cat "$status_dir/devmode")"
+	else
+		echo -e "Device mode:\t\t\t$<Status file not found!>"
+	fi
+}
+
+load_xdp()
+{
+	local dev="$1"
+
+	mkdir -p /tmp/tempesta/xfw
+	local tmp_log=$(mktemp /tmp/tempesta/xfw/xdp-loader.XXXXXX)
+
+	# Always run with -vvv and capture output
+	[ $v -eq 1 ] && echo xdp-loader load -vvv -m $devmode $dev "$project_path/lib/bpf/xdp.o" -p "$xfw_bpf_path"
+
+	xdp-loader load -vvv -m $devmode $dev "$project_path/lib/bpf/xdp.o" -p "$xfw_bpf_path" > "$tmp_log" 2>&1
+	local rc=$?
+	if [ $rc -ne 0 ]; then
+		echo "Error while loading XDP program. See $tmp_log for details."
+		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
+		unload_bpf
+		[ $v -eq 1 ] && echo ""
+		error "Failed to load XDP program on device $dev (exit code $rc)"
+	fi
+
+	[ $v -eq 1 ] && echo -n "xdp-loader result: "
+	[ $v -eq 1 ] && tail -n 1 "$tmp_log"
+
+	# Extract the pinned path from log
+	# Looking for pattern: libxdp: Pinning multiprog fd \d+ beneath [^\s]+xdp/dispatch-\d+-\d+
+	local pinned_paths=$(grep -oP 'libxdp: Pinning multiprog fd \d+ beneath \K[^\s]+xdp/dispatch-\d+-\d+' "$tmp_log")
+	local count=$(printf '%s\n' "$pinned_paths" | grep -c . || true)
+
+	if [ "$count" -eq 1 ]; then
+		local pinned_path="$pinned_paths"
+	elif [ "$count" -gt 1 ]; then
+		echo "WARNING: Found multiple pinned paths in xdp-loader output ($count matches)" >&2
+	else
+		error "Could not extract pinned path from xdp-loader output"
+	fi
+
+	# Save pinned path to file
+	mkdir -p "$(dirname "$pin_dispatchers_log")"
+	echo "$pinned_path" >> "$pin_dispatchers_log"
+}
+
+load_bpf()
+{
+	mkdir -p "$xfw_bpf_path"
+
+	# Check that pin_dispatchers from previous run is empty
+	if [ -f "$pin_dispatchers_log" ] && [ -s "$pin_dispatchers_log" ]; then
+		error "Some eBPF programs are still loaded from previous run (`tr '\n' ' ' < $pin_dispatchers_log`).\nPlease run '$0 --stop' first to clean up previous state."
+	fi
+
+	read_config
+
+	sysctl -w net.core.bpf_jit_enable=1 >/dev/null
+	for opt in tcp_syncookies tcp_max_syn_backlog; do
+		local key="sysctl-${opt//_/-}"
+		if [[ -v "cfg[$key]" ]]; then
+			sysctl -w "net.ipv4.$opt=${cfg[$key]}" >/dev/null
+		fi
+	done
+
+	# Check that devices exist
+	for dev in ${devs}; do
+		if ! ip link show "$dev" >/dev/null 2>&1; then
+			error "Network interface '$dev' does not exist"
+		fi
+	done
+
+	for dev in ${devs}; do
+		if is_bpf_attached_to_dev xdp $dev; then
+			error "Some eBPF programs are still loaded(XDP on $dev). Please run 'xfwctl --stop'. If the problem persists, reboot the system or reload the network interface."
+		fi
+		
+		load_xdp $dev
+
+		if is_bpf_attached_to_dev tc $dev; then
+			error "Some eBPF programs are still loaded(TC on $dev). Please run 'xfwctl --stop'. If the problem persists, reboot the system or reload the network interface."
+		fi
+
+		# Create a TC hook to attach by xFW TC program.
+		# The hook might be configured by somebody else, so check it first.
+		#
+		# TODO #10: replace the legacy tc calls with a
+		# bpf_program__attach_tcx() program.
+		if ! tc qdisc show dev "$dev" | grep -q clsact; then
+			tc qdisc add dev $dev clsact || {
+				unload_bpf
+				error "Failed to add clsact qdisc on $dev"
+			}
+		fi
+		tc filter add dev $dev egress bpf da obj "$project_path/lib/bpf/tc.o" sec tc
+		local rc=$?
+		if [ $rc -ne 0 ]; then
+			echo "Error while loading TC program"
+			[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
+			unload_bpf
+			[ $v -eq 1 ] && echo ""
+			error "Failed to load TC program on device $dev (exit code $rc)"
+		fi
+	done
+
+	bpf_maps_check error
+
+	update_status $devmode
+}
+
+unload_bpf()
+{
+	read_config
+
+	local -A device_ifindices
+
+	for dev in ${devs}; do
+		# Check if device exists
+		if [ -e "/sys/class/net/$dev" ]; then
+			if [ -n "$v" ]; then
+				xdp-loader unload $dev --all || true
+			else
+				xdp-loader unload $dev --all 2>/dev/null || true
+			fi
+
+			local ifindex=$(cat "/sys/class/net/$dev/ifindex" 2>/dev/null || echo "")
+			if [ -n "$ifindex" ]; then
+				device_ifindices[$ifindex]=1
+			fi
+		fi
+
+		if tc qdisc show dev "$dev" | grep -q clsact; then
+			if [ $v -eq 1 ]; then
+				tc qdisc del dev "$dev" clsact || true
+			else
+				tc qdisc del dev "$dev" clsact 2>/dev/null || true
+			fi
+		else
+			[ $v -eq 1 ] && echo "No TC program loaded on $dev"
+		fi
+	done
+
+	# Cleanup pinned dispatcher programs for interfaces that no longer exist
+	if [ -f "$pin_dispatchers_log" ]; then
+		local saved_pin_dispatchers=$(mktemp)
+
+		while IFS= read -r pinned_path; do
+			# Extract ifindex from dispatcher-x-y format
+			# pinned_path looks like: /sys/fs/bpf/xfw/xdp/dispatcher-2-0
+			if [[ "$pinned_path" =~ /dispatch-([0-9]+)-([0-9]+)$ ]]; then
+				local ifindex="${BASH_REMATCH[1]}"
+
+				# Check if interface with this ifindex exists
+				if [ -z "$(ip -o link | awk -v idx="$ifindex:" '$1 == "'"$ifindex"':"')" ]; then
+					if [ "$v" -eq 1 ] && [ -d "$pinned_path" ]; then
+						echo "Removing dispatcher for non-existent interface (ifindex=$ifindex): $pinned_path"
+					fi
+					rm -rf "$pinned_path"
+				elif [ -n "${device_ifindices[$ifindex]+x}" ]; then
+					rm -rf "$pinned_path"
+				else
+					# Interface exists, save it to temp file
+					echo "$pinned_path" >> "$saved_pin_dispatchers"
+				fi
+
+			fi
+		done < "$pin_dispatchers_log"
+
+		# Replace original file with filtered list
+		mv "$saved_pin_dispatchers" "$pin_dispatchers_log"
+	else
+		[ $v -eq 1 ] && echo "Pin files log not found, skipping dispatcher cleanup."
+	fi
+
+	maps_clean
+	rm -rf $status_dir || true
+}
+
+start_mgr()
+{
+	if pgrep "$mgr_name" > /dev/null; then
+		return 0
+	fi
+
+	read_config
+	
+	# We can't use exec, because we can lose an error.
+	"$mgr_bin_path" $mgr_args
+	rc=$?
+
+	if [ $rc -ne 0 ]; then
+		echo "ERROR: management daemon failed with exit code $rc" >&2
+		return $rc
+	fi
+
+	return 0
+}
+
+stop_mgr()
+{
+	if [ -n "$pid_file" ]; then
+		if pkill -L -F "$pid_file" 2>/dev/null; then
+			pidwait -F "$pid_file" 2>/dev/null || true
+		else
+			rm -f "$pid_file"
+		fi
+	else
+		pkill "$mgr_name" || true
+		timeout "${start_stop_timeout}s" bash -c \
+			"while pgrep \"$mgr_name\" > /dev/null; do sleep 1; done"
+		if [ $? -eq 124 ]; then
+			echo "ERROR: Manager stop timed out after ${start_stop_timeout}s" >&2
+		fi
+	fi
+}
+
+start_logger()
+{
+	read_config
+
+	if [ "$is_event_logging_on" -eq 0 ]; then
+		return 0
+	fi
+
+	# Check if logger is already running
+	if pgrep "$logger_name" > /dev/null; then
+		echo "WARNING: Logger is already running"
+		return 0
+	fi
+
+	local tmp_err logger_rc
+	tmp_err=$(mktemp)
+
+	"$logger_bin_path" -c "$logger_cfg_file" >/dev/null 2>"$tmp_err"
+	logger_rc=$?
+
+	if [ "$logger_rc" -ne 0 ]; then
+		if [ -s "$tmp_err" ]; then
+			echo "WARNING: Can't start incident logging (exit code $logger_rc). Reason:" >&2
+			while IFS= read -r line; do
+				echo "WARNING:   $line" >&2
+			done < "$tmp_err"
+		else
+			echo "WARNING: Can't start incident logging (exit code $logger_rc)" >&2
+		fi
+		rm -f "$tmp_err"
+		return 1
+	fi
+
+	rm -f "$tmp_err"
+
+	[ $v -eq 1 ] && echo "Waiting for logger to start..."
+	local elapsed=0
+
+	while [ $elapsed -lt $start_stop_timeout ]; do
+		if pgrep "$logger_name" > /dev/null; then
+			[ $v -eq 1 ] && echo "Logger started successfully"
+			return 0
+		fi
+		sleep 1
+		elapsed=$((elapsed + 1))
+	done
+
+	echo "WARNING: Logger failed to start within ${start_stop_timeout}s." >&2
+	echo "See logger log file specified in config $logger_cfg_file" >&2
+	return 1
+}
+
+stop_logger()
+{
+	read_config
+
+	if [ "$is_event_logging_on" -eq 0 ]; then
+		return
+	fi
+	if ! pgrep -x "$logger_name" > /dev/null; then
+		[ $v -eq 1 ] && echo "Logger is already stopped"
+		return
+	fi
+
+	timeout "${start_stop_timeout}s" "$logger_bin_path" --stop > /dev/null \
+		2> >(
+			while read -r line; do
+				echo "WARNING: Can't stop incident logging. Reason: $line" >&2
+			done
+		)
+
+	local rc=$?
+	if [ $rc -eq 124 ]; then
+		echo "ERROR: Logger stop timed out after ${start_stop_timeout}s" >&2
+	elif [ $rc -ne 0 ]; then
+		echo "ERROR: Logger stop failed with exit code $rc" >&2
+	fi
+}
+
+status()
+{
+	local is_bpf_loaded=0
+	if bpf_maps_check; then
+		is_bpf_loaded=1
+	fi
+
+	local rules_active=$(bpftool map dump name xfw_cfg | jq '.[0].value.rules_active')
+	if [ "$rules_active" = "true" ]; then
+		echo -e "Filtering rules:\t\tloaded"
+	else
+		echo -e "Filtering rules:\t\tnot loaded"
+	fi
+
+	local mgr_addr=$(ss -tulnp | grep "$mgr_name" | awk '{print $5}')
+	if [ -n "$mgr_addr" ]; then
+		echo -e "Management daemon:\t\tactive"
+		echo -e "Management endpoint:\t\t$mgr_addr"
+	else
+		echo -e "Management daemon:\t\tnot running"
+	fi
+
+	load_and_print_status $is_bpf_loaded
+
+	if [ -r "$mgr_log" ]; then
+		echo -e "\nRecent management daemon log entries:"
+		tail -n 10 "$mgr_log"
+	else
+		echo -e "Management daemon log:\tunavailable"
+	fi
+
+	echo -e "\nAttached BPF programs:"
+	bpftool net | awk 'BEGIN {show = 1} /flow_dissector:/ {show = 0} show'
+}
+
+check_requirements()
+{
+	local all_ok=1
+
+	check_version() {
+		local ver="$1" min="$2" name="$3"
+		if ! dpkg --compare-versions "$ver" ge "$min" 2>/dev/null; then
+			echo "ERROR: $name must be >= $min, found $ver" >&2
+			all_ok=0
+		fi
+	}
+
+	for option in "${kconfig_reqs[@]}"; do
+		if ! grep -q "^${option}=y" "$kconfig_file"; then
+			echo "ERROR: kernel option ${option} is disabled; rebuild with it enabled" >&2
+			all_ok=0
+		fi
+	done
+
+	local kernel_ver glibc_ver ubuntu_ver
+	kernel_ver=$(uname -r)
+	glibc_ver=$(ldd --version | awk '/ldd/{print $NF}')
+	ubuntu_ver=$(grep DISTRIB_RELEASE /etc/lsb-release | cut -f2 -d'=')
+
+	check_version "$kernel_ver" 6.8 "Kernel"
+	check_version "$glibc_ver" 2.38 "Glibc"
+	check_version "$ubuntu_ver" 24 "Ubuntu"
+
+	if ! dpkg-query -s libbpf1 >/dev/null 2>&1; then
+		echo "ERROR: libbpf1 package is missing" >&2
+		all_ok=0
+	fi
+
+	if [ "$all_ok" -eq 1 ]; then
+		echo "All requirements are met"
+		return 0
+	else
+		return 1
+	fi
+}
+
+write_version()
+{
+	local version_dir=$(dirname "$version_file")
+
+	mkdir -p "$version_dir"
+	echo "$version" > "$version_file"
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+	exec sudo -E "$0" "$@"
+	exit 99
+fi
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-c|--config)
+			shift
+			if [ $# -eq 0 ]; then
+				error "Missing argument for -c/--config option"
+			fi
+			cfg_file_override="$1"
+			shift
+			;;
+		--load-bpf)
+			write_version
+			load_bpf
+			exit
+			;;
+		--unload-bpf)
+			unload_bpf
+			exit
+			;;
+		--reload-bpf)
+			unload_bpf
+			load_bpf
+			exit
+			;;
+		--start-mgr)
+			write_version
+			start_mgr
+			exit
+			;;
+		--stop-mgr)
+			stop_mgr
+			exit
+			;;
+		--restart-mgr)
+			stop_mgr
+			start_mgr
+			exit
+			;;
+		--start-logger)
+			write_version
+			start_logger
+			exit
+			;;
+		--stop-logger)
+			stop_logger
+			exit
+			;;
+		--restart-logger)
+			stop_logger
+			start_logger
+			exit
+			;;
+		--start)
+			write_version
+			load_bpf
+			start_logger
+			start_mgr
+			if [ $? -ne 0 ]; then
+				stop_logger
+				unload_bpf
+				exit 1
+			fi
+			exit 0
+			;;
+		--stop)
+			stop_mgr
+			stop_logger
+			unload_bpf
+			exit
+			;;
+		--restart)
+			stop_mgr
+			stop_logger
+			unload_bpf
+			load_bpf
+			start_logger
+			start_mgr
+			if [ $? -ne 0 ]; then
+				stop_logger
+				unload_bpf
+				exit 1
+			fi
+			exit 0
+			;;
+		--status)
+			status
+			exit
+			;;
+		--check-req)
+			check_requirements || exit 1
+			exit 0
+			;;
+		--help)
+			usage
+			exit
+			;;
+		*)
+			error "Bad command line argument: $1, check '--help' for details."
+			exit 2
+			;;
+	esac
+done

@@ -1,0 +1,4 @@
+{
+    "devices": "ens3",
+    "devices-mode": "skb",
+} 
