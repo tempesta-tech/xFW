@@ -6,6 +6,7 @@
 OBJ_DIR = BUILD
 OBJECTS = $(patsubst %.cc, $(OBJ_DIR)/%.o, $(wildcard common/*.cc))
 OBJECTS += $(patsubst %.cc, $(OBJ_DIR)/%.o, $(wildcard *.cc))
+OBJECTS += $(patsubst %.cc, $(OBJ_DIR)/%.o, $(wildcard xfw/*.cc))
 # pidfile.{cc,hh} are inside tempesta fw (see vpath below)
 OBJECTS += $(OBJ_DIR)/pidfile.o
 DEPS = $(OBJECTS:.o=.d)

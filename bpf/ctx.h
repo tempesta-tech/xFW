@@ -6,9 +6,9 @@
  */
 #pragma once
 
-#include "../bpf_uapi_config.h"
-#include "../bpf_uapi_stats.h"
-#include "../map_names.h"
+#include "../common/bpf_uapi_config.h"
+#include "../common/bpf_uapi_stats.h"
+#include "../common/map_names.h"
 #include "compiler.h"
 
 /* Use type redefinitions instead of typedefs to not to confuse BTF/CO-RE. */

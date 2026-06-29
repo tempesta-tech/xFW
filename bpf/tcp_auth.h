@@ -39,7 +39,7 @@
  */
 #pragma once
 
-#include "../generated/vmlinux.h"
+#include "vmlinux.h"
 
 #pragma push_macro("BANNER")
 #undef BANNER

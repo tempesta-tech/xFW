@@ -1,0 +1,191 @@
+/**
+ *	Tempesta bpf map names.
+ *
+ * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+#pragma once
+
+#include "static_assert.h"
+
+#ifndef BPF_OBJ_NAME_LEN
+#define BPF_OBJ_NAME_LEN	16
+#endif
+
+#define MAP_PRIMARY_IDX		0
+#define MAP_SECONDARY_IDX 	1
+
+static inline uint8_t
+next_map_idx(uint8_t idx)
+{
+	return (idx == MAP_PRIMARY_IDX) ? MAP_SECONDARY_IDX : MAP_PRIMARY_IDX;
+}
+
+#define CONCAT2(a,b)			a##b
+#define CONCAT3(a,b,c)			a##b##c
+
+#define STRINGIFY(x)			#x
+#define EXPAND_AND_STRINGIFY(x)		STRINGIFY(x)
+
+#define REGULAR_MAP_REF(basename)	CONCAT2(xfw_, basename)
+#define REGULAR_MAP_STR(basename)	EXPAND_AND_STRINGIFY(REGULAR_MAP_REF(basename))
+
+#define SHADOW_MAP_REF(basename, idx)	CONCAT3(xfw_, idx, _##basename)
+#define SHADOW_MAP_STR(basename, idx)	EXPAND_AND_STRINGIFY(SHADOW_MAP_REF(basename, idx))
+
+#define SELECT_SHADOW_MAP(basename, idx)					\
+({										\
+	void *map = &SHADOW_MAP_REF(basename, MAP_PRIMARY_IDX);			\
+	if ((idx) & MAP_SECONDARY_IDX)						\
+		map = &SHADOW_MAP_REF(basename, MAP_SECONDARY_IDX);		\
+	map;									\
+})
+
+#define CHECK_MAP_NAME_LEN(name)							\
+	STATIC_ASSERT(sizeof(name) <= BPF_OBJ_NAME_LEN, "BPF map name too long");
+
+/**
+ * Map: xfw_ilog_<idx>_<cpu> — where <idx> is the map index and <cpu> is the CPU number.
+ *
+ * The map name must be constructed at runtime by appending the CPU ID and map index.
+ * We also need to validate the final map name length at runtime to ensure it does not
+ * exceed the BPF name length limit (BPF_OBJ_NAME_LEN characters).
+ */
+#define MAP_LOG_BASENAME		ilog
+#define MAP_LOG_BASENAME_STR		REGULAR_MAP_STR(MAP_LOG_BASENAME)
+CHECK_MAP_NAME_LEN(MAP_LOG_BASENAME_STR)
+
+/* Map: xfw_ilog_act_fd */
+#define MAP_LOG_ACTIVE_FD_BASENAME	ilog_act_fd
+#define MAP_LOG_ACTIVE_FD_REF		REGULAR_MAP_REF(MAP_LOG_ACTIVE_FD_BASENAME)
+#define MAP_LOG_ACTIVE_FD_STR		REGULAR_MAP_STR(MAP_LOG_ACTIVE_FD_BASENAME)
+CHECK_MAP_NAME_LEN(MAP_LOG_ACTIVE_FD_STR)
+
+/* Map: xfw_ilog_ev_cnt for bpf only part */
+#define MAP_LOG_EV_CNT_BASENAME		ilog_ev_cnt
+#define MAP_LOG_EV_CNT_REF		REGULAR_MAP_REF(MAP_LOG_EV_CNT_BASENAME)
+#define MAP_LOG_EV_CNT_STR		REGULAR_MAP_STR(MAP_LOG_EV_CNT_BASENAME)
+
+/* Map: xfw_tcp_conns  for bpf only part */
+#define MAP_TCP_CONN_BASENAME		tcp_conns
+#define MAP_TCP_CONN_REF		REGULAR_MAP_REF(MAP_TCP_CONN_BASENAME)
+#define MAP_TCP_CONN_STR		REGULAR_MAP_STR(MAP_TCP_CONN_BASENAME)
+CHECK_MAP_NAME_LEN(MAP_TCP_CONN_STR)
+
+/* Map: xfw_ilog_ev_rb */
+#define MAP_LOG_EVENTS_BASENAME		ilog_ev_rb
+#define MAP_LOG_EVENTS_REF		REGULAR_MAP_REF(MAP_LOG_EVENTS_BASENAME)
+#define MAP_LOG_EVENTS_STR		REGULAR_MAP_STR(MAP_LOG_EVENTS_BASENAME)
+CHECK_MAP_NAME_LEN(MAP_LOG_EVENTS_STR)
+
+/* Map: xfw_dns_egr_queries*/
+#define MAP_DNS_EGR_FD_BASENAME		dns_egr_qrs
+#define MAP_DNS_EGR_FD_REF		REGULAR_MAP_REF(MAP_DNS_EGR_FD_BASENAME)
+#define MAP_DNS_EGR_FD_STR		REGULAR_MAP_STR(MAP_DNS_EGR_FD_BASENAME)
+CHECK_MAP_NAME_LEN(MAP_DNS_EGR_FD_STR)
+
+/* Map: xfw_cfg */
+#define MAP_CFG_BASENAME		cfg
+#define MAP_CFG_REF			REGULAR_MAP_REF(MAP_CFG_BASENAME)
+#define MAP_CFG_STR			REGULAR_MAP_STR(MAP_CFG_BASENAME)
+CHECK_MAP_NAME_LEN(MAP_CFG_STR)
+
+/* Map: xfw_src_ratelim */
+#define MAP_SRC_RATELIM_BASENAME		src_ratelim
+#define MAP_SRC_RATELIM_REF			REGULAR_MAP_REF(MAP_SRC_RATELIM_BASENAME)
+#define MAP_SRC_RATELIM_STR			REGULAR_MAP_STR(MAP_SRC_RATELIM_BASENAME)
+CHECK_MAP_NAME_LEN(MAP_SRC_RATELIM_STR)
+
+/* Map: xfw_src_port_rl */
+#define MAP_SRC_PORT_RL_BASENAME		src_port_rl
+#define MAP_SRC_PORT_RL_REF			REGULAR_MAP_REF(MAP_SRC_PORT_RL_BASENAME)
+#define MAP_SRC_PORT_RL_STR			REGULAR_MAP_STR(MAP_SRC_PORT_RL_BASENAME)
+CHECK_MAP_NAME_LEN(MAP_SRC_PORT_RL_STR)
+
+/* Map: xfw_global_stats */
+#define MAP_GLBL_STAT_BASENAME		glbl_stats
+#define MAP_GLBL_STAT_REF		REGULAR_MAP_REF(MAP_GLBL_STAT_BASENAME)
+#define MAP_GLBL_STAT_STR		REGULAR_MAP_STR(MAP_GLBL_STAT_BASENAME)
+CHECK_MAP_NAME_LEN(MAP_GLBL_STAT_STR)
+
+/* Map: xfw_ratelim */
+#define MAP_RATELIMIT_BASENAME		ratelim
+#define MAP_RATELIMIT_REF		REGULAR_MAP_REF(MAP_RATELIMIT_BASENAME)
+#define MAP_RATELIMIT_STR		REGULAR_MAP_STR(MAP_RATELIMIT_BASENAME)
+CHECK_MAP_NAME_LEN(MAP_RATELIMIT_STR)
+
+/* Pseudo-map for per-cpu syncookies mode control. */
+#define MAP_SYNCOOKIES_BASENAME		syncookie
+#define MAP_SYNCOOKIES_REF		REGULAR_MAP_REF(MAP_SYNCOOKIES_BASENAME)
+#define MAP_SYNCOOKIES_STR		REGULAR_MAP_STR(MAP_SYNCOOKIES_BASENAME)
+CHECK_MAP_NAME_LEN(MAP_SYNCOOKIES_STR)
+
+/* Shadow maps: xfw_0_src_4_udp, xfw_1_src_4_udp */
+#define MAP_SRC_4_UDP_BASENAME		src_4_udp
+#define MAP_SRC_4_UDP_REF(idx)		SHADOW_MAP_REF(MAP_SRC_4_UDP_BASENAME, idx)
+#define MAP_SRC_4_UDP_STR(idx)		SHADOW_MAP_STR(MAP_SRC_4_UDP_BASENAME, idx)
+CHECK_MAP_NAME_LEN(MAP_SRC_4_UDP_STR(MAP_PRIMARY_IDX))
+CHECK_MAP_NAME_LEN(MAP_SRC_4_UDP_STR(MAP_SECONDARY_IDX))
+
+/* Shadow maps: xfw_0_src_4_tcp, xfw_1_src_4_tcp */
+#define MAP_SRC_4_TCP_BASENAME		src_4_tcp
+#define MAP_SRC_4_TCP_REF(idx)		SHADOW_MAP_REF(MAP_SRC_4_TCP_BASENAME, idx)
+#define MAP_SRC_4_TCP_STR(idx)		SHADOW_MAP_STR(MAP_SRC_4_TCP_BASENAME, idx)
+CHECK_MAP_NAME_LEN(MAP_SRC_4_TCP_STR(MAP_PRIMARY_IDX))
+CHECK_MAP_NAME_LEN(MAP_SRC_4_TCP_STR(MAP_SECONDARY_IDX))
+
+/* Shadow maps: xfw_0_src_6_udp, xfw_1_src_6_udp */
+#define MAP_SRC_6_UDP_BASENAME		src_6_udp
+#define MAP_SRC_6_UDP_REF(idx)		SHADOW_MAP_REF(MAP_SRC_6_UDP_BASENAME, idx)
+#define MAP_SRC_6_UDP_STR(idx)		SHADOW_MAP_STR(MAP_SRC_6_UDP_BASENAME, idx)
+CHECK_MAP_NAME_LEN(MAP_SRC_6_UDP_STR(MAP_PRIMARY_IDX))
+CHECK_MAP_NAME_LEN(MAP_SRC_6_UDP_STR(MAP_SECONDARY_IDX))
+
+/* Shadow maps: xfw_0_src_6_tcp, xfw_1_src_6_tcp */
+#define MAP_SRC_6_TCP_BASENAME		src_6_tcp
+#define MAP_SRC_6_TCP_REF(idx)		SHADOW_MAP_REF(MAP_SRC_6_TCP_BASENAME, idx)
+#define MAP_SRC_6_TCP_STR(idx)		SHADOW_MAP_STR(MAP_SRC_6_TCP_BASENAME, idx)
+CHECK_MAP_NAME_LEN(MAP_SRC_6_TCP_STR(MAP_PRIMARY_IDX))
+CHECK_MAP_NAME_LEN(MAP_SRC_6_TCP_STR(MAP_SECONDARY_IDX))
+
+/* Shadow maps: xfw_0_src_p_udp, xfw_1_src_p_udp */
+#define MAP_SRC_P_UDP_BASENAME		src_p_udp
+#define MAP_SRC_P_UDP_REF(idx)		SHADOW_MAP_REF(MAP_SRC_P_UDP_BASENAME, idx)
+#define MAP_SRC_P_UDP_STR(idx)		SHADOW_MAP_STR(MAP_SRC_P_UDP_BASENAME, idx)
+CHECK_MAP_NAME_LEN(MAP_SRC_P_UDP_STR(MAP_PRIMARY_IDX))
+CHECK_MAP_NAME_LEN(MAP_SRC_P_UDP_STR(MAP_SECONDARY_IDX))
+
+/* Shadow maps: xfw_0_src_p_tcp, xfw_1_src_p_tcp */
+#define MAP_SRC_P_TCP_BASENAME		src_p_tcp
+#define MAP_SRC_P_TCP_REF(idx)		SHADOW_MAP_REF(MAP_SRC_P_TCP_BASENAME, idx)
+#define MAP_SRC_P_TCP_STR(idx)		SHADOW_MAP_STR(MAP_SRC_P_TCP_BASENAME, idx)
+CHECK_MAP_NAME_LEN(MAP_SRC_P_TCP_STR(MAP_PRIMARY_IDX))
+CHECK_MAP_NAME_LEN(MAP_SRC_P_TCP_STR(MAP_SECONDARY_IDX))
+
+/* Shadow maps: xfw_0_icmp, xfw_1_icmp */
+#define MAP_ICMP_BASENAME		icmp
+#define MAP_ICMP_REF(idx)		SHADOW_MAP_REF(MAP_ICMP_BASENAME, idx)
+#define MAP_ICMP_STR(idx)		SHADOW_MAP_STR(MAP_ICMP_BASENAME, idx)
+CHECK_MAP_NAME_LEN(MAP_ICMP_STR(MAP_PRIMARY_IDX))
+CHECK_MAP_NAME_LEN(MAP_ICMP_STR(MAP_SECONDARY_IDX))
+
+/* Shadow maps: xfw_0_dst, xfw_1_dst */
+#define MAP_DST_BASENAME		dst
+#define MAP_DST_REF(idx)		SHADOW_MAP_REF(MAP_DST_BASENAME, idx)
+#define MAP_DST_STR(idx)		SHADOW_MAP_STR(MAP_DST_BASENAME, idx)
+CHECK_MAP_NAME_LEN(MAP_DST_STR(MAP_PRIMARY_IDX))
+CHECK_MAP_NAME_LEN(MAP_DST_STR(MAP_SECONDARY_IDX))
+
+/* Shadow maps: xfw_0_net_ip4, xfw_1_net_ip4 */
+#define MAP_NET_IP4_BASENAME		net_ip4
+#define MAP_NET_IP4_REF(idx)		SHADOW_MAP_REF(MAP_NET_IP4_BASENAME, idx)
+#define MAP_NET_IP4_STR(idx)		SHADOW_MAP_STR(MAP_NET_IP4_BASENAME, idx)
+CHECK_MAP_NAME_LEN(MAP_NET_IP4_STR(MAP_PRIMARY_IDX))
+CHECK_MAP_NAME_LEN(MAP_NET_IP4_STR(MAP_SECONDARY_IDX))
+
+/* Shadow maps: xfw_0_net_ip6, xfw_1_net_ip6 */
+#define MAP_NET_IP6_BASENAME		net_ip6
+#define MAP_NET_IP6_REF(idx)		SHADOW_MAP_REF(MAP_NET_IP6_BASENAME, idx)
+#define MAP_NET_IP6_STR(idx)		SHADOW_MAP_STR(MAP_NET_IP6_BASENAME, idx)
+CHECK_MAP_NAME_LEN(MAP_NET_IP6_STR(MAP_PRIMARY_IDX))
+CHECK_MAP_NAME_LEN(MAP_NET_IP6_STR(MAP_SECONDARY_IDX))

@@ -6,12 +6,12 @@
  */
 #pragma once
 
-#include "../generated/vmlinux.h"
+#include "vmlinux.h"
 
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
-#include "../static_assert.h"
+#include "../common/static_assert.h"
 
 #ifndef UINT64_MAX
 #define UINT64_MAX		18446744073709551615ULL

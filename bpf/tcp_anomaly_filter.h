@@ -4,8 +4,8 @@
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
-#include "../generated/vmlinux.h"
-#include "../statistics.h"
+#include "vmlinux.h"
+#include "../common/statistics.h"
 
 #pragma push_macro("BANNER")
 #undef BANNER

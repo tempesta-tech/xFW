@@ -6,7 +6,7 @@
  */
 #pragma once
 
-#include "../generated/vmlinux.h"
+#include "vmlinux.h"
 
 /*
  * BANNER must be defined before including the file to show the subsystem in

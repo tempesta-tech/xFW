@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #pragma once
-#include "../generated/vmlinux.h"
+#include "vmlinux.h"
 
 /**
  * Inline BPF-compatible set/test functions for uint64_t array

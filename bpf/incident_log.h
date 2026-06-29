@@ -19,8 +19,8 @@
 
 #include <linux/errno.h>
 
-#include "../generated/vmlinux.h"
-#include "../bpf_uapi.h"
+#include "vmlinux.h"
+#include "../common/bpf_uapi.h"
 
 #include "compiler.h"
 #include "incident_log_maps.h"

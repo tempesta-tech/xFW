@@ -64,7 +64,7 @@
  */
 #pragma once
 
-#include "../incident_log_types.h"
+#include "../common/incident_log_types.h"
 
 /**
  * These BPF_MAP_TYPE_HASH maps hold per-CPU decision statistics.

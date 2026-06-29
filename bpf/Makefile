@@ -1,4 +1,4 @@
-#	Tempesta Escudo bpf programs build
+#	Tempesta xFW eBPF programs build
 #
 # SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -15,7 +15,7 @@ BPFDIR := $(LIBDIR)/bpf
 # Override optimization level to -O2 to avoid "BPF stack limit exceeded" errors
 BPF_CFLAGS := $(filter-out -O%,$(CFLAGS)) -O2
 BPF_CFLAGS += -MMD -MP -Wno-option-ignored -target bpf -g -fno-stack-protector
-BPF_CFLAGS += -I/usr/include/x86_64-linux-gnu/
+BPF_CFLAGS += -I/usr/include/x86_64-linux-gnu/ -I../BUILD/
 
 ifneq ($(filter-out 0,$(DEBUG)),)
 	BPF_CFLAGS += -DXFW_DEBUG=1

@@ -29,7 +29,7 @@ fi
 
 declare project_path=""
 # 1) User-provided path (may be empty)
-declare escudo_path="${ESCUDO_PATH:-}"
+declare xfw_path="${TEMPESTA_XFW_PATH:-}"
 # 2) Default path
 declare default_path="/opt/tempesta"
 # TODO #10: move to /sys/fs/bpf/xfw
@@ -40,12 +40,12 @@ declare -r version_file="/tmp/tempesta/xfw/version"
 declare -r status_dir="/tmp/tempesta/xfw/status/"
 
 # Select the first existing directory
-if [ -n "$escudo_path" ] && [ -d "$escudo_path" ]; then
-	project_path="$escudo_path"
+if [ -n "$xfw_path" ] && [ -d "$xfw_path" ]; then
+	project_path="$xfw_path"
 elif [ -d "$default_path" ]; then
 	project_path="$default_path"
 else
-	echo "Error: neither \$escudo_path nor $default_path exist" >&2
+	echo "Error: neither \$xfw_path nor $default_path exist" >&2
 	exit 1
 fi
 

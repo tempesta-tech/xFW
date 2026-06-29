@@ -58,10 +58,10 @@ $(PREFIX)/bin/xfwctl --help
 ```
 
 For development or local testing, you can run the script without installation
-by setting the ESCUDO_PATH environment variable manually:
+by setting the `TEMPESTA_XFW_PATH` environment variable manually:
 
 ```bash
-ESCUDO_PATH=./BUILD ./xfw/xfwctl --start
+TEMPESTA_XFW_PATH=./BUILD ./xfw/xfwctl --start
 ```
 
 If you installed the project with a custom prefix, for example:
@@ -70,16 +70,16 @@ If you installed the project with a custom prefix, for example:
 make install PREFIX=/custom/path
 ```
 
-then you should run the script with the corresponding ESCUDO_PATH:
+then you should run the script with the corresponding `TEMPESTA_XFW_PATH`:
 
 ```bash
-ESCUDO_PATH=/custom/path ./xfw/xfwctl --start
+TEMPESTA_XFW_PATH=/custom/path ./xfw/xfwctl --start
 ```
 
 
-## Integrational python testing
+## Integration Python testing
 
-Integrational python tests can be found in `xfw/t/func`. Read corresponding
+Integration Python tests can be found in `xfw/t/func`. Read corresponding
 [README.md file](xfw/t/func/README.md) to prepare environment and run functional tests.
 
 

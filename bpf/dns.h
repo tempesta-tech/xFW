@@ -6,9 +6,9 @@
  */
 #pragma once
 
-#include "../generated/vmlinux.h"
+#include "vmlinux.h"
 
-#include "../bpf_uapi_stats.h"
+#include "../common/bpf_uapi_stats.h"
 
 #pragma push_macro("BANNER")
 #undef BANNER

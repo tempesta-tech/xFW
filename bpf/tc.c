@@ -8,8 +8,9 @@
 #define XFW_TC
 #define BANNER "tc"
 
-#include "../generated/vmlinux.h"
-#include "../bpf_uapi.h"
+#include "vmlinux.h"
+
+#include "../common/bpf_uapi.h"
 
 #ifndef TC_ACT_OK
 #define TC_ACT_OK		BPF_OK
@@ -26,6 +27,7 @@
 #include "log.h"
 #include "parsing_helpers.h"
 #include "tcp_auth.h"
+
 /* Protected-network tries classify egress packets as internal or upstream. */
 SHADOW_MAP(MAP_NET_IP4_BASENAME, BPF_MAP_TYPE_LPM_TRIE, XFW_MAX_PROTECTED_NET_RULES,
 	    XfwIpv4LpmKey, int, BPF_F_NO_PREALLOC);

@@ -17,8 +17,8 @@
 #include "../../lib/bpf/hash_map.hh"
 #include "../../lib/bpf/map.hh"
 #include "../../lib/bpf/per_cpu_counter.hh"
-#include "../../xfw/incident_log_types.h"
-#include "../../xfw/map_names.h"
+#include "../../common/incident_log_types.h"
+#include "../../common/map_names.h"
 
 #include "incident_log_clickhouse.hh"
 

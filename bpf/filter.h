@@ -10,13 +10,13 @@
  */
 #pragma once
 
-#include "../ip_helpers.h"
+#include "../common/ip_helpers.h"
 
 /* Print debug messages of the context of a subsustem using the routines. */
 #ifndef BANNER
 #define BANNER "filter"
 #endif
-#include "../bpf_uapi_proto_keys.h"
+#include "../common/bpf_uapi_proto_keys.h"
 
 #include "log.h"
 

@@ -14,10 +14,10 @@
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 #else
-#include "../generated/vmlinux.h"
+#include "vmlinux.h"
 #endif
 
-#include "../map_names.h"
+#include "../common/map_names.h"
 
 #define SHADOW_MAP_SLOT(basename, idx, map_t, max_sz, key_t, val_t, flags)	\
 	struct {								\
