@@ -1,0 +1,3 @@
+[submodule "fw"]
+	path = fw
+	url = git@github.com:tempesta-tech/tempesta.git

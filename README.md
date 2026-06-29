@@ -5,12 +5,13 @@ An XDP/TC eBPF volumetric DDoS protection solution.
 ## Documentation
 
 
-See [Wiki](https://github.com/tempesta-tech/xfw/wiki) for public accessible docs, e.g. a user guide.
+See Tempesta Escudo [Wiki](https://github.com/tempesta-tech/xfw/wiki) for Tempesta
+xFW documentation.
 
 
 ## Build
 
-At least clang-19 is required.
+Ubuntu 24 LTS and at least clang-19 are required.
 
 ```bash
 sudo apt install -y cmake make xdp-tools \

@@ -17,10 +17,10 @@
 #include "../../lib/bpf/map.hh"
 #include "../../lib/bpf/per_cpu_counter.hh"
 
-#include "../../xfw/bpf_uapi_action_rules.h"
-#include "../../xfw/bpf_uapi_config.h"
-#include "../../xfw/bpf_uapi_proto_keys.h"
-#include "../../xfw/map_names.h"
+#include "../../common/bpf_uapi_action_rules.h"
+#include "../../common/bpf_uapi_config.h"
+#include "../../common/bpf_uapi_proto_keys.h"
+#include "../../common/map_names.h"
 
 #include "configuration.hh"
 #include "index_pool.hh"

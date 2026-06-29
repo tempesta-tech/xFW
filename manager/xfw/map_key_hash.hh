@@ -6,7 +6,7 @@
  */
 #pragma once
 #include <string.h>
-#include "../../xfw/bpf_uapi_proto_keys.h"
+#include "../../common/bpf_uapi_proto_keys.h"
 
 template<typename T>
 inline void
