@@ -9,7 +9,7 @@
 #define BANNER "xdp"
 
 #include "vmlinux.h"
-#include "../bpf_uapi/types.h"
+#include "../bpf_uapi/supported_protocols.h"
 
 #include "ctx.h"
 #include "dns.h"
@@ -591,7 +591,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 	}
 
 	switch (dst_key->proto) {
-	case IPPROTO_TCP: {
+	case XFW_L4_PROTO_TCP: {
 		REG_PACKET_GLOBAL(ctx, XFW_TCP_TOTAL_INGRESS);
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_BADHDR_INGRESS);
@@ -607,7 +607,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 		};
 		return tcp_flags_filter(ctx, &addr);
 	}
-	case IPPROTO_UDP: {
+	case XFW_L4_PROTO_UDP: {
 		REG_PACKET_GLOBAL(ctx, XFW_UDP_TOTAL_INGRESS);
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_BADHDR_INGRESS);
@@ -620,8 +620,8 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 		CHAIN(ingress_dns_filter, ctx);
 		return src_filter(ctx, ctx->uh->source, src_ip_key);
 	};
-	case IPPROTO_ICMP:
-	case IPPROTO_ICMPV6: {
+	case XFW_L4_PROTO_ICMP:
+	case XFW_L4_PROTO_ICMPV6: {
 		XfwICMPCommon *ih;
 		XfwIcmpKey key;
 		REG_PACKET_GLOBAL(ctx, XFW_ICMP_TOTAL_INGRESS);
@@ -638,7 +638,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 		/* ICMP has no destination port, so dst rules cannot refine this path. */
 		return XFW_CTX_PASS;
 	};
-	case IPPROTO_GRE:
+	case XFW_L4_PROTO_GRE:
 		return XFW_MAKE_CTX_PASS(ctx, XFW_GRE_INGRESS);
 	default:
 		/* should we calculate it in special statistic? */

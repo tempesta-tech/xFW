@@ -12,11 +12,13 @@
 #include <cstdint>
 #endif
 
+#include "protocols.h"
+
 enum XfwSupportedProtocols : uint8_t {
-	ICMP			= 1,
-	TCP			= 6,
-	UDP			= 17,
-	GRE			= 47,
-	ICMPV6			= 58,
+	XFW_L4_PROTO_ICMP		= IPPROTO_ICMP,
+	XFW_L4_PROTO_TCP		= IPPROTO_TCP,
+	XFW_L4_PROTO_UDP		= IPPROTO_UDP,
+	XFW_L4_PROTO_GRE		= IPPROTO_GRE,
+	XFW_L4_PROTO_ICMPV6		= IPPROTO_ICMPV6,
 	XFW_SUPPORTED_PROTOCOL_MAX
 };

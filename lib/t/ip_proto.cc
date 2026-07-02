@@ -22,11 +22,11 @@ TEST(ParsesXfwConfig, WithAllSupportedProtocols)
 	ASSERT_TRUE(conf->prvt->xfw_conf->ip_proto_.has_value());
 
 	const auto &protocols = conf->prvt->xfw_conf->ip_proto_->protocols_;
-	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::ICMP));
-	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::GRE));
-	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::TCP));
-	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::UDP));
-	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::ICMPV6));
+	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::XFW_L4_PROTO_ICMP));
+	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::XFW_L4_PROTO_GRE));
+	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::XFW_L4_PROTO_TCP));
+	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::XFW_L4_PROTO_UDP));
+	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::XFW_L4_PROTO_ICMPV6));
 }
 
 TEST(ParsesXfwConfig, WithIpProtoDeletion)
@@ -66,11 +66,11 @@ TEST(SerializesConfig, WithIpProtoOnly)
 
 	BitSet<XfwSupportedProtocols, XFW_SUPPORTED_PROTOCOL_MAX> protocols;
 	ASSERT_TRUE(bitset_deserialize(*xfw_cfg->ip_proto()->protocols(), protocols));
-	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::ICMP));
-	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::GRE));
-	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::TCP));
-	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::UDP));
-	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::ICMPV6));
+	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::XFW_L4_PROTO_ICMP));
+	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::XFW_L4_PROTO_GRE));
+	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::XFW_L4_PROTO_TCP));
+	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::XFW_L4_PROTO_UDP));
+	ASSERT_TRUE(protocols.test(XfwSupportedProtocols::XFW_L4_PROTO_ICMPV6));
 }
 
 TEST(SerializesConfig, WithoutIpProto)

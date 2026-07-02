@@ -47,11 +47,11 @@ IpProtoSection::IpProtoSection::process_body()
 	const auto num = parsing_helpers::parse_as<uint32_t>(nv);
 	const auto e = static_cast<XfwSupportedProtocols>(num);
 	switch (e) {
-		case XfwSupportedProtocols::ICMP: break;
-		case XfwSupportedProtocols::TCP: break;
-		case XfwSupportedProtocols::UDP: break;
-		case XfwSupportedProtocols::GRE: break;
-		case XfwSupportedProtocols::ICMPV6: break;
+		case XfwSupportedProtocols::XFW_L4_PROTO_ICMP: break;
+		case XfwSupportedProtocols::XFW_L4_PROTO_TCP: break;
+		case XfwSupportedProtocols::XFW_L4_PROTO_UDP: break;
+		case XfwSupportedProtocols::XFW_L4_PROTO_GRE: break;
+		case XfwSupportedProtocols::XFW_L4_PROTO_ICMPV6: break;
 		default:
 			throw Except("Unknown protocol {} in ip_proto section", num);
 	}

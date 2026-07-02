@@ -72,8 +72,8 @@ csum_unfold(__sum16 csum)
 static __always_inline void
 ipv4_set_ttl_csum(XfwGlobalCtx *ctx, uint64_t *csum64)
 {
-	__be16 old_w = bpf_htons(((uint16_t)ctx->iph4->ttl << 8) | IPPROTO_TCP);
-	__be16 new_w = bpf_htons(((uint16_t)XFW_DEFAULT_TTL << 8) | IPPROTO_TCP);
+	__be16 old_w = bpf_htons(((uint16_t)ctx->iph4->ttl << 8) | XFW_L4_PROTO_TCP);
+	__be16 new_w = bpf_htons(((uint16_t)XFW_DEFAULT_TTL << 8) | XFW_L4_PROTO_TCP);
 
 	*csum64 += ~(__be32)old_w;
 	*csum64 += new_w;
@@ -100,7 +100,7 @@ tcp_ipv4_csum_update(XfwGlobalCtx *ctx, uint64_t csum)
 	 */
 	csum += (__be32)ctx->iph4->saddr;
 	csum += (__be32)ctx->iph4->daddr;
-	csum += (IPPROTO_TCP + ctx->th->doff * 4) << 8;
+	csum += (XFW_L4_PROTO_TCP + ctx->th->doff * 4) << 8;
 
 	csum = (csum & 0xffffffffUL) + (csum >> 32);
 	csum = (csum & 0xffffffffUL) + (csum >> 32);
@@ -121,7 +121,7 @@ tcp_ipv6_csum_update(XfwGlobalCtx *ctx, uint64_t csum)
 		csum += (__be32)ctx->iph6->daddr.in6_u.u6_addr32[i];
 
 	csum += bpf_htonl(ctx->th->doff * 4);
-	csum += bpf_htonl(IPPROTO_TCP);
+	csum += bpf_htonl(XFW_L4_PROTO_TCP);
 
 	csum = (csum & 0xffffffffUL) + (csum >> 32);
 	csum = (csum & 0xffffffffUL) + (csum >> 32);

@@ -8,6 +8,7 @@
 
 #include "../bpf_uapi/config.h"
 #include "../bpf_uapi/stats.h"
+#include "../bpf_uapi/types.h"
 #include "../bpf_uapi/map_names.h"
 #include "compiler.h"
 
@@ -45,7 +46,7 @@ typedef struct XfwHdrCursor {
  * @ipver	- ETH_P_IP or ETH_P_IPV6
  * @ctx		- xdp_md or __sk_buff, depending on hook
  * @ts_jiff	- current jiffies timestamp shared by all filters
- * @l4_proto	- IPPROTO_UDP or IPPROTO_TCP if != 0
+ * @l4_proto	- XFW_L4_PROTO_UDP or XFW_L4_PROTO_TCP if != 0
  */
 typedef struct XfwGlobalCtx {
 	XfwFilterCfg	*cfg;
