@@ -25,10 +25,10 @@ static auto
 make_default_ip_proto()
 {
 	BitSet<XfwSupportedProtocols, XFW_SUPPORTED_PROTOCOL_MAX> bs;
-	bs.set(XfwSupportedProtocols::TCP);
-	bs.set(XfwSupportedProtocols::UDP);
-	bs.set(XfwSupportedProtocols::ICMP);
-	bs.set(XfwSupportedProtocols::ICMPV6);
+	bs.set(XfwSupportedProtocols::XFW_L4_PROTO_TCP);
+	bs.set(XfwSupportedProtocols::XFW_L4_PROTO_UDP);
+	bs.set(XfwSupportedProtocols::XFW_L4_PROTO_ICMP);
+	bs.set(XfwSupportedProtocols::XFW_L4_PROTO_ICMPV6);
 	return bs;
 }
 

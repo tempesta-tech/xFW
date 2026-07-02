@@ -33,7 +33,7 @@
  * indexing by th->tcp_flags in bpf.
  */	
 enum TcpControlBits : uint8_t {
-	XFW_BIT_NONE		= 0x00,	// no tcp flags
+	XFW_BIT_NONE			= 0x00,	// no tcp flags
 	XFW_BIT_FIN			= 0x01,	// only bit 0 is set
 	XFW_BIT_SYN			= 0x02,	// only bit 1 is set
 	//XFW_BIT_SYN+XFW_BIT_FIN	= 0x03,	// two bits are set, so we setup only bit 3.

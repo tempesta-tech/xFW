@@ -86,7 +86,7 @@ static __always_inline int
 out_process_l4(XfwGlobalCtx *ctx, XfwDstKey *dst_key)
 {
 	switch (ctx->l4_proto) {
-	case IPPROTO_TCP: {
+	case XFW_L4_PROTO_TCP: {
 		REG_PACKET_GLOBAL(ctx, XFW_TCP_TOTAL_EGRESS);
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_TCP_BADHDR_EGRESS);
@@ -95,7 +95,7 @@ out_process_l4(XfwGlobalCtx *ctx, XfwDstKey *dst_key)
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
 	}
-	case IPPROTO_UDP: {
+	case XFW_L4_PROTO_UDP: {
 		REG_PACKET_GLOBAL(ctx, XFW_UDP_TOTAL_EGRESS);
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_UDP_BADHDR_EGRESS);

@@ -91,18 +91,10 @@
 #include <linux/types.h>
 #endif
 
-#include "protocols.h"
 #include "static_assert.h"
 
 #define XFW_IP_VER_4		1
 #define XFW_IP_VER_6		2
-
-enum {
-	XFW_L4_PROTO_ICMP	= IPPROTO_ICMP,
-	XFW_L4_PROTO_ICMPV6	= IPPROTO_ICMPV6,
-	XFW_L4_PROTO_TCP	= IPPROTO_TCP,
-	XFW_L4_PROTO_UDP	= IPPROTO_UDP,
-};
 
 typedef __be16		XfwPort;
 

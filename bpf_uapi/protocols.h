@@ -8,6 +8,12 @@
  */
 #pragma once
 
+#ifdef BPF_PROGRAM
+#include "vmlinux.h"
+#else
+#include <arpa/inet.h>
+#endif
+
 #define ETH_P_8021AD		0x88A8 /* Provider VLAN tag */
 #define ETH_P_8021Q		0x8100 /* Customer VLAN tag */
 #define ETH_P_IP		0x0800 /* IPv4 EtherType */
@@ -27,7 +33,7 @@
 #define IPPROTO_UDP		17
 #endif
 #ifndef IPPROTO_GRE
-#define IPPROTO_GRE	47
+#define IPPROTO_GRE		47
 #endif
 #ifndef ETH_P_IP
 #define ETH_P_IP		0x0800 /* IPv4 header type */
