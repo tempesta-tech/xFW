@@ -8,9 +8,9 @@
  */
 #pragma once
 
-#include "../lib/proto/default_index.h"
-#include "../lib/proto/supported_protocols.h"
-#include "../lib/proto/tcp_control_bits.h"
+#include "default_index.h"
+#include "supported_protocols.h"
+#include "tcp_control_bits.h"
 
 #include "bpf_bitset.h"
 #include "bpf_uapi_action_rules.h"

@@ -6,8 +6,13 @@
  */
 
 #pragma once
+#ifdef BPF_PROGRAM
+#include "vmlinux.h"
+#else
+#include <cstdint>
+#endif
 
-/**
+/*
  * TCP control flags are stored in an 8-bit field inside the TCP header(FIN, SYN,
  * RST, PSH, ACK, URG, ECE, CWR).
  * 
@@ -26,8 +31,7 @@
  * In other words, the bit index is equal to the numeric value of the TCP flags
  * byte. This allows O(1) lookup with no decoding or branching — just direct 
  * indexing by th->tcp_flags in bpf.
- */
-	
+ */	
 enum TcpControlBits : uint8_t {
 	XFW_BIT_NONE		= 0x00,	// no tcp flags
 	XFW_BIT_FIN			= 0x01,	// only bit 0 is set

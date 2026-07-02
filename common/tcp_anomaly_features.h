@@ -6,6 +6,11 @@
  */
 
 #pragma once
+#ifdef BPF_PROGRAM
+#include "vmlinux.h"
+#else
+#include <cstdint>
+#endif
 
 enum TcpAnomalyFeature : uint8_t {
 	XFW_BAD_FLAGS		= 0,

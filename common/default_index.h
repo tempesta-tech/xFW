@@ -6,8 +6,13 @@
  */
 
 #pragma once
+#ifdef BPF_PROGRAM
+#include "vmlinux.h"
+#else
+#include <cstdint>
+#endif
 
-/**
+/*
  * Indices for the "defaults_" array (default XFW rules).
  *
  * Each value corresponds to a specific combination of:

@@ -6,6 +6,11 @@
  */
 
 #pragma once
+#ifdef BPF_PROGRAM
+#include "vmlinux.h"
+#else
+#include <cstdint>
+#endif
 
 enum XfwSupportedProtocols : uint8_t {
 	ICMP			= 1,
