@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 OBJ_DIR = BUILD
-OBJECTS = $(patsubst %.cc, $(OBJ_DIR)/%.o, $(wildcard common/*.cc))
+OBJECTS = $(patsubst %.cc, $(OBJ_DIR)/%.o, $(wildcard bpf_uapi/*.cc))
 OBJECTS += $(patsubst %.cc, $(OBJ_DIR)/%.o, $(wildcard *.cc))
 OBJECTS += $(patsubst %.cc, $(OBJ_DIR)/%.o, $(wildcard xfw/*.cc))
 # pidfile.{cc,hh} are inside tempesta fw (see vpath below)
@@ -14,7 +14,7 @@ LDFLAGS	+= -L$(BUILD_LIBDIR) -lspdlog -lmaxminddb -lbpf
 #we still build libtus from sources, because Tempesta uses another compiler fot it
 INCLUDES += -I$(BUILD_INCLUDE) -I../fw/libtus
 
-vpath %.cc . common ../fw/libtus
+vpath %.cc . bpf_uapi ../fw/libtus
 
 .PHONY: build tfw_mgr install clean test
 

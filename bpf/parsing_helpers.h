@@ -1,7 +1,7 @@
 /*
  *	Tempesta xFW L2-L4 protocols parsing
  *
- * The L2-L3 part is derived from xdp-tutorial/common/parsing_helpers.h
+ * The L2-L3 part is derived from xdp-tutorial/bpf_uapi/parsing_helpers.h
  *
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
  * SPDX-License-Identifier: GPL-2.0-or-later

@@ -9,7 +9,7 @@
 #define BANNER "xdp"
 
 #include "vmlinux.h"
-#include "../common/bpf_uapi.h"
+#include "../bpf_uapi/types.h"
 
 #include "ctx.h"
 #include "dns.h"

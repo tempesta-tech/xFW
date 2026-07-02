@@ -11,7 +11,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
-#include "../common/static_assert.h"
+#include "../bpf_uapi/static_assert.h"
 
 #ifndef UINT64_MAX
 #define UINT64_MAX		18446744073709551615ULL

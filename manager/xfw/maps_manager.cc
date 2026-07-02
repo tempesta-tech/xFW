@@ -10,7 +10,7 @@
 
 #include "../../lib/log.hh"
 #include "../../lib/error.hh"
-#include "../../common/ip_helpers.h"
+#include "../../bpf_uapi/ip_helpers.h"
 
 #include "../ip_formatter.hh"
 #include "../xfw_update_error.hh"

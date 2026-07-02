@@ -10,7 +10,7 @@
 
 #include "vmlinux.h"
 
-#include "../common/bpf_uapi.h"
+#include "../bpf_uapi/types.h"
 
 #ifndef TC_ACT_OK
 #define TC_ACT_OK		BPF_OK

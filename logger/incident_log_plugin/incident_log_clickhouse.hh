@@ -10,7 +10,7 @@
 
 #include <string_view>
 
-#include "../../common/incident_log_types.h"
+#include "../../bpf_uapi/incident_log_types.h"
 #include "../../fw/logger/clickhouse/clickhouse_decorator.hh"
 
 class IncidentLogClickhouse final: public ClickHouseDecorator

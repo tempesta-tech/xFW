@@ -12,10 +12,10 @@
 #include <ostream>
 #include <vector>
 
-#include "../../common/default_index.h"
-#include "../../common/tcp_control_bits.h"
-#include "../../common/tcp_anomaly_features.h"
-#include "../../common/supported_protocols.h"
+#include "../../bpf_uapi/default_index.h"
+#include "../../bpf_uapi/tcp_control_bits.h"
+#include "../../bpf_uapi/tcp_anomaly_features.h"
+#include "../../bpf_uapi/supported_protocols.h"
 
 #include "../bitset.hh"
 #include "../enum_array.hh"

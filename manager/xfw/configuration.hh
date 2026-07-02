@@ -20,9 +20,9 @@
 #include <string>
 #include <queue>
 
-#include "../../common/default_index.h"
-#include "../../common/supported_protocols.h"
-#include "../../common/tcp_control_bits.h"
+#include "../../bpf_uapi/default_index.h"
+#include "../../bpf_uapi/supported_protocols.h"
+#include "../../bpf_uapi/tcp_control_bits.h"
 
 #include "../../lib/bitset.hh"
 #include "../../lib/enum_array.hh"

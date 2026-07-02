@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include "vmlinux.h"
-#include "../common/statistics.h"
+#include "../bpf_uapi/statistics.h"
 
 #pragma push_macro("BANNER")
 #undef BANNER

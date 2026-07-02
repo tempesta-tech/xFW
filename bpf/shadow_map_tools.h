@@ -17,7 +17,7 @@
 #include "vmlinux.h"
 #endif
 
-#include "../common/map_names.h"
+#include "../bpf_uapi/map_names.h"
 
 #define SHADOW_MAP_SLOT(basename, idx, map_t, max_sz, key_t, val_t, flags)	\
 	struct {								\

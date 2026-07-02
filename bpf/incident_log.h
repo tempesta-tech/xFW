@@ -20,7 +20,7 @@
 #include <linux/errno.h>
 
 #include "vmlinux.h"
-#include "../common/bpf_uapi.h"
+#include "../bpf_uapi/types.h"
 
 #include "compiler.h"
 #include "incident_log_maps.h"
