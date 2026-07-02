@@ -17,6 +17,8 @@ BPF_CFLAGS := $(filter-out -O%,$(CFLAGS)) -O2
 BPF_CFLAGS += -MMD -MP -Wno-option-ignored -target bpf -g -fno-stack-protector
 BPF_CFLAGS += -I/usr/include/x86_64-linux-gnu/ -I../BUILD/
 
+INCLUDES += -I$(BUILD_INCLUDE)
+
 ifneq ($(filter-out 0,$(DEBUG)),)
 	BPF_CFLAGS += -DXFW_DEBUG=1
 endif

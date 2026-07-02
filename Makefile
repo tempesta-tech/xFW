@@ -81,10 +81,10 @@ cli: lib | prepare_dirs
 manager: lib | prepare_dirs
 	@$(MAKE) -C $@ build
 
-$(BUILD_DIR)/vmlinux.h: | prepare_dirs
+$(BUILD_INCLUDE)/vmlinux.h: | prepare_dirs
 	bpftool btf dump file /sys/kernel/btf/vmlinux format c > $@
 
-bpf: $(BUILD_DIR)/vmlinux.h | prepare_dirs
+bpf: $(BUILD_INCLUDE)/vmlinux.h | prepare_dirs
 	@$(MAKE) -C bpf build
 
 # NOTE: The logger and all its dependencies are built with g++
