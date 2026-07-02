@@ -6,12 +6,11 @@ import socket
 import typing
 from abc import ABC
 
-from scapy.layers.inet import IP, TCP, Ether, UDP
+from scapy.layers.inet import IP, TCP, UDP, Ether
 
-from framework.stateful import RawClientNetworkStateful, IP6Mixin, IP4Mixin
+from framework.stateful import IP4Mixin, IP6Mixin, RawClientNetworkStateful
 
-
-__all__ = ['UdpRawClient', 'UdpIpV4RawClient', 'UdpIpV6RawClient']
+__all__ = ["UdpRawClient", "UdpIpV4RawClient", "UdpIpV6RawClient"]
 
 
 class UdpRawClient(RawClientNetworkStateful, ABC):
@@ -27,47 +26,40 @@ class UdpRawClient(RawClientNetworkStateful, ABC):
         self.logger.info(f'{self} sending to {self.remote_ip}:{self.remote_port} "{scapy_packet}"')
 
         return await asyncio.wait_for(
-            self.loop.sock_sendto(
-                self.socket,
-                bytes(scapy_packet),
-                self.get_sendto_dst()
-            ),
-            timeout=3
+            self.loop.sock_sendto(self.socket, bytes(scapy_packet), self.get_sendto_dst()),
+            timeout=3,
         )
 
     async def receive(self, buffer_len: int = 1024) -> typing.Optional[TCP]:
         try:
             response = await asyncio.wait_for(
-                self.loop.sock_recvfrom(self.socket, buffer_len),
-                timeout=3
+                self.loop.sock_recvfrom(self.socket, buffer_len), timeout=3
             )
         except asyncio.TimeoutError:
-            self.logger.info(f'{self} timeout - no data received')
+            self.logger.info(f"{self} timeout - no data received")
             return None
 
         data, _ = response
         decoded = self.decode_data(data)
 
         if not decoded.haslayer(UDP):
-            self.logger.warning(f'{self} skipped caught data: {Ether(data)}')
+            self.logger.warning(f"{self} skipped caught data: {Ether(data)}")
             return await self.receive()
 
         self.last_response = decoded[UDP]
-        self.logger.info(f'received from {self.ip_testing}:{self.remote_port} "{self.last_response}"')
+        self.logger.info(
+            f'received from {self.ip_testing}:{self.remote_port} "{self.last_response}"'
+        )
         return self.last_response
 
     async def ping(self):
-        return await self.send(UDP()/b'ping')
+        return await self.send(UDP() / b"ping")
 
 
 class UdpIpV4RawClient(UdpRawClient, IP4Mixin):
     def set_socket_options(self, sock: socket.socket):
         super().set_socket_options(sock)
-        sock.setsockopt(
-            socket.IPPROTO_IP,
-            socket.IP_HDRINCL,
-            1
-        )
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
 
     def create_packet(self, packet: UDP) -> UDP:
         return IP(src=self.ip, dst=self.remote_ip) / packet

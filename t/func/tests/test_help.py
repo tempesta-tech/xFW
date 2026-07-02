@@ -1,35 +1,32 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import pytest
 import logging
-from framework.xfw import XFW
+
+import pytest
+
 from config import ConfigSettings
+from framework.xfw import XFW
 
 
 def print_cmd(cmd: str, description: str, logger):
-    logger.info(f'# {description:30}')
-    logger.info(f' {cmd}')
+    logger.info(f"# {description:30}")
+    logger.info(f" {cmd}")
 
 
 @pytest.mark.prepare_network
 async def test_prepare_local_veth_network(
-        xfw: XFW,
-        tcp_ip4_client,
-        tcp_ip6_client,
-        tcp_ip4_server,
-        tcp_ip6_server,
-        conf_logger: logging.Logger,
-        config: ConfigSettings
+    xfw: XFW,
+    tcp_ip4_client,
+    tcp_ip6_client,
+    tcp_ip4_server,
+    tcp_ip6_server,
+    conf_logger: logging.Logger,
+    config: ConfigSettings,
 ):
     # this part is required to add
     # ip addresses to the link
-    server_and_clients = [
-        tcp_ip4_server,
-        tcp_ip4_client,
-        tcp_ip6_server,
-        tcp_ip6_client
-    ]
+    server_and_clients = [tcp_ip4_server, tcp_ip4_client, tcp_ip6_server, tcp_ip6_client]
     for item in server_and_clients:
         await item.start()
 
@@ -57,34 +54,32 @@ async def test_prepare_local_veth_network(
     conf_logger.info("          Userful commands             ")
     conf_logger.info("---------------------------------------")
     print_cmd(
-        cmd=f'{xfw.path_to_executable} --status',
-        description='XFW status',
-        logger=conf_logger
+        cmd=f"{xfw.path_to_executable} --status", description="XFW status", logger=conf_logger
     )
     print_cmd(
         cmd=f"ip -n {tcp_ip4_client.namespace} a",
-        description='Show the namespace configuration',
-        logger=conf_logger
+        description="Show the namespace configuration",
+        logger=conf_logger,
     )
     print_cmd(
         cmd=f"nc -l -s {tcp_ip4_server.ip} -p {tcp_ip4_server.port}",
-        description='Start the TCP server',
-        logger=conf_logger
+        description="Start the TCP server",
+        logger=conf_logger,
     )
     print_cmd(
-        cmd=f'ip netns exec {tcp_ip4_client.namespace} nc {tcp_ip4_server.ip} {tcp_ip4_server.port}',
-        description='Start the TCP client',
-        logger=conf_logger
+        cmd=f"ip netns exec {tcp_ip4_client.namespace} nc {tcp_ip4_server.ip} {tcp_ip4_server.port}",
+        description="Start the TCP client",
+        logger=conf_logger,
     )
     print_cmd(
-        cmd=f'nc -u -l -s {tcp_ip4_server.ip} -p {tcp_ip4_server.port}',
-        description='Start the UDP server',
-        logger=conf_logger
+        cmd=f"nc -u -l -s {tcp_ip4_server.ip} -p {tcp_ip4_server.port}",
+        description="Start the UDP server",
+        logger=conf_logger,
     )
     print_cmd(
-        cmd=f'ip netns exec {tcp_ip4_client.namespace} nc -u {tcp_ip4_server.ip} {tcp_ip4_server.port}',
-        description='Start the UDP client',
-        logger=conf_logger
+        cmd=f"ip netns exec {tcp_ip4_client.namespace} nc -u {tcp_ip4_server.ip} {tcp_ip4_server.port}",
+        description="Start the UDP client",
+        logger=conf_logger,
     )
     conf_logger.info("---------------------------------------")
     conf_logger.info("             Commands                  ")
@@ -96,5 +91,5 @@ async def test_prepare_local_veth_network(
         conf_logger.info("Enter command: ")
         data = input()
 
-        if data in {'exit', 'e'}:
+        if data in {"exit", "e"}:
             break

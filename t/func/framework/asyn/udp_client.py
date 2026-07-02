@@ -3,11 +3,10 @@
 
 from abc import ABC
 
-from framework.stateful import IP4Mixin, IP6Mixin
 from framework.asyn.udp_base import BaseUdpStateful
+from framework.stateful import IP4Mixin, IP6Mixin
 
-
-__all__ = ['UdpClient', 'UdpV4Client', 'UdpV6Client', 'BaseUdpStateful']
+__all__ = ["UdpClient", "UdpV4Client", "UdpV6Client", "BaseUdpStateful"]
 
 
 class UdpClient(BaseUdpStateful, ABC):
@@ -19,7 +18,6 @@ class UdpV4Client(UdpClient, IP4Mixin):
     def __init__(self, *args, **kwargs):
         UdpClient.__init__(self, *args, **kwargs)
         IP4Mixin.__init__(self, *args, **kwargs)
-
 
 
 class UdpV6Client(UdpClient, IP6Mixin):

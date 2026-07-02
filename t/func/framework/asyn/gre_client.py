@@ -1,14 +1,14 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
-import asyncio
 import abc
+import asyncio
 import socket
 import typing
 
 from scapy.layers.l2 import GRE
 from scapy.packet import Packet
 
-from framework.stateful import RawClientNetworkStateful, IP4Mixin, IP6Mixin
+from framework.stateful import IP4Mixin, IP6Mixin, RawClientNetworkStateful
 
 
 class GreRawClient(RawClientNetworkStateful, abc.ABC):
@@ -36,19 +36,14 @@ class GreRawClient(RawClientNetworkStateful, abc.ABC):
         self.last_request = packet
 
         return await asyncio.wait_for(
-            self.loop.sock_sendto(
-                self.socket,
-                bytes(packet),
-                self.get_sendto_dst()
-            ),
-            timeout=self.timeout
+            self.loop.sock_sendto(self.socket, bytes(packet), self.get_sendto_dst()),
+            timeout=self.timeout,
         )
 
     async def receive(self, buffer_len: int = 4096) -> typing.Optional[Packet]:
         try:
             data, _ = await asyncio.wait_for(
-                self.loop.sock_recvfrom(self.socket, buffer_len),
-                timeout=self.timeout
+                self.loop.sock_recvfrom(self.socket, buffer_len), timeout=self.timeout
             )
         except asyncio.TimeoutError:
             if self.log_requests:

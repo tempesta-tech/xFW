@@ -18,18 +18,18 @@ async def test_http_server_on_different_port(xfw: XFW):
 
     try:
         http_client = xfw.http_client()
-        response = await http_client.get('/metrics')
+        response = await http_client.get("/metrics")
     finally:
         ...
 
     assert response is not None
     assert response.status_code == 200
-    assert response.request.url == f'http://{xfw.ip}:{port}/metrics'
+    assert response.request.url == f"http://{xfw.ip}:{port}/metrics"
 
 
 async def test_concurrent_requests(xfw: XFW):
     http_client = xfw.http_client()
-    coroutines = [http_client.get('/metrics') for _ in range(100)]
+    coroutines = [http_client.get("/metrics") for _ in range(100)]
     responses = await asyncio.gather(*coroutines)
     assert len([resp for resp in responses if resp.status_code == 200]) == 100
 
@@ -38,14 +38,10 @@ async def test_keep_alive(xfw: XFW):
     http_client = xfw.http_client()
 
     async with http_client as client:
-        response = await client.get('/metrics', headers={
-            'Connection': 'keep-alive'
-        })
+        response = await client.get("/metrics", headers={"Connection": "keep-alive"})
         assert response.status_code == 200
 
-        response = await client.get('/metrics', headers={
-            'Connection': 'keep-alive'
-        })
+        response = await client.get("/metrics", headers={"Connection": "keep-alive"})
         assert response.status_code == 200
 
         assert len(client._transport._pool.connections) == 1

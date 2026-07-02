@@ -2,37 +2,33 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import pytest
-
-from framework.stateful import RegularKernelSocketNetworkStateful
-from framework.asyn import UdpRawClient
-from framework.xfw import XFW
 from scapy.layers.inet import UDP
+
+from framework.asyn import UdpRawClient
+from framework.stateful import RegularKernelSocketNetworkStateful
+from framework.xfw import XFW
 
 
 async def test_normal_connection(
-        xfw: XFW,
-        udp_server: RegularKernelSocketNetworkStateful,
-        udp_raw_client: UdpRawClient,
-        start_udp_server_and_raw_clients
+    xfw: XFW,
+    udp_server: RegularKernelSocketNetworkStateful,
+    udp_raw_client: UdpRawClient,
+    start_udp_server_and_raw_clients,
 ):
-    await xfw.rules_set('xfw { }')
-    await udp_raw_client.send(UDP() / b'Hello :)')
+    await xfw.rules_set("xfw { }")
+    await udp_raw_client.send(UDP() / b"Hello :)")
 
     response = await udp_server.receive()
-    assert response == 'Hello :)'
+    assert response == "Hello :)"
 
 
-@pytest.mark.parametrize(
-    'port_type',
-    ['sport', 'dport'],
-    ids=['src', 'dst']
-)
+@pytest.mark.parametrize("port_type", ["sport", "dport"], ids=["src", "dst"])
 async def test_zero_port_is_blocked(
-        port_type: str,
-        xfw: XFW,
-        udp_server: RegularKernelSocketNetworkStateful,
-        udp_raw_client: UdpRawClient,
-        start_udp_server_and_raw_clients
+    port_type: str,
+    xfw: XFW,
+    udp_server: RegularKernelSocketNetworkStateful,
+    udp_raw_client: UdpRawClient,
+    start_udp_server_and_raw_clients,
 ):
     udp_raw_client.auto_add_host = False
 
@@ -42,8 +38,8 @@ async def test_zero_port_is_blocked(
 
     setattr(packet, port_type, 0)
 
-    await xfw.rules_set('xfw { }')
-    await udp_raw_client.send(packet / 'Hello :)')
+    await xfw.rules_set("xfw { }")
+    await udp_raw_client.send(packet / "Hello :)")
 
     response = await udp_server.receive()
-    assert response is None, f'Zero {port_type} port is not blocked'
+    assert response is None, f"Zero {port_type} port is not blocked"

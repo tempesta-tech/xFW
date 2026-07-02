@@ -5,12 +5,14 @@ import asyncio
 import logging
 import socket
 from abc import ABC
-
 from typing import Optional
 
 from framework.stateful import RegularKernelSocketNetworkStateful
 
-__all__ = ['BaseUdpProtocol', 'BaseUdpStateful',]
+__all__ = [
+    "BaseUdpProtocol",
+    "BaseUdpStateful",
+]
 
 
 class BaseUdpProtocol(asyncio.DatagramProtocol):
@@ -23,7 +25,7 @@ class BaseUdpProtocol(asyncio.DatagramProtocol):
         message = data.decode()
         self.messages.put_nowait(message)
         self.last_address = addr
-        self.logger.debug(f'received from {addr} : {message}')
+        self.logger.debug(f"received from {addr} : {message}")
 
 
 class BaseUdpStateful(RegularKernelSocketNetworkStateful, ABC):
@@ -38,10 +40,9 @@ class BaseUdpStateful(RegularKernelSocketNetworkStateful, ABC):
     async def on_socket_created(self):
         self.transport, self.protocol = await self.loop.create_datagram_endpoint(
             protocol_factory=lambda: self.transmitting_protocol(
-                self.logger,
-                messages=self.messages
+                self.logger, messages=self.messages
             ),
-            sock=self.socket
+            sock=self.socket,
         )
 
     async def send_bytes(self, data: bytes):

@@ -3,10 +3,10 @@
 
 import asyncio
 import dataclasses
+
 from framework.logger import *
 
-
-logger = get_logger('server')
+logger = get_logger("server")
 
 
 @dataclasses.dataclass
@@ -16,11 +16,12 @@ class RpcClient:
     the server and provides reader and writer
     streams for communication.
     """
+
     host: str
     port: int
     reader: asyncio.StreamReader = None
     writer: asyncio.StreamWriter = None
-    shutdown_message: str = '__SHUTDOWN__<<<'
+    shutdown_message: str = "__SHUTDOWN__<<<"
 
     async def run(self):
         """

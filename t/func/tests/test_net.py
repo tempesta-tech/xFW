@@ -3,38 +3,34 @@
 
 import pytest
 
+from config import ConfigSettings
 from framework.cmp import check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
+from framework.utils import client_cloner, server_cloner
 from framework.xfw import XFW
-from framework.utils import server_cloner, client_cloner
-from config import ConfigSettings
-
 
 
 @pytest.fixture
 async def backend_protected(
-        server: RegularKernelSocketNetworkStateful,
+    server: RegularKernelSocketNetworkStateful,
 ):
     yield server
 
 
 @pytest.fixture
 async def backend_not_protected(
-        backend_protected: RegularKernelSocketNetworkStateful,
-        config: ConfigSettings,
+    backend_protected: RegularKernelSocketNetworkStateful,
+    config: ConfigSettings,
 ) -> RegularKernelSocketNetworkStateful:
-    new_server = server_cloner(
-        server=backend_protected,
-        amount=1
-    )[0]
+    new_server = server_cloner(server=backend_protected, amount=1)[0]
     yield new_server
     await new_server.stop()
 
 
 @pytest.fixture
 async def client_protected(
-        client: RegularKernelSocketNetworkStateful,
-        backend_protected: RegularKernelSocketNetworkStateful,
+    client: RegularKernelSocketNetworkStateful,
+    backend_protected: RegularKernelSocketNetworkStateful,
 ):
     client.remote_ip = backend_protected.ip
     client.remote_port = backend_protected.port
@@ -44,13 +40,10 @@ async def client_protected(
 
 @pytest.fixture
 async def client_not_protected(
-        client: RegularKernelSocketNetworkStateful,
-        backend_not_protected: RegularKernelSocketNetworkStateful,
+    client: RegularKernelSocketNetworkStateful,
+    backend_not_protected: RegularKernelSocketNetworkStateful,
 ):
-    new_client = client_cloner(
-        client=client,
-        amount=1
-    )[0]
+    new_client = client_cloner(client=client, amount=1)[0]
     new_client.remote_ip = backend_not_protected.ip
     new_client.remote_port = backend_not_protected.port
 
@@ -60,10 +53,10 @@ async def client_not_protected(
 
 @pytest.fixture
 async def connect_protected_clients_and_backends(
-        backend_protected: RegularKernelSocketNetworkStateful,
-        backend_not_protected: RegularKernelSocketNetworkStateful,
-        client_protected: RegularKernelSocketNetworkStateful,
-        client_not_protected: RegularKernelSocketNetworkStateful,
+    backend_protected: RegularKernelSocketNetworkStateful,
+    backend_not_protected: RegularKernelSocketNetworkStateful,
+    client_protected: RegularKernelSocketNetworkStateful,
+    client_not_protected: RegularKernelSocketNetworkStateful,
 ):
     await backend_protected.start()
     await client_protected.start()
@@ -75,17 +68,16 @@ async def connect_protected_clients_and_backends(
 
 
 async def test_block(
-        xfw: XFW,
-        ip_version: str,
-        protocol: str,
-        backend_protected: RegularKernelSocketNetworkStateful,
-        backend_not_protected: RegularKernelSocketNetworkStateful,
-        client_protected: RegularKernelSocketNetworkStateful,
-        client_not_protected: RegularKernelSocketNetworkStateful,
-        connect_protected_clients_and_backends,
+    xfw: XFW,
+    ip_version: str,
+    protocol: str,
+    backend_protected: RegularKernelSocketNetworkStateful,
+    backend_not_protected: RegularKernelSocketNetworkStateful,
+    client_protected: RegularKernelSocketNetworkStateful,
+    client_not_protected: RegularKernelSocketNetworkStateful,
+    connect_protected_clients_and_backends,
 ):
-    await xfw.rules_set(
-        f'''
+    await xfw.rules_set(f"""
         xfw {{
             defaults {{ dst: allow; }}
 
@@ -94,16 +86,20 @@ async def test_block(
                 {backend_protected.ip_testing}:{backend_protected.port},
             }}
         }}
-        '''
-    )
+        """)
 
-    assert await check_connection(
-        client=client_protected,
-        server=backend_protected,
-    ) is False, 'Request to the protected server is not blocked'
+    assert (
+        await check_connection(
+            client=client_protected,
+            server=backend_protected,
+        )
+        is False
+    ), "Request to the protected server is not blocked"
 
-    assert await check_connection(
-        client=client_not_protected,
-        server=backend_not_protected,
-    ) is True, 'Request to the non-protected server is blocked'
-
+    assert (
+        await check_connection(
+            client=client_not_protected,
+            server=backend_not_protected,
+        )
+        is True
+    ), "Request to the non-protected server is blocked"

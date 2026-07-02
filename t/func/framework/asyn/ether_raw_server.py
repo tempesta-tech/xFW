@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import socket
+
 from scapy.data import ETH_P_ALL
+
 from framework.asyn.ether_raw_client import EtherRawClient
 from framework.remote import RemoteServer
 
