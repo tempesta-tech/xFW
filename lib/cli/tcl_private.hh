@@ -12,10 +12,10 @@
 #include <ostream>
 #include <vector>
 
-#include "../proto/default_index.h"
-#include "../proto/tcp_control_bits.h"
-#include "../proto/tcp_anomaly_features.h"
-#include "../proto/supported_protocols.h"
+#include "../../common/default_index.h"
+#include "../../common/tcp_control_bits.h"
+#include "../../common/tcp_anomaly_features.h"
+#include "../../common/supported_protocols.h"
 
 #include "../bitset.hh"
 #include "../enum_array.hh"

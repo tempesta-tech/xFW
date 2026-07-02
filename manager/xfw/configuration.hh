@@ -20,14 +20,14 @@
 #include <string>
 #include <queue>
 
-#include "../../lib/proto/default_index.h"
-#include "../../lib/proto/supported_protocols.h"
-#include "../../lib/proto/tcp_control_bits.h"
+#include "../../common/default_index.h"
+#include "../../common/supported_protocols.h"
+#include "../../common/tcp_control_bits.h"
 
 #include "../../lib/bitset.hh"
 #include "../../lib/enum_array.hh"
 
-/**
+/*
  * The in-memory structure differs from the one used in the BPF program for
  * several reasons:
  *  1) We need to store geo-names to enable reloads when necessary, whereas the
@@ -156,9 +156,7 @@ public:
 		}
 	};
 
-	/**
-	 * Helper class for flag's calculation caching.
-	 */
+	/* Helper class for flag's calculation caching. */
 	struct Flags
 	{
 		bool isProcNet_ = false;
@@ -219,13 +217,13 @@ public:
 		Ratelimits();
 		~Ratelimits() = default;
 
-		/**
+		/*
 		 * Returns a view over the entire array of Ratelimit entries.
 		 * The returned span includes every slot in any state.
 		 */
 		std::span<const Ratelimit, MaxEntries> get_all() const noexcept;
 
-		/**
+		/*
 		 * Returns the index of the active Ratelimit by name.
 		 *
 		 * Throws an exception if the name is not found
@@ -233,12 +231,12 @@ public:
 		 */
 		RatelimitIndex get_active_index(std::string_view name);
 
-		/**
+		/*
 		 * Inserts a new Ratelimit or updates an existing one (as `Active`).
 		 */
 		void upsert(std::string_view name, uint64_t pps, uint64_t bps);
 
-		/**
+		/*
 		 * Marks the Ratelimit with the given name as inactive (even `ReadyToUse`).
 		 * This does not immediately remove the entry.
 		 *
@@ -246,12 +244,12 @@ public:
 		 */
 		void inactivate(std::string_view name);
 
-		/**
+		/*
 		 * Marks all active Ratelimits as inactive (except `ReadyToUse`).
 		 */
 		void inactivate_all();
 
-		/**
+		/*
 		 * Scans all Ratelimit `Inactive` entries and reclaims resources
 		 * (`ReadyToReuse`). This allows slots to be reused in future insertions.
 		 */

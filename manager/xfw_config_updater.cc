@@ -7,8 +7,8 @@
 
 #include <numeric>
 
+#include "../common/tcp_anomaly_features.h"
 #include "../lib/proto/bitset_helper.hh"
-#include "../lib/proto/tcp_anomaly_features.h"
 #include "../lib/bitset.hh"
 
 #include "xfw/tcp_anomaly_flags.hh"
