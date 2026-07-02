@@ -8,8 +8,8 @@
 
 #include "../../lib/bpf/array_map.hh"
 #include "../../lib/bpf/per_cpu_counter.hh"
-#include "../../common/bpf_uapi_stats.h"
-#include "../../common/map_names.h"
+#include "../../bpf_uapi/stats.h"
+#include "../../bpf_uapi/map_names.h"
 
 /**
  * Incapsulates logic related to BPF statistics.

@@ -8,7 +8,7 @@
 
 #include "vmlinux.h"
 
-#include "../common/bpf_uapi_stats.h"
+#include "../bpf_uapi/stats.h"
 
 #pragma push_macro("BANNER")
 #undef BANNER

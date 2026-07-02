@@ -7,7 +7,7 @@
 
 #include <numeric>
 
-#include "../common/tcp_anomaly_features.h"
+#include "../bpf_uapi/tcp_anomaly_features.h"
 #include "../lib/proto/bitset_helper.hh"
 #include "../lib/bitset.hh"
 

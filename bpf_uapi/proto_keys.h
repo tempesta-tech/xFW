@@ -1,7 +1,7 @@
 /**
  *	Tempesta xFW L3/L4 protocol-specific user-space API
  *
- * See the rules for shared struct declarations in bpf_uapi.h.
+ * See the rules for shared struct declarations in types.h.
  *
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -14,7 +14,7 @@
 #include "vmlinux.h"
 #endif
 
-#include "bpf_uapi.h"
+#include "types.h"
 
 #ifdef __cplusplus
 #include "ip_helpers.h"

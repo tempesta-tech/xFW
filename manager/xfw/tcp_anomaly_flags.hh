@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "../../common/tcp_control_bits.h"
+#include "../../bpf_uapi/tcp_control_bits.h"
 #include "../../lib/bitset.hh"
 
 extern const BitSet<TcpControlBits, XFW_BIT_CONTROL_MAX> xfw_prohibited_rules;
