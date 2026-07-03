@@ -13,7 +13,4 @@ class EtherRawServer(EtherRawClient):
     socket_proto = socket.htons(ETH_P_ALL)
 
 
-class EtherRawServerRemote(RemoteServer, EtherRawServer):
-    def __init__(self, *args, **kwargs):
-        RemoteServer.__init__(self, *args, **kwargs)
-        EtherRawServer.__init__(self, *args, **kwargs)
+class EtherRawServerRemote(RemoteServer, EtherRawServer): ...

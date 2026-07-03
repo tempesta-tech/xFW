@@ -10,31 +10,23 @@ from scapy.layers.inet import ICMP, IP
 from scapy.layers.inet6 import ICMPv6EchoRequest
 from scapy.packet import Packet
 
-from framework.stateful import IP4Mixin, IP6Mixin, RawClientNetworkStateful
+from framework.stateful import IP4Mixin, IP6Mixin, RawSocketNetworkStateful
 
 __all__ = ["IcmpRawClient", "IcmpRawV4Client", "IcmpRawV6Client"]
 
 
-class IcmpRawClient(RawClientNetworkStateful, ABC):
+class IcmpRawClient(RawSocketNetworkStateful, ABC):
     socket_family: socket.AddressFamily
-    socket_type = socket.SOCK_RAW
 
     packet_class: Packet
     echo_request_type: int
     echo_response_types: set[int]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.log_requests = True
-        self.last_request: typing.Optional[ICMP] = None
-        self.last_response: typing.Optional[ICMP] = None
-
     def create_packet(self, packet: Packet) -> Packet:
         return packet
 
     async def send(self, packet: ICMP) -> int:
-        if self.log_requests:
+        if self.log_msg:
             self.logger.info(f'{self} sending to {self.remote_ip}:{self.remote_port} "{packet}"')
 
         self.last_request = packet
@@ -50,7 +42,7 @@ class IcmpRawClient(RawClientNetworkStateful, ABC):
                 self.loop.sock_recvfrom(self.socket, buffer_len), timeout=self.timeout
             )
         except asyncio.TimeoutError:
-            if self.log_requests:
+            if self.log_msg:
                 self.logger.info(f"{self} timeout - no data received")
 
             return None
@@ -60,7 +52,7 @@ class IcmpRawClient(RawClientNetworkStateful, ABC):
 
         self.last_response = decoded[ICMP]
 
-        if self.log_requests:
+        if self.log_msg:
             self.logger.info(f'received from {self.ip_testing} "{self.last_response}"')
 
         return self.last_response
@@ -74,7 +66,12 @@ class IcmpRawClient(RawClientNetworkStateful, ABC):
         if not response:
             return False
 
-        return response.code in self.echo_response_types
+        if isinstance(self.packet_class(), ICMPv6EchoRequest):
+            return response.type in self.echo_response_types
+        elif isinstance(self.packet_class(), ICMP):
+            return response.code in self.echo_response_types
+        else:
+            return False
 
 
 class IcmpRawV4Client(IcmpRawClient, IP4Mixin):
@@ -101,11 +98,3 @@ class IcmpRawV6Client(IcmpRawClient, IP6Mixin):
 
     def decode_data(self, data: bytes) -> ICMP:
         return ICMP(data)
-
-    async def pong(self) -> bool:
-        response = await self.receive()
-
-        if not response:
-            return False
-
-        return response.type in self.echo_response_types

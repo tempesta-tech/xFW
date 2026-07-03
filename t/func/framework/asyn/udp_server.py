@@ -19,25 +19,13 @@ __all__ = [
 class UdpServer(BaseUdpStateful, ABC): ...
 
 
-class UdpV4Server(UdpServer, IP4Mixin):
-    def __init__(self, *args, **kwargs) -> None:
-        UdpServer.__init__(self, *args, **kwargs)
-        IP4Mixin.__init__(self, *args, **kwargs)
+class UdpV4Server(UdpServer, IP4Mixin): ...
 
 
-class UdpV6Server(UdpServer, IP6Mixin):
-    def __init__(self, *args, **kwargs) -> None:
-        UdpServer.__init__(self, *args, **kwargs)
-        IP6Mixin.__init__(self, *args, **kwargs)
+class UdpV6Server(UdpServer, IP6Mixin): ...
 
 
-class UdpV4ServerRemote(RemoteServer, UdpV4Server):
-    def __init__(self, *args, **kwargs) -> None:
-        RemoteServer.__init__(self, *args, **kwargs)
-        UdpV4Server.__init__(self, *args, **kwargs)
+class UdpV4ServerRemote(RemoteServer, UdpV4Server): ...
 
 
-class UdpV6ServerRemote(RemoteServer, UdpV6Server):
-    def __init__(self, *args, **kwargs) -> None:
-        RemoteServer.__init__(self, *args, **kwargs)
-        UdpV6Server.__init__(self, *args, **kwargs)
+class UdpV6ServerRemote(RemoteServer, UdpV6Server): ...

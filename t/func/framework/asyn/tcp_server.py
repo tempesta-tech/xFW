@@ -142,16 +142,10 @@ class TcpV4Server(IP4Mixin, TcpServer): ...
 class TcpV6Server(IP6Mixin, TcpServer): ...
 
 
-class TcpV4ServerRemote(RemoteServer, TcpV4Server):
-    def __init__(self, *args, **kwargs):
-        RemoteServer.__init__(self, *args, **kwargs)
-        TcpV4Server.__init__(self, *args, **kwargs)
+class TcpV4ServerRemote(RemoteServer, TcpV4Server): ...
 
 
-class TcpV6ServerRemote(RemoteServer, TcpV6Server):
-    def __init__(self, *args, **kwargs):
-        RemoteServer.__init__(self, *args, **kwargs)
-        TcpV6Server.__init__(self, *args, **kwargs)
+class TcpV6ServerRemote(RemoteServer, TcpV6Server): ...
 
 
 class TcpServerRemote(RemoteServer): ...

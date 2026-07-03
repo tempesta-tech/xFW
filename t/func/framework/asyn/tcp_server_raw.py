@@ -86,12 +86,6 @@ class TcpRawServer(BaseTcpRawStateful, ABC):
 
 
 class TcpIpV4RawServer(TcpRawServer, IP4Mixin):
-    iptables_binary_name = "iptables"
-    socket_family = socket.AF_INET
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     def set_socket_options(self, sock: socket.socket):
         super().set_socket_options(sock)
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
@@ -107,12 +101,6 @@ class TcpIpV4RawServer(TcpRawServer, IP4Mixin):
 
 
 class TcpIpV6RawServer(TcpRawServer, IP6Mixin):
-    iptables_binary_name = "ip6tables"
-    socket_family = socket.AF_INET6
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     def set_socket_options(self, sock: socket.socket):
         super().set_socket_options(sock)
         sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_CHECKSUM, 16)
@@ -137,10 +125,6 @@ class TcpIpV4RawServerRemote(RemoteServer, TcpIpV4RawServer):
         "receive_many_packets",
     ]
 
-    def __init__(self, *args, **kwargs):
-        RemoteServer.__init__(self, *args, **kwargs)
-        TcpIpV4RawServer.__init__(self, *args, **kwargs)
-
 
 class TcpIpV6RawServerRemote(RemoteServer, TcpIpV6RawServer):
     remote_methods = [
@@ -151,7 +135,3 @@ class TcpIpV6RawServerRemote(RemoteServer, TcpIpV6RawServer):
         "receive_packet",
         "receive_many_packets",
     ]
-
-    def __init__(self, *args, **kwargs):
-        RemoteServer.__init__(self, *args, **kwargs)
-        TcpIpV6RawServer.__init__(self, *args, **kwargs)
