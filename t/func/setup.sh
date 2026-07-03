@@ -10,3 +10,5 @@ pip install -r requirements.txt
 
 pre-commit install
 pre-commit autoupdate
+
+git config blame.ignoreRevsFile .git-blame-ignore-revs
