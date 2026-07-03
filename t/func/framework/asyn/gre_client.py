@@ -8,11 +8,10 @@ import typing
 from scapy.layers.l2 import GRE
 from scapy.packet import Packet
 
-from framework.stateful import IP4Mixin, IP6Mixin, RawClientNetworkStateful
+from framework.stateful import IP4Mixin, IP6Mixin, RawSocketNetworkStateful
 
 
-class GreRawClient(RawClientNetworkStateful, abc.ABC):
-    socket_type = socket.SOCK_RAW
+class GreRawClient(RawSocketNetworkStateful, abc.ABC):
     socket_proto = socket.IPPROTO_GRE
     packet_class = GRE
 

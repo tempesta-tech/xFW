@@ -8,12 +8,12 @@ from scapy.layers.inet import IP, TCP
 from scapy.packet import Packet
 
 from framework.asyn.tcp_raw_base import BaseTcpRawStateful
-from framework.stateful import IP4Mixin, IP6Mixin, RawClientNetworkStateful
+from framework.stateful import IP4Mixin, IP6Mixin, RawSocketNetworkStateful
 
 __all__ = ["TcpRawClient", "TcpIpV4RawClient", "TcpIpV6RawClient"]
 
 
-class TcpRawClient(BaseTcpRawStateful, RawClientNetworkStateful, ABC):
+class TcpRawClient(BaseTcpRawStateful, RawSocketNetworkStateful, ABC):
 
     @property
     def valid_syn_packet(self) -> TCP:
@@ -59,8 +59,6 @@ class TcpRawClient(BaseTcpRawStateful, RawClientNetworkStateful, ABC):
 
 
 class TcpIpV4RawClient(TcpRawClient, IP4Mixin):
-    iptables_binary_name = "iptables"
-
     def set_socket_options(self, sock: socket.socket):
         super().set_socket_options(sock)
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
@@ -76,8 +74,6 @@ class TcpIpV4RawClient(TcpRawClient, IP4Mixin):
 
 
 class TcpIpV6RawClient(TcpRawClient, IP6Mixin):
-    iptables_binary_name = "ip6tables"
-
     def set_socket_options(self, sock: socket.socket):
         super().set_socket_options(sock)
         sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_CHECKSUM, 16)

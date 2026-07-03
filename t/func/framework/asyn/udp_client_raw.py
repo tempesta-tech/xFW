@@ -8,13 +8,12 @@ from abc import ABC
 
 from scapy.layers.inet import IP, TCP, UDP, Ether
 
-from framework.stateful import IP4Mixin, IP6Mixin, RawClientNetworkStateful
+from framework.stateful import IP4Mixin, IP6Mixin, RawSocketNetworkStateful
 
 __all__ = ["UdpRawClient", "UdpIpV4RawClient", "UdpIpV6RawClient"]
 
 
-class UdpRawClient(RawClientNetworkStateful, ABC):
-    socket_type = socket.SOCK_RAW
+class UdpRawClient(RawSocketNetworkStateful, ABC):
     socket_proto = socket.IPPROTO_UDP
 
     async def send(self, packet: UDP) -> int:

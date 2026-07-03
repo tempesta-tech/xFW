@@ -14,7 +14,6 @@ from framework.stateful import SocketBaseNetworkStateful
 class EtherRawClient(SocketBaseNetworkStateful):
     socket_family = socket.PF_PACKET
     socket_type = socket.SOCK_RAW
-    socket_proto = None
 
     async def receive(self, *_, **__) -> Optional[bytes]:
         try:

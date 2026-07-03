@@ -116,7 +116,7 @@ class Stateful(abc.ABC):
         await self.start()
 
 
-class NetworkStateful(Stateful):
+class NetworkStateful(Stateful, abc.ABC):
     """
     Provides methods for network configuration of the machine
     """
@@ -392,24 +392,24 @@ class NetworkStateful(Stateful):
         return stdout.replace("\n", "")
 
 
-class SocketBaseNetworkStateful(NetworkStateful):
+class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
     socket_family: int
     socket_type: int
     socket_proto: int = -1
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, log_msg: bool = True, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.socket: typing.Optional[socket.socket] = None
         self.sock_marker = 0x10
         self.message_polling_interval = 0.01
+        self.log_msg = log_msg
+        self.last_response = None
+        self.last_request = None
 
     def create_socket(self) -> socket.socket:
         """
         Create a new socket
         """
-        if self.socket_proto is None:
-            return socket.socket(self.socket_family, self.socket_type)
-
         return socket.socket(self.socket_family, self.socket_type, self.socket_proto)
 
     @property
@@ -435,8 +435,6 @@ class SocketBaseNetworkStateful(NetworkStateful):
         """
         Create new socket, bind with params and call the callback function
         """
-        await super().run_start()
-
         self.socket = self.create_socket()
         self.set_socket_options(self.socket)
         stdout, _, stderr = await run_cmd(cmd="ip a", logger=self.logger, log_output=True)
@@ -481,14 +479,12 @@ class SocketBaseNetworkStateful(NetworkStateful):
         self.logger.debug("socket is cleaned")
 
 
-class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful):
+class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful, abc.ABC):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.transport: typing.Optional[asyncio.BaseTransport] = None
         self.protocol: typing.Optional[asyncio.BaseProtocol] = None
         self.messages: asyncio.Queue[typing.Optional[Exception | str]] = asyncio.Queue()
-        self.last_response = None
-        self.log_request = True
 
     @abc.abstractmethod
     async def send(self, data: str):
@@ -513,15 +509,15 @@ class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful):
                 self.logger.info(f"({self}) connection closed by remote side")
                 raise msg
 
-            if self.log_request:
+            if self.log_msg:
                 self.logger.info(f'({self}) received = "{msg}"')
             return msg
         except asyncio.TimeoutError:
-            if self.log_request:
+            if self.log_msg:
                 self.logger.info(f"({self}) timeout - no data received")
             return None
 
-    async def receive_message(self) -> bool:
+    async def receive_message(self, *args, **kwargs) -> bool:
         """
         Receive a special text message from the client
         """
@@ -539,11 +535,13 @@ class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful):
         await super().run_stop()
 
 
-class RawClientNetworkStateful(RegularKernelSocketNetworkStateful):
+class RawSocketNetworkStateful(RegularKernelSocketNetworkStateful, abc.ABC):
     """
-    The abstract class for the clients based on the custom defined protocol
-    uses the RAW_SOCKET
+    The abstract class for the services based on the custom defined protocol
+    uses the SOCK_RAW
     """
+
+    socket_type = socket.SOCK_RAW
 
     def __init__(self, *args, auto_add_host: bool = True, **kwargs):
         super().__init__(*args, **kwargs)
@@ -568,8 +566,9 @@ class RawClientNetworkStateful(RegularKernelSocketNetworkStateful):
         """
 
 
-class IP4Mixin(RegularKernelSocketNetworkStateful, abc.ABC):
+class IP4Mixin(SocketBaseNetworkStateful, abc.ABC):
     socket_family = socket.AF_INET
+    iptables_binary_name = "iptables"
 
     @property
     def bind_params(self):
@@ -580,8 +579,9 @@ class IP4Mixin(RegularKernelSocketNetworkStateful, abc.ABC):
         return self.remote_ip, self.remote_port
 
 
-class IP6Mixin(RegularKernelSocketNetworkStateful, abc.ABC):
+class IP6Mixin(SocketBaseNetworkStateful, abc.ABC):
     socket_family = socket.AF_INET6
+    iptables_binary_name = "ip6tables"
 
     @property
     def bind_params(self):

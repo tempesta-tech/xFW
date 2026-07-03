@@ -34,9 +34,6 @@ class BaseUdpStateful(RegularKernelSocketNetworkStateful, ABC):
     transmitting_protocol = BaseUdpProtocol
     transport: asyncio.DatagramTransport
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     async def on_socket_created(self):
         self.transport, self.protocol = await self.loop.create_datagram_endpoint(
             protocol_factory=lambda: self.transmitting_protocol(

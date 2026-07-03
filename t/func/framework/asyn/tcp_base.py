@@ -20,10 +20,9 @@ class BaseTcpStateful(RegularKernelSocketNetworkStateful, ABC):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.available_rst_connection_closing: bool = True
-        self.log_request = True
 
     async def send(self, data: str):
-        if self.log_request:
+        if self.log_msg:
             self.logger.info(f'{self} sending to {self.remote_ip}:{self.remote_port} "{data}"')
 
         self.transport.write(data.encode())

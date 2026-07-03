@@ -10,7 +10,7 @@ from typing import Optional
 
 from scapy.layers.inet import TCP, Packet
 
-from framework.stateful import SocketBaseNetworkStateful
+from framework.stateful import RawSocketNetworkStateful
 from framework.utils import switch_coroutine
 
 __all__ = [
@@ -18,9 +18,8 @@ __all__ = [
 ]
 
 
-class BaseTcpRawStateful(SocketBaseNetworkStateful):
+class BaseTcpRawStateful(RawSocketNetworkStateful, abc.ABC):
     iptables_binary_name: str
-    socket_type = socket.SOCK_RAW
     socket_proto = socket.IPPROTO_TCP
 
     def __init__(
@@ -28,14 +27,14 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
         *args,
         auto_add_host: bool = True,
         auto_ack_seq: bool = True,
-        log_requests: bool = True,
+        log_msg: bool = True,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
         self.auto_add_host = auto_add_host
         self.auto_ack_seq = auto_ack_seq
-        self.log_requests = log_requests
+        self.log_msg = log_msg
         self.block_kernel_rst = True
         self.filter_packets = True
 
@@ -104,7 +103,7 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
                 self.loop.sock_recvfrom(self.socket, buffer_len), timeout=self.timeout
             )
         except asyncio.TimeoutError:
-            if self.log_requests:
+            if self.log_msg:
                 self.logger.info(f"{self} timeout - no data received")
 
             return None
@@ -125,7 +124,7 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
         elif self.has_flag(self.last_response, "P"):
             self.ack = self.last_response.seq + len(self.last_response.payload)
 
-        if self.log_requests:
+        if self.log_msg:
             self.logger.info(
                 f"received from {self.remote_ip}:{self.remote_port} "
                 f'"{self.last_response}, seq={self.last_response.seq}, ack={self.last_response.ack}"'
@@ -174,7 +173,7 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
 
         self.last_request = scapy_packet
 
-        if self.log_requests:
+        if self.log_msg:
             self.logger.info(
                 f'{self} sending to {self.remote_ip}:{self.remote_port} "{scapy_packet}, '
                 f'seq={scapy_packet.seq}, ack={scapy_packet.ack}"'

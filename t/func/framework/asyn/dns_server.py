@@ -23,9 +23,6 @@ __all__ = [
 class DnsUdpServer(UdpServer, ABC):
     transmitting_protocol = DnsUdpClientProtocol
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     async def receive(self, *args, **kwargs) -> Optional[DNSRecord]:
         return await super().receive(*args, **kwargs)
 
@@ -67,10 +64,6 @@ class DnsUdpV4ServerRemote(RemoteServer, DnsUdpV4Server):
         "request_dns_server",
     ]
 
-    def __init__(self, *args, **kwargs) -> None:
-        RemoteServer.__init__(self, *args, **kwargs)
-        DnsUdpV4Server.__init__(self, *args, **kwargs)
-
 
 class DnsUdpV6ServerRemote(RemoteServer, DnsUdpV6Server):
     remote_methods = [
@@ -82,7 +75,3 @@ class DnsUdpV6ServerRemote(RemoteServer, DnsUdpV6Server):
         "receive_message",
         "request_dns_server",
     ]
-
-    def __init__(self, *args, **kwargs) -> None:
-        RemoteServer.__init__(self, *args, **kwargs)
-        DnsUdpV6Server.__init__(self, *args, **kwargs)
