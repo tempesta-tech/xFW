@@ -2,15 +2,14 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import asyncio
-from framework.stateful import (
-    RegularKernelSocketNetworkStateful
-)
+
+from framework.stateful import RegularKernelSocketNetworkStateful
 
 
 async def check_connection(
-        client: RegularKernelSocketNetworkStateful,
-        server: RegularKernelSocketNetworkStateful,
-        timeout: int = 5
+    client: RegularKernelSocketNetworkStateful,
+    server: RegularKernelSocketNetworkStateful,
+    timeout: int = 5,
 ) -> bool:
     if not server.is_running:
         await server.start()

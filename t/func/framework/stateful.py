@@ -16,8 +16,8 @@ from scapy.all import Packet
 
 from config import TestingModel
 from framework.namespaces import Netns
-from framework.utils import run_cmd
 from framework.rpc.client import RpcClient
+from framework.utils import run_cmd
 
 
 class State(enum.StrEnum):
@@ -32,11 +32,12 @@ class Stateful(abc.ABC):
     Implements the state machine which is based for all
     clients and servers
     """
+
     def __init__(
-            self,
-            logger: logging.Logger = None,
-            loop: asyncio.AbstractEventLoop = None,
-            testing_model: TestingModel = None,
+        self,
+        logger: logging.Logger = None,
+        loop: asyncio.AbstractEventLoop = None,
+        testing_model: TestingModel = None,
     ):
         self._state: State = State.stopped
         self.logger: logging.Logger = logger
@@ -82,16 +83,16 @@ class Stateful(abc.ABC):
 
     async def start(self):
         """Try to start object."""
-        self.logger.debug('Starting')
+        self.logger.debug("Starting")
 
         if self.state != State.stopped:
-            self.logger.warning('can not start. Not stopped')
+            self.logger.warning("can not start. Not stopped")
             return None
 
         self.state = State.begin_start
         await self.run_start()
         self.state = State.started
-        self.logger.debug('successfully started')
+        self.logger.debug("successfully started")
 
     @abc.abstractmethod
     async def run_stop(self):
@@ -100,17 +101,17 @@ class Stateful(abc.ABC):
     async def stop(self):
         """Try to stop object."""
         if self.state in {State.started, State.begin_start}:
-            self.logger.debug('stopping ...')
+            self.logger.debug("stopping ...")
             await self.run_stop()
             self.state = State.stopped
 
-        self.logger.info('stopped')
+        self.logger.info("stopped")
 
     async def restart(self):
         """
         Restart the state machine
         """
-        self.logger.debug('going to restart')
+        self.logger.debug("going to restart")
         await self.stop()
         await self.start()
 
@@ -121,22 +122,22 @@ class NetworkStateful(Stateful):
     """
 
     def __init__(
-            self,
-            network_interface: str,
-            port: int,
-            *args,
-            ipv4: typing.Optional[str] = None,
-            ipv4_mask: int = 24,
-            ipv4_testing: typing.Optional[str] = None,
-            ipv6: typing.Optional[str] = None,
-            ipv6_mask: int = 64,
-            ipv6_testing: typing.Optional[str] = None,
-            rpc_connection: RpcClient = None,
-            remote_ip: str = None,
-            remote_port: int = None,
-            timeout: float = 0.1,
-            namespace: str = None,
-            **kwargs,
+        self,
+        network_interface: str,
+        port: int,
+        *args,
+        ipv4: typing.Optional[str] = None,
+        ipv4_mask: int = 24,
+        ipv4_testing: typing.Optional[str] = None,
+        ipv6: typing.Optional[str] = None,
+        ipv6_mask: int = 64,
+        ipv6_testing: typing.Optional[str] = None,
+        rpc_connection: RpcClient = None,
+        remote_ip: str = None,
+        remote_port: int = None,
+        timeout: float = 0.1,
+        namespace: str = None,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.network_interface = network_interface
@@ -154,7 +155,7 @@ class NetworkStateful(Stateful):
         self.namespace = namespace
 
     def __repr__(self):
-        return f'{self.ip}:{self.port}'
+        return f"{self.ip}:{self.port}"
 
     @property
     def command_prefix(self) -> str:
@@ -163,15 +164,12 @@ class NetworkStateful(Stateful):
         Useful to set global env vars or netns
         """
         if self.namespace and self.testing_model == TestingModel.same_host:
-            return f'ip netns exec {self.namespace}'
+            return f"ip netns exec {self.namespace}"
 
-        return ''
+        return ""
 
     async def run_host_cmd(self, cmd: str) -> tuple[int, str, str]:
-        return await run_cmd(
-            cmd=f'{self.command_prefix} {cmd}',
-            logger=self.logger
-        )
+        return await run_cmd(cmd=f"{self.command_prefix} {cmd}", logger=self.logger)
 
     @property
     def destination_address(self):
@@ -214,7 +212,7 @@ class NetworkStateful(Stateful):
         if self.ipv6:
             return False
 
-        raise ValueError('Missing any IP')
+        raise ValueError("Missing any IP")
 
     def ip_format(self, ip_address: str) -> str:
         """
@@ -224,7 +222,7 @@ class NetworkStateful(Stateful):
         if self.ipv4:
             return ip_address
 
-        return f'[{ip_address}]'
+        return f"[{ip_address}]"
 
     @property
     def mask_formatted(self):
@@ -241,9 +239,9 @@ class NetworkStateful(Stateful):
         Create mask from provided IP
         """
         if self.ipv4:
-            return f'{value}/32'
+            return f"{value}/32"
 
-        return f'{value}/128'
+        return f"{value}/128"
 
     def generate_new_addresses(self, amount: int = 1) -> list[str]:
         """
@@ -255,7 +253,7 @@ class NetworkStateful(Stateful):
         if self.ipv6:
             return [str(ipaddress.IPv6Address(self.ipv6) + i + 1) for i in range(amount)]
 
-        raise ValueError('IP is not installed')
+        raise ValueError("IP is not installed")
 
     def generate_new_address(self) -> str:
         """
@@ -267,7 +265,7 @@ class NetworkStateful(Stateful):
         """
         Generate a list of new ports starting from the current port
         """
-        return [self.port +i +1 for i in range(amount)]
+        return [self.port + i + 1 for i in range(amount)]
 
     def generate_new_port(self) -> int:
         """
@@ -330,15 +328,17 @@ class NetworkStateful(Stateful):
                 await super().start()
 
         except OSError as e:
-            if '101' in str(e):
-                raise ValueError(f'Problem with network configuration: {e}') from e
+            if "101" in str(e):
+                raise ValueError(f"Problem with network configuration: {e}") from e
 
-            if '[Errno 49]' in str(e):
-                raise ValueError(f'{e}. IP={self.ip}, PORT={self.port}, SCOPE={self.scope_id}') from e
+            if "[Errno 49]" in str(e):
+                raise ValueError(
+                    f"{e}. IP={self.ip}, PORT={self.port}, SCOPE={self.scope_id}"
+                ) from e
 
-            raise ConnectionError(f'Can not start: {e}') from e
+            raise ConnectionError(f"Can not start: {e}") from e
 
-        self.logger.info(f'starting on {self.ip}:{self.port}')
+        self.logger.info(f"starting on {self.ip}:{self.port}")
 
     async def stop(self):
         """
@@ -351,12 +351,14 @@ class NetworkStateful(Stateful):
 
         await super().stop()
 
-    async def set_host(self, ipv4: str = None, ipv6: str = None, port: int = None, iface: str = None):
+    async def set_host(
+        self, ipv4: str = None, ipv6: str = None, port: int = None, iface: str = None
+    ):
         """
         Add new ip address to the network interface
         """
         if ipv4 is None and ipv6 is None:
-            raise ValueError('ipv4 or ipv6 should be installed')
+            raise ValueError("ipv4 or ipv6 should be installed")
 
         if port is not None:
             self.port = port
@@ -369,23 +371,25 @@ class NetworkStateful(Stateful):
             cmd = f"ip -6 addr add {self.ipv6}/{self.ipv6_mask} dev {iface or self.network_interface} nodad"
 
         code, _, stderr = await self.run_host_cmd(cmd=cmd)
-        assert code == 0 or 'already assigned' in stderr or 'File exists' in stderr, \
-            f'Failed to add new ip address: {stderr}'
+        assert (
+            code == 0 or "already assigned" in stderr or "File exists" in stderr
+        ), f"Failed to add new ip address: {stderr}"
 
     async def set_mtu(self, size: int = 1500) -> None:
         code, _, stderr = await self.run_host_cmd(
-            cmd=f"ip link set {self.network_interface} mtu {size}")
-        assert code == 0, f'Can not set MTU: {stderr}'
+            cmd=f"ip link set {self.network_interface} mtu {size}"
+        )
+        assert code == 0, f"Can not set MTU: {stderr}"
 
-        self.logger.info(f'MTU changed to {size}')
+        self.logger.info(f"MTU changed to {size}")
 
     async def get_mac_address(self) -> str:
         code, stdout, stderr = await self.run_host_cmd(
-            f'cat /sys/class/net/{self.network_interface}/address'
+            f"cat /sys/class/net/{self.network_interface}/address"
         )
-        assert code == 0, f'Can not get MAC address: {stderr}'
+        assert code == 0, f"Can not get MAC address: {stderr}"
 
-        return stdout.replace('\n', '')
+        return stdout.replace("\n", "")
 
 
 class SocketBaseNetworkStateful(NetworkStateful):
@@ -404,16 +408,9 @@ class SocketBaseNetworkStateful(NetworkStateful):
         Create a new socket
         """
         if self.socket_proto is None:
-            return socket.socket(
-                self.socket_family,
-                self.socket_type
-            )
+            return socket.socket(self.socket_family, self.socket_type)
 
-        return socket.socket(
-            self.socket_family,
-            self.socket_type,
-            self.socket_proto
-        )
+        return socket.socket(self.socket_family, self.socket_type, self.socket_proto)
 
     @property
     @abc.abstractmethod
@@ -427,11 +424,7 @@ class SocketBaseNetworkStateful(NetworkStateful):
         Set socket options
         """
         sock.setblocking(False)
-        sock.setsockopt(
-            socket.SOL_SOCKET,
-            socket.SO_MARK,
-            struct.pack('I', self.sock_marker)
-        )
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_MARK, struct.pack("I", self.sock_marker))
 
     async def on_socket_created(self):
         """
@@ -446,25 +439,25 @@ class SocketBaseNetworkStateful(NetworkStateful):
 
         self.socket = self.create_socket()
         self.set_socket_options(self.socket)
-        stdout, _, stderr = await run_cmd(cmd='ip a', logger=self.logger, log_output=True)
+        stdout, _, stderr = await run_cmd(cmd="ip a", logger=self.logger, log_output=True)
         self.socket.bind(self.bind_params)
 
         await self.on_socket_created()
 
     async def check_socket_closed(self, repeat=0, interval=0.1, retry=50):
         if self.socket_type == socket.SOCK_STREAM:
-            cmd = 'ss -tan'
+            cmd = "ss -tan"
         elif self.socket_type == socket.SOCK_DGRAM:
-            cmd = 'ss -uan'
+            cmd = "ss -uan"
         elif self.socket_type == socket.SOCK_RAW:
-            cmd = 'ss -wan'
+            cmd = "ss -wan"
         else:
-            raise ValueError('Socket type not supported. Please, add filtration rule')
+            raise ValueError("Socket type not supported. Please, add filtration rule")
 
         formatted_ip = self.ip_format(self.ip)
-        escaped_ip = formatted_ip.replace('[', '\\[').replace(']', '\\]')
+        escaped_ip = formatted_ip.replace("[", "\\[").replace("]", "\\]")
         cmd = f'{cmd} | grep "{escaped_ip}:{self.port}"'
-        code, stdout , stderr = await self.run_host_cmd(cmd=cmd)
+        code, stdout, stderr = await self.run_host_cmd(cmd=cmd)
 
         if not stdout:
             return True
@@ -472,7 +465,7 @@ class SocketBaseNetworkStateful(NetworkStateful):
         repeat += 1
 
         if repeat > retry:
-            raise ValueError(f'{self.name()}({self}) socket is still exists: {stdout}')
+            raise ValueError(f"{self.name()}({self}) socket is still exists: {stdout}")
 
         await asyncio.sleep(interval)
         return await self.check_socket_closed(repeat, interval, retry)
@@ -485,7 +478,7 @@ class SocketBaseNetworkStateful(NetworkStateful):
             self.socket.close()
 
         await self.check_socket_closed()
-        self.logger.debug('socket is cleaned')
+        self.logger.debug("socket is cleaned")
 
 
 class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful):
@@ -507,7 +500,7 @@ class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful):
         """
         Send the message to the already connected server
         """
-        return await self.send(data='test\n')
+        return await self.send(data="test\n")
 
     async def receive(self, *_, **__) -> typing.Optional[str]:
         """
@@ -517,7 +510,7 @@ class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful):
             msg = await asyncio.wait_for(self.messages.get(), timeout=self.timeout)
 
             if isinstance(msg, Exception):
-                self.logger.info(f'({self}) connection closed by remote side')
+                self.logger.info(f"({self}) connection closed by remote side")
                 raise msg
 
             if self.log_request:
@@ -525,7 +518,7 @@ class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful):
             return msg
         except asyncio.TimeoutError:
             if self.log_request:
-                self.logger.info(f'({self}) timeout - no data received')
+                self.logger.info(f"({self}) timeout - no data received")
             return None
 
     async def receive_message(self) -> bool:
@@ -537,7 +530,7 @@ class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful):
         if not data:
             return False
 
-        return data == 'test\n'
+        return data == "test\n"
 
     async def run_stop(self):
         if self.transport:
@@ -551,6 +544,7 @@ class RawClientNetworkStateful(RegularKernelSocketNetworkStateful):
     The abstract class for the clients based on the custom defined protocol
     uses the RAW_SOCKET
     """
+
     def __init__(self, *args, auto_add_host: bool = True, **kwargs):
         super().__init__(*args, **kwargs)
         self.auto_add_host = auto_add_host

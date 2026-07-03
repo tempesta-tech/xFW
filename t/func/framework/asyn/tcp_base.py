@@ -8,8 +8,9 @@ from abc import ABC
 
 from framework.stateful import RegularKernelSocketNetworkStateful
 
-
-__all__ = ['BaseTcpStateful',]
+__all__ = [
+    "BaseTcpStateful",
+]
 
 
 class BaseTcpStateful(RegularKernelSocketNetworkStateful, ABC):
@@ -33,12 +34,12 @@ class BaseTcpStateful(RegularKernelSocketNetworkStateful, ABC):
         Force the OS to release ip and port quickly.
         """
         if self.socket and self.socket.fileno() == -1:
-            self.logger.debug('socket is already closed')
+            self.logger.debug("socket is already closed")
             return
 
-        linger = struct.pack('ii', 1, 0)
+        linger = struct.pack("ii", 1, 0)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, linger)
-        self.logger.debug('used rst to close the connection')
+        self.logger.debug("used rst to close the connection")
 
     async def run_stop(self):
         if self.available_rst_connection_closing:

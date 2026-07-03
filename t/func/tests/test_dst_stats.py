@@ -2,77 +2,79 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import asyncio
+
 import pytest
 from scapy.layers.inet import TCP
-from framework.asyn import UdpServer, TcpServer, UdpClient, TcpRawClient
+
+from framework.asyn import TcpRawClient, TcpServer, UdpClient, UdpServer
+from framework.utils import client_cloner, compare_metrics_diff
 from framework.xfw import XFW
-from framework.utils import compare_metrics_diff, client_cloner
 
 
 @pytest.fixture
 def dst_stats_counters() -> list[str]:
     return [
-        'xfw_dst_blocked_packets',
-        'xfw_dst_blocked_bytes',
-        'xfw_dst_rate_limited_packets',
-        'xfw_dst_rate_limited_bytes',
+        "xfw_dst_blocked_packets",
+        "xfw_dst_blocked_bytes",
+        "xfw_dst_rate_limited_packets",
+        "xfw_dst_rate_limited_bytes",
     ]
 
 
 @pytest.mark.parametrize(
-    'rule,ip,counters',
+    "rule,ip,counters",
     [
         pytest.param(
-            'xfw {{ dst ip4.udp: block {{ {host}:{port}  }} }}',
-            'ip4',
+            "xfw {{ dst ip4.udp: block {{ {host}:{port}  }} }}",
+            "ip4",
             dict(
                 xfw_dst_blocked_packets=10,
                 xfw_dst_blocked_bytes=480,
             ),
-            id='ip4-block-udp'
+            id="ip4-block-udp",
         ),
         pytest.param(
-            'xfw {{ dst ip6.udp: block {{ {host}:{port}  }} }}',
-            'ip6',
+            "xfw {{ dst ip6.udp: block {{ {host}:{port}  }} }}",
+            "ip6",
             dict(
                 xfw_dst_blocked_packets=10,
                 xfw_dst_blocked_bytes=680,
             ),
-            id='ip6-block-udp'
+            id="ip6-block-udp",
         ),
         pytest.param(
-            'xfw {{ ratelimit=test pps=0 bps=0; dst ip4.udp: ratelimit=test {{ {host}:{port}  }} }}',
-            'ip4',
+            "xfw {{ ratelimit=test pps=0 bps=0; dst ip4.udp: ratelimit=test {{ {host}:{port}  }} }}",
+            "ip4",
             dict(
                 xfw_dst_rate_limited_packets=10,
                 xfw_dst_rate_limited_bytes=480,
             ),
-            id='ip4-ratelimit-udp',
+            id="ip4-ratelimit-udp",
         ),
         pytest.param(
-            'xfw {{ ratelimit=test pps=0 bps=0; dst ip6.udp: ratelimit=test {{ {host}:{port}  }} }}',
-            'ip6',
+            "xfw {{ ratelimit=test pps=0 bps=0; dst ip6.udp: ratelimit=test {{ {host}:{port}  }} }}",
+            "ip6",
             dict(
                 xfw_dst_rate_limited_packets=10,
                 xfw_dst_rate_limited_bytes=680,
             ),
-            id='ip6-ratelimit-udp',
+            id="ip6-ratelimit-udp",
         ),
-    ]
+    ],
 )
 async def test_dst_udp_stats(
-        rule: str,
-        ip: str,
-        counters: dict[str, int],
-        dst_stats_counters: list[str],
-        xfw: XFW,
-        udp_ip4_server: UdpServer,
-        udp_ip6_server: UdpServer,
-        udp_ip4_client: UdpClient,
-        udp_ip6_client: UdpClient,
+    rule: str,
+    ip: str,
+    counters: dict[str, int],
+    dst_stats_counters: list[str],
+    xfw: XFW,
+    udp_ip4_server: UdpServer,
+    udp_ip6_server: UdpServer,
+    udp_ip4_client: UdpClient,
+    udp_ip6_client: UdpClient,
 ):
-    server = locals().get(f'udp_{ip}_server')
-    client = locals().get(f'udp_{ip}_client')
+    server = locals().get(f"udp_{ip}_server")
+    client = locals().get(f"udp_{ip}_client")
     client_2 = client_cloner(client=client, amount=1)[0]
 
     await server.start()
@@ -82,79 +84,73 @@ async def test_dst_udp_stats(
     await xfw.rules_set(rule.format(host=server.ip_testing, port=server.port))
 
     async with xfw.metrics_diff(dst_stats_counters) as diff:
-        await asyncio.gather(*[
-            client.send(f'12345{i}')
-            for i in range(5)
-        ] + [
-            client_2.send(f'12345{i}')
-            for i in range(5)
-        ])
+        await asyncio.gather(
+            *[client.send(f"12345{i}") for i in range(5)]
+            + [client_2.send(f"12345{i}") for i in range(5)]
+        )
 
     invalid_metrics = compare_metrics_diff(
-        compare_metrics=dst_stats_counters,
-        all_metrics=diff,
-        diff_metrics=counters
+        compare_metrics=dst_stats_counters, all_metrics=diff, diff_metrics=counters
     )
 
     await client.stop()
     await client_2.stop()
     await server.stop()
 
-    assert invalid_metrics == [], \
-        f'Some metrics are different: {invalid_metrics}'
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
 
 
 @pytest.mark.parametrize(
-    'rule,ip,counters',
+    "rule,ip,counters",
     [
         pytest.param(
-            'xfw {{ dst ip4.tcp: block {{ {host}:{port}  }} }}',
-            'ip4',
+            "xfw {{ dst ip4.tcp: block {{ {host}:{port}  }} }}",
+            "ip4",
             dict(
                 xfw_dst_blocked_packets=10,
                 xfw_dst_blocked_bytes=610,
             ),
-            id='ip4-block-tcp'
+            id="ip4-block-tcp",
         ),
         pytest.param(
-            'xfw {{ dst ip6.tcp: block {{ {host}:{port}  }} }}',
-            'ip6',
+            "xfw {{ dst ip6.tcp: block {{ {host}:{port}  }} }}",
+            "ip6",
             dict(
                 xfw_dst_blocked_packets=10,
                 xfw_dst_blocked_bytes=810,
             ),
-            id='ip6-block-tcp'
+            id="ip6-block-tcp",
         ),
         pytest.param(
-            'xfw {{ ratelimit=test pps=0 bps=0; dst ip4.tcp: ratelimit=test {{ {host}:{port}  }} }}',
-            'ip4',
+            "xfw {{ ratelimit=test pps=0 bps=0; dst ip4.tcp: ratelimit=test {{ {host}:{port}  }} }}",
+            "ip4",
             dict(
                 xfw_dst_rate_limited_packets=10,
                 xfw_dst_rate_limited_bytes=610,
             ),
-            id='ip4-ratelimit-tcp',
+            id="ip4-ratelimit-tcp",
         ),
         pytest.param(
-            'xfw {{ ratelimit=test pps=0 bps=0; dst ip6.tcp: ratelimit=test {{ {host}:{port}  }} }}',
-            'ip6',
+            "xfw {{ ratelimit=test pps=0 bps=0; dst ip6.tcp: ratelimit=test {{ {host}:{port}  }} }}",
+            "ip6",
             dict(
                 xfw_dst_rate_limited_packets=10,
                 xfw_dst_rate_limited_bytes=810,
             ),
-            id='ip6-ratelimit-tcp',
+            id="ip6-ratelimit-tcp",
         ),
-    ]
+    ],
 )
 async def test_dst_tcp_stats(
-        rule: str,
-        ip: str,
-        counters: dict[str, int],
-        dst_stats_counters: list[str],
-        xfw: XFW,
-        tcp_ip4_server: TcpServer,
-        tcp_ip6_server: TcpServer,
-        tcp_ip4_raw_client: TcpRawClient,
-        tcp_ip6_raw_client: TcpRawClient,
+    rule: str,
+    ip: str,
+    counters: dict[str, int],
+    dst_stats_counters: list[str],
+    xfw: XFW,
+    tcp_ip4_server: TcpServer,
+    tcp_ip6_server: TcpServer,
+    tcp_ip4_raw_client: TcpRawClient,
+    tcp_ip6_raw_client: TcpRawClient,
 ):
     """
     We have to use in this test TcpRawSocket because
@@ -163,8 +159,8 @@ async def test_dst_tcp_stats(
     The kernel retries to send packet if it was not
     delivered
     """
-    server: TcpServer = locals().get(f'tcp_{ip}_server')
-    client: TcpRawClient = locals().get(f'tcp_{ip}_raw_client')
+    server: TcpServer = locals().get(f"tcp_{ip}_server")
+    client: TcpRawClient = locals().get(f"tcp_{ip}_raw_client")
     client_2: TcpRawClient = client_cloner(client=client, amount=1)[0]
 
     await server.start()
@@ -174,23 +170,17 @@ async def test_dst_tcp_stats(
     await xfw.rules_set(rule.format(host=server.ip_testing, port=server.port))
 
     async with xfw.metrics_diff(dst_stats_counters, wait_softirq=True) as diff:
-        await asyncio.gather(*[
-            client.send(TCP(flags='PA', seq=22211)/ f'012345{i}'.encode())
-            for i in range(5)
-        ] + [
-            client_2.send(TCP(flags='PA', seq=32211)/ f'012345{i}'.encode())
-            for i in range(5)
-        ])
+        await asyncio.gather(
+            *[client.send(TCP(flags="PA", seq=22211) / f"012345{i}".encode()) for i in range(5)]
+            + [client_2.send(TCP(flags="PA", seq=32211) / f"012345{i}".encode()) for i in range(5)]
+        )
 
     invalid_metrics = compare_metrics_diff(
-        compare_metrics=dst_stats_counters,
-        all_metrics=diff,
-        diff_metrics=counters
+        compare_metrics=dst_stats_counters, all_metrics=diff, diff_metrics=counters
     )
 
     await client.stop()
     await client_2.stop()
     await server.stop()
 
-    assert invalid_metrics == [], \
-        f'Some metrics are different: {invalid_metrics}'
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"

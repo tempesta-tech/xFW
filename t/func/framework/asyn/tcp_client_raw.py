@@ -7,11 +7,10 @@ from abc import ABC
 from scapy.layers.inet import IP, TCP
 from scapy.packet import Packet
 
-from framework.stateful import RawClientNetworkStateful, IP4Mixin, IP6Mixin
 from framework.asyn.tcp_raw_base import BaseTcpRawStateful
+from framework.stateful import IP4Mixin, IP6Mixin, RawClientNetworkStateful
 
-
-__all__ = ['TcpRawClient', 'TcpIpV4RawClient', 'TcpIpV6RawClient']
+__all__ = ["TcpRawClient", "TcpIpV4RawClient", "TcpIpV6RawClient"]
 
 
 class TcpRawClient(BaseTcpRawStateful, RawClientNetworkStateful, ABC):
@@ -19,16 +18,16 @@ class TcpRawClient(BaseTcpRawStateful, RawClientNetworkStateful, ABC):
     @property
     def valid_syn_packet(self) -> TCP:
         return TCP(
-            flags='S',
+            flags="S",
             seq=32513451,
             window=64240,
             options=[
-                ('MSS', 1460),
+                ("MSS", 1460),
                 ("SAckOK", b""),
                 ("Timestamp", (3727125531, 0)),
                 ("NOP", None),
-                ("WScale", 7)
-            ]
+                ("WScale", 7),
+            ],
         )
 
     def is_packet_my(self, packet: Packet) -> bool:
@@ -49,9 +48,10 @@ class TcpRawClient(BaseTcpRawStateful, RawClientNetworkStateful, ABC):
         await self.send(packet or self.valid_syn_packet)
 
         response = await self.receive()
-        assert response is not None, 'Server did not replied'
-        assert self.has_flag(response, 'SA'), \
-            f'Unexpected reply packet with flags = {response.flags}. Expected SA. Packet: {response}'
+        assert response is not None, "Server did not replied"
+        assert self.has_flag(
+            response, "SA"
+        ), f"Unexpected reply packet with flags = {response.flags}. Expected SA. Packet: {response}"
 
         await self.send(TCP(flags="A"))
 
@@ -59,15 +59,11 @@ class TcpRawClient(BaseTcpRawStateful, RawClientNetworkStateful, ABC):
 
 
 class TcpIpV4RawClient(TcpRawClient, IP4Mixin):
-    iptables_binary_name = 'iptables'
+    iptables_binary_name = "iptables"
 
     def set_socket_options(self, sock: socket.socket):
         super().set_socket_options(sock)
-        sock.setsockopt(
-            socket.IPPROTO_IP,
-            socket.IP_HDRINCL,
-            1
-        )
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
 
     def create_packet(self, packet: TCP):
         return IP(src=self.ip, dst=self.remote_ip) / packet
@@ -80,7 +76,7 @@ class TcpIpV4RawClient(TcpRawClient, IP4Mixin):
 
 
 class TcpIpV6RawClient(TcpRawClient, IP6Mixin):
-    iptables_binary_name = 'ip6tables'
+    iptables_binary_name = "ip6tables"
 
     def set_socket_options(self, sock: socket.socket):
         super().set_socket_options(sock)

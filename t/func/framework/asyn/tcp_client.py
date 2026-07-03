@@ -5,13 +5,12 @@ import asyncio
 import logging
 import time
 from abc import ABC
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 from framework.asyn.tcp_base import BaseTcpStateful
 from framework.stateful import IP4Mixin, IP6Mixin
 
-
-__all__ = ['TcpClient', 'TcpV4Client', 'TcpV6Client']
+__all__ = ["TcpClient", "TcpV4Client", "TcpV6Client"]
 
 
 class TCPClientProtocol(asyncio.Protocol):
@@ -26,7 +25,9 @@ class TCPClientProtocol(asyncio.Protocol):
         self.transport = transport
 
     def connection_lost(self, exc: Exception | None) -> None:
-        self.logger.info(f"Connection lost: resp_n={self.resp_n} queue_size={self.messages.qsize()} exc={exc}")
+        self.logger.info(
+            f"Connection lost: resp_n={self.resp_n} queue_size={self.messages.qsize()} exc={exc}"
+        )
         self.messages.put_nowait(exc)
 
     def data_received(self, data: bytes) -> None:
@@ -38,7 +39,7 @@ class TCPClientProtocol(asyncio.Protocol):
                 break
 
             message = self._msg_buffer[:i].decode() + "\n"
-            del self._msg_buffer[:i + 1]
+            del self._msg_buffer[: i + 1]
 
             self.resp_n += 1
             self.messages.put_nowait(message)
@@ -56,32 +57,26 @@ class TcpClient(BaseTcpStateful, ABC):
 
     async def on_socket_created(self):
         self.logger.debug(
-            f'connecting to server {self.remote_ip}:{self.remote_port}, '
-            f'timeout={self.timeout}'
+            f"connecting to server {self.remote_ip}:{self.remote_port}, " f"timeout={self.timeout}"
         )
-        await asyncio.wait_for(self.loop.sock_connect(
-            sock=self.socket,
-            address=(self.remote_ip, self.remote_port)
-        ), timeout=self.timeout)
+        await asyncio.wait_for(
+            self.loop.sock_connect(sock=self.socket, address=(self.remote_ip, self.remote_port)),
+            timeout=self.timeout,
+        )
 
         self.transport, self.protocol = await asyncio.wait_for(
             self.loop.create_connection(
                 protocol_factory=lambda: TCPClientProtocol(self.messages, self.logger),
-                sock=self.socket
+                sock=self.socket,
             ),
-            timeout=self.timeout
+            timeout=self.timeout,
         )
 
     async def ping_pong(self):
         await self.send_message()
         assert await self.receive_message(), f"({self}) Ping-pong failed: Connection timeout"
 
-    async def generate_traffic(
-        self,
-        messages_pps: int,
-        duration: float,
-        function: Callable = None
-    ):
+    async def generate_traffic(self, messages_pps: int, duration: float, function: Callable = None):
         """Sets messages_pps 0 to disable the traffic generation limit."""
         if not duration:
             return
@@ -99,9 +94,7 @@ class TcpClient(BaseTcpStateful, ABC):
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-class TcpV4Client(TcpClient, IP4Mixin):
-    ...
+class TcpV4Client(TcpClient, IP4Mixin): ...
 
 
-class TcpV6Client(TcpClient, IP6Mixin):
-    ...
+class TcpV6Client(TcpClient, IP6Mixin): ...

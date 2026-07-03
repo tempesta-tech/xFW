@@ -4,32 +4,30 @@
 import logging
 import os.path
 import subprocess
-from pathlib import Path
-
-import pytest
 import tarfile
-
 from io import BytesIO
+from pathlib import Path
 from typing import Literal
 
 import httpx
+import pytest
 from pluggy import Result
-from pytest import FixtureRequest, CallInfo, Item, TestReport
+from pytest import CallInfo, FixtureRequest, Item, TestReport
 
-from config import ConfigSettings, TestingModel, NetworkType
-from framework.stateful import RegularKernelSocketNetworkStateful
-from framework.xfw import XFW, XFWRemote
+from config import ConfigSettings, NetworkType, TestingModel
 from framework.asyn import *
+from framework.clickhouse import ClickhouseClient
 from framework.fabrics import client_fabric, server_fabric, xfw_fabric
+from framework.logger import get_logger
 from framework.networks import (
-    LocalVeth,
-    LocalVirtualizedNIC,
     LocalGateVeth,
     LocalNatVeth,
+    LocalVeth,
+    LocalVirtualizedNIC,
 )
 from framework.rpc.client import RpcClient
-from framework.logger import get_logger
-from framework.clickhouse import ClickhouseClient
+from framework.stateful import RegularKernelSocketNetworkStateful
+from framework.xfw import XFW, XFWRemote
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
@@ -56,7 +54,7 @@ def config() -> ConfigSettings:
     yield settings
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope="session")
 def logging_level(config) -> int:
     root_logger = logging.getLogger()
     # Take config.log_level if set, otherwise root_logger.level
@@ -65,56 +63,53 @@ def logging_level(config) -> int:
     return min(config_level, root_logger.level)
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope="session")
 def conf_logger(logging_level) -> logging.Logger:
-    logger = get_logger('root', level=logging_level)
+    logger = get_logger("root", level=logging_level)
     logger.propagate = False
 
-    logger = get_logger('pytest-conf', level=logging_level)
+    logger = get_logger("pytest-conf", level=logging_level)
     yield logger
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 async def prepare_geolite2_country_db(config: ConfigSettings, conf_logger):
     if os.path.exists(config.xfw_geolite2_country_db_path):
-        conf_logger.info(
-            'Skipped downloading GeoIP2-Country.mmdb. '
-            'File already exists'
-        )
+        conf_logger.info("Skipped downloading GeoIP2-Country.mmdb. " "File already exists")
         return
 
     async with httpx.AsyncClient() as client:
         response = await client.get(config.xfw_geolite2_country_db_url)
 
     if response.status_code != 200:
-        raise FileExistsError('Can not download GeoIP DB from Nexus')
+        raise FileExistsError("Can not download GeoIP DB from Nexus")
 
     file = BytesIO(response.content)
     tar = tarfile.open(fileobj=file)
-    mmdb_filename = [key for key in tar.getnames() if 'mmdb' in key]
+    mmdb_filename = [key for key in tar.getnames() if "mmdb" in key]
 
     if not len(mmdb_filename):
-        raise FileNotFoundError('Can not find mmdb file in geolite2 db archive')
+        raise FileNotFoundError("Can not find mmdb file in geolite2 db archive")
 
     mmdb_filename = mmdb_filename[0]
     mmdb = tar.extractfile(mmdb_filename)
 
-    with open(config.xfw_geolite2_country_db_path, 'wb') as f:
+    with open(config.xfw_geolite2_country_db_path, "wb") as f:
         f.write(mmdb.read())
 
-    conf_logger.info('Downloaded GeoIP2-Country.mmdb')
+    conf_logger.info("Downloaded GeoIP2-Country.mmdb")
 
 
-@pytest.fixture(autouse=True, scope='session')
+@pytest.fixture(autouse=True, scope="session")
 async def rpc_connection(config: ConfigSettings, conf_logger) -> RpcClient:
     if config.testing_model == TestingModel.same_host:
         yield
         return
 
-    server = f'{config.rpc_host}:{config.rpc_port}'
+    server = f"{config.rpc_host}:{config.rpc_port}"
     rpc_client = RpcClient(host=config.rpc_host, port=config.rpc_port)
 
-    conf_logger.info(f'establishing connection to RPC Server {server}')
+    conf_logger.info(f"establishing connection to RPC Server {server}")
     await rpc_client.run()
 
     yield rpc_client
@@ -122,10 +117,10 @@ async def rpc_connection(config: ConfigSettings, conf_logger) -> RpcClient:
     await rpc_client.shutdown_server()
     await rpc_client.shutdown()
 
-    conf_logger.info(f'closed connection to RPC Server {server}')
+    conf_logger.info(f"closed connection to RPC Server {server}")
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope="session")
 def network_class(config: ConfigSettings):
     network_class = {
         NetworkType.nic: LocalVirtualizedNIC,
@@ -136,8 +131,7 @@ def network_class(config: ConfigSettings):
 
     if not network_class:
         raise RuntimeError(
-            f'Network type with config.network_type = {config.network_type}'
-            f' does not exists.'
+            f"Network type with config.network_type = {config.network_type}" f" does not exists."
         )
 
     return network_class
@@ -149,18 +143,18 @@ async def prepare_network(config: ConfigSettings, network_class, conf_logger):
         yield
         return
 
-    conf_logger.info('starting to prepare network')
+    conf_logger.info("starting to prepare network")
 
-    conf_logger.info(f'using {network_class.__name__} network')
+    conf_logger.info(f"using {network_class.__name__} network")
     network = network_class(logger=conf_logger, config=config)
 
     await network.prepare()
-    conf_logger.info('network prepared')
+    conf_logger.info("network prepared")
 
     yield
 
     await network.destroy()
-    conf_logger.info('network destroyed')
+    conf_logger.info("network destroyed")
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -179,30 +173,42 @@ def __log_test_lifecycle(request: FixtureRequest, config: ConfigSettings):
         "fuser -k -9 /sys/kernel/tracing/trace_pipe",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        shell=True
+        shell=True,
     )
-    with open(temporary_log_file, 'w') as log_file:
+    with open(temporary_log_file, "w") as log_file:
         p = subprocess.Popen(
             ["cat", "/sys/kernel/tracing/trace_pipe"],
             stdout=log_file,
             stderr=subprocess.DEVNULL,
         )
-        subprocess.run(f'echo "{'\t' * 7}START TEST: "{test_name}"" >> {config.xfw_logger_log_file}', shell=True)
-        subprocess.run(f'echo "START TEST: "{test_name}"" >> {config.xfw_manager_log_file}', shell=True)
+        subprocess.run(
+            f'echo "{'\t' * 7}START TEST: "{test_name}"" >> {config.xfw_logger_log_file}',
+            shell=True,
+        )
+        subprocess.run(
+            f'echo "START TEST: "{test_name}"" >> {config.xfw_manager_log_file}', shell=True
+        )
         yield
-        subprocess.run(f'echo "FINISH TEST: "{test_name}"" >> {config.xfw_manager_log_file}', shell=True)
-        subprocess.run(f'echo "{'\t' * 7}FINISH TEST: "{test_name}"" >> {config.xfw_logger_log_file}', shell=True)
+        subprocess.run(
+            f'echo "FINISH TEST: "{test_name}"" >> {config.xfw_manager_log_file}', shell=True
+        )
+        subprocess.run(
+            f'echo "{'\t' * 7}FINISH TEST: "{test_name}"" >> {config.xfw_logger_log_file}',
+            shell=True,
+        )
         p.kill()
         p.wait()
     report_call: TestReport = getattr(request.node, "rep_call", None)
     if report_call is None or report_call.failed:
-        subprocess.run(f'mv {temporary_log_file} {config.tests_log_dir}{test_function_name}.log', shell=True)
+        subprocess.run(
+            f"mv {temporary_log_file} {config.tests_log_dir}{test_function_name}.log", shell=True
+        )
 
 
 @pytest.fixture
 async def clickhouse_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ):
     new_client = ClickhouseClient(
         host=config.tfw_logger_clickhouse_host,
@@ -212,7 +218,7 @@ async def clickhouse_client(
         password=config.tfw_logger_clickhouse_password,
         database=config.tfw_logger_clickhouse_db,
         table=ClickhouseClient.gen_new_table_name(),
-        logger=get_logger('clickhouse', level=logging_level)
+        logger=get_logger("clickhouse", level=logging_level),
     )
     yield new_client
 
@@ -225,10 +231,10 @@ async def clickhouse_client(
 
 @pytest.fixture
 async def xfw(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection: Optional[RpcClient],
-        clickhouse_client: ClickhouseClient,
+    config: ConfigSettings,
+    logging_level: int,
+    rpc_connection: Optional[RpcClient],
+    clickhouse_client: ClickhouseClient,
 ) -> XFW:
     xfw = xfw_fabric(
         config=config,
@@ -236,13 +242,13 @@ async def xfw(
         rpc_connection=rpc_connection,
         local_class=XFW,
         remote_class=XFWRemote,
-        clickhouse_client=clickhouse_client
+        clickhouse_client=clickhouse_client,
     )
     try:
         await xfw.start()
     except AssertionError as e:
         await xfw.stop()
-        pytest.fail(f'The XFW service have not started in time. Error: {e}')
+        pytest.fail(f"The XFW service have not started in time. Error: {e}")
 
     yield xfw
     await xfw.stop()
@@ -250,10 +256,10 @@ async def xfw(
 
 @pytest.fixture
 async def xfw_geoip(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection: Optional[RpcClient],
-        clickhouse_client: ClickhouseClient
+    config: ConfigSettings,
+    logging_level: int,
+    rpc_connection: Optional[RpcClient],
+    clickhouse_client: ClickhouseClient,
 ) -> XFW:
     xfw = xfw_fabric(
         config=config,
@@ -262,14 +268,14 @@ async def xfw_geoip(
         local_class=XFW,
         remote_class=XFWRemote,
         geo=True,
-        clickhouse_client=clickhouse_client
+        clickhouse_client=clickhouse_client,
     )
 
     try:
         await xfw.start()
     except AssertionError as e:
         await xfw.stop()
-        pytest.fail(f'The XFW service have not started in time. Error: {e}')
+        pytest.fail(f"The XFW service have not started in time. Error: {e}")
 
     yield xfw
     await xfw.stop()
@@ -277,16 +283,14 @@ async def xfw_geoip(
 
 @pytest.fixture
 async def tcp_ip4_server(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection: Optional[RpcClient]
+    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> TcpServer:
     new_server = server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=TcpV4Server,
-        remote_class=TcpV4ServerRemote
+        remote_class=TcpV4ServerRemote,
     )
     yield new_server
     await new_server.stop()
@@ -294,16 +298,14 @@ async def tcp_ip4_server(
 
 @pytest.fixture
 async def tcp_ip4_raw_server(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection: Optional[RpcClient]
+    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> TcpRawServer:
     new_server = server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=TcpIpV4RawServer,
-        remote_class=TcpIpV4RawServerRemote
+        remote_class=TcpIpV4RawServerRemote,
     )
     yield new_server
     await new_server.stop()
@@ -311,16 +313,14 @@ async def tcp_ip4_raw_server(
 
 @pytest.fixture
 async def tcp_ip6_server(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection: Optional[RpcClient]
+    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> TcpServer:
     new_server = server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=TcpV6Server,
-        remote_class=TcpV6ServerRemote
+        remote_class=TcpV6ServerRemote,
     )
     yield new_server
     await new_server.stop()
@@ -328,16 +328,14 @@ async def tcp_ip6_server(
 
 @pytest.fixture
 async def tcp_ip6_raw_server(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection: Optional[RpcClient]
+    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> TcpServer:
     new_server = server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=TcpIpV6RawServer,
-        remote_class=TcpIpV6RawServerRemote
+        remote_class=TcpIpV6RawServerRemote,
     )
     yield new_server
     await new_server.stop()
@@ -345,8 +343,8 @@ async def tcp_ip6_raw_server(
 
 @pytest.fixture
 async def tcp_ip4_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> TcpClient:
     new_client = client_fabric(
         config=config,
@@ -359,8 +357,8 @@ async def tcp_ip4_client(
 
 @pytest.fixture
 async def tcp_ip4_raw_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> TcpRawClient:
     new_client = client_fabric(
         config=config,
@@ -373,8 +371,8 @@ async def tcp_ip4_raw_client(
 
 @pytest.fixture
 async def tcp_ip6_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> TcpClient:
     new_client = client_fabric(
         config=config,
@@ -387,8 +385,8 @@ async def tcp_ip6_client(
 
 @pytest.fixture
 async def tcp_ip6_raw_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> TcpRawClient:
     new_client = client_fabric(
         config=config,
@@ -401,16 +399,14 @@ async def tcp_ip6_raw_client(
 
 @pytest.fixture
 async def udp_ip4_server(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection: Optional[RpcClient]
+    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> UdpServer:
     new_server = server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=UdpV4Server,
-        remote_class=UdpV4ServerRemote
+        remote_class=UdpV4ServerRemote,
     )
     yield new_server
     await new_server.stop()
@@ -418,16 +414,14 @@ async def udp_ip4_server(
 
 @pytest.fixture
 async def udp_ip6_server(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection: Optional[RpcClient]
+    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> UdpServer:
     new_server = server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=UdpV6Server,
-        remote_class=UdpV6ServerRemote
+        remote_class=UdpV6ServerRemote,
     )
     yield new_server
     await new_server.stop()
@@ -435,8 +429,8 @@ async def udp_ip6_server(
 
 @pytest.fixture
 async def udp_ip4_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> UdpClient:
     new_client = client_fabric(
         config=config,
@@ -449,8 +443,8 @@ async def udp_ip4_client(
 
 @pytest.fixture
 async def udp_ip4_raw_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> UdpRawClient:
     new_client = client_fabric(
         config=config,
@@ -463,8 +457,8 @@ async def udp_ip4_raw_client(
 
 @pytest.fixture
 async def udp_ip6_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> UdpClient:
     new_client = client_fabric(
         config=config,
@@ -477,8 +471,8 @@ async def udp_ip6_client(
 
 @pytest.fixture
 async def udp_ip6_raw_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> UdpRawClient:
     new_client = client_fabric(
         config=config,
@@ -491,8 +485,8 @@ async def udp_ip6_raw_client(
 
 @pytest.fixture
 async def icmp_ip4_raw_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> IcmpRawClient:
     new_client = client_fabric(
         config=config,
@@ -505,8 +499,8 @@ async def icmp_ip4_raw_client(
 
 @pytest.fixture
 async def icmp_ip6_raw_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> IcmpRawClient:
     new_client = client_fabric(
         config=config,
@@ -519,8 +513,8 @@ async def icmp_ip6_raw_client(
 
 @pytest.fixture
 async def gre_ip4_raw_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> GreRawClient:
     new_client = client_fabric(
         config=config,
@@ -533,8 +527,8 @@ async def gre_ip4_raw_client(
 
 @pytest.fixture
 async def gre_ip6_raw_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> GreRawClient:
     new_client = client_fabric(
         config=config,
@@ -545,18 +539,20 @@ async def gre_ip6_raw_client(
     await new_client.stop()
 
 
-@pytest.fixture(params=['udp', 'tcp'])
-def protocol(request) -> Literal['udp', 'tcp']:
+@pytest.fixture(params=["udp", "tcp"])
+def protocol(request) -> Literal["udp", "tcp"]:
     return request.param
 
 
-@pytest.fixture(params=['ip4', 'ip6'])
-def ip_version(request) -> Literal['ip4', 'ip6']:
+@pytest.fixture(params=["ip4", "ip6"])
+def ip_version(request) -> Literal["ip4", "ip6"]:
     return request.param
 
 
 @pytest.fixture
-def server(config: ConfigSettings, request: FixtureRequest, protocol: str, ip_version: str) -> RegularKernelSocketNetworkStateful:
+def server(
+    config: ConfigSettings, request: FixtureRequest, protocol: str, ip_version: str
+) -> RegularKernelSocketNetworkStateful:
     return request.getfixturevalue(f"{protocol}_{ip_version}_server")
 
 
@@ -667,16 +663,16 @@ async def start_udp_server_and_gre_clients(udp_server, gre_raw_client):
 
 
 @pytest.fixture(
-    params=['allow', 'block'],
-    ids=['allow', 'block'],
+    params=["allow", "block"],
+    ids=["allow", "block"],
 )
 def dst_defaults(request) -> str:
     return request.param
 
 
 @pytest.fixture(
-    params=['allow', 'block'],
-    ids=['allow', 'block'],
+    params=["allow", "block"],
+    ids=["allow", "block"],
 )
 def src_defaults(request) -> str:
     return request.param
@@ -684,16 +680,16 @@ def src_defaults(request) -> str:
 
 @pytest.fixture
 def remaining_client_server_group(
-        client: RegularKernelSocketNetworkStateful,
-        server: RegularKernelSocketNetworkStateful,
-        udp_ip4_client: RegularKernelSocketNetworkStateful,
-        udp_ip4_server: RegularKernelSocketNetworkStateful,
-        udp_ip6_client: RegularKernelSocketNetworkStateful,
-        udp_ip6_server: RegularKernelSocketNetworkStateful,
-        tcp_ip4_client: RegularKernelSocketNetworkStateful,
-        tcp_ip4_server: RegularKernelSocketNetworkStateful,
-        tcp_ip6_client: RegularKernelSocketNetworkStateful,
-        tcp_ip6_server: RegularKernelSocketNetworkStateful,
+    client: RegularKernelSocketNetworkStateful,
+    server: RegularKernelSocketNetworkStateful,
+    udp_ip4_client: RegularKernelSocketNetworkStateful,
+    udp_ip4_server: RegularKernelSocketNetworkStateful,
+    udp_ip6_client: RegularKernelSocketNetworkStateful,
+    udp_ip6_server: RegularKernelSocketNetworkStateful,
+    tcp_ip4_client: RegularKernelSocketNetworkStateful,
+    tcp_ip4_server: RegularKernelSocketNetworkStateful,
+    tcp_ip6_client: RegularKernelSocketNetworkStateful,
+    tcp_ip6_server: RegularKernelSocketNetworkStateful,
 ) -> dict[RegularKernelSocketNetworkStateful, RegularKernelSocketNetworkStateful]:
     group = {
         udp_ip4_client: udp_ip4_server,
@@ -707,9 +703,9 @@ def remaining_client_server_group(
 
 @pytest.fixture
 async def dns_udp_ip4_server(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection: Optional[RpcClient],
+    config: ConfigSettings,
+    logging_level: int,
+    rpc_connection: Optional[RpcClient],
 ) -> UdpServer:
     # mark: HARDCODED_53_PORT
     # XFW currently hardcoded to 53 port
@@ -721,7 +717,7 @@ async def dns_udp_ip4_server(
         rpc_connection=rpc_connection,
         local_class=DnsUdpV4Server,
         remote_class=DnsUdpV4ServerRemote,
-        port=53
+        port=53,
     )
     yield new_server
     await new_server.stop()
@@ -729,9 +725,9 @@ async def dns_udp_ip4_server(
 
 @pytest.fixture
 async def dns_udp_ip6_server(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection: Optional[RpcClient],
+    config: ConfigSettings,
+    logging_level: int,
+    rpc_connection: Optional[RpcClient],
 ) -> UdpServer:
     # mark: HARDCODED_53_PORT
     # XFW currently hardcoded to 53 port
@@ -743,7 +739,7 @@ async def dns_udp_ip6_server(
         rpc_connection=rpc_connection,
         local_class=DnsUdpV6Server,
         remote_class=DnsUdpV6ServerRemote,
-        port=53
+        port=53,
     )
     yield new_server
     await new_server.stop()
@@ -751,17 +747,14 @@ async def dns_udp_ip6_server(
 
 @pytest.fixture
 async def dns_udp_ip4_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> DnsUdpClient:
     # mark: HARDCODED_53_PORT
     # XFW currently hardcoded to 53 port
     # remote_port=config.backend_port,
     new_client = client_fabric(
-        config=config,
-        logging_level=logging_level,
-        local_class=DnsUdpV4Client,
-        remote_port=53
+        config=config, logging_level=logging_level, local_class=DnsUdpV4Client, remote_port=53
     )
     yield new_client
     await new_client.stop()
@@ -769,29 +762,30 @@ async def dns_udp_ip4_client(
 
 @pytest.fixture
 async def dns_udp_ip6_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> DnsUdpClient:
     # mark: HARDCODED_53_PORT
     # XFW currently hardcoded to 53 port
     # remote_port=config.backend_port,
     new_client = client_fabric(
-        config=config,
-        logging_level=logging_level,
-        local_class=DnsUdpV6Client,
-        remote_port=53
+        config=config, logging_level=logging_level, local_class=DnsUdpV6Client, remote_port=53
     )
     yield new_client
     await new_client.stop()
 
 
 @pytest.fixture
-def dns_udp_server(config: ConfigSettings, request: FixtureRequest, ip_version: str) -> DnsUdpServer:
+def dns_udp_server(
+    config: ConfigSettings, request: FixtureRequest, ip_version: str
+) -> DnsUdpServer:
     return request.getfixturevalue(f"dns_udp_{ip_version}_server")
 
 
 @pytest.fixture
-def dns_udp_client(config: ConfigSettings, request: FixtureRequest, ip_version: str) -> DnsUdpClient:
+def dns_udp_client(
+    config: ConfigSettings, request: FixtureRequest, ip_version: str
+) -> DnsUdpClient:
     return request.getfixturevalue(f"dns_udp_{ip_version}_client")
 
 
@@ -804,8 +798,8 @@ async def start_dns_udp_server_and_clients(dns_udp_server, dns_udp_client):
 
 @pytest.fixture
 async def traffic_replay_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ) -> TrafficReplayClient:
     new_client = client_fabric(
         config=config,
@@ -813,7 +807,7 @@ async def traffic_replay_client(
         local_class=TrafficReplayClient,
         force_ip4=True,
         tcpreplay_exec_file=config.tcpreplay_exec_file,
-        tcprewrite_exec_file=config.tcprewrite_exec_file
+        tcprewrite_exec_file=config.tcprewrite_exec_file,
     )
     yield new_client
     await new_client.stop()
@@ -821,8 +815,8 @@ async def traffic_replay_client(
 
 @pytest.fixture
 async def ether_raw_client(
-        config: ConfigSettings,
-        logging_level: int,
+    config: ConfigSettings,
+    logging_level: int,
 ):
     new_client = client_fabric(
         config=config,
@@ -836,9 +830,9 @@ async def ether_raw_client(
 
 @pytest.fixture
 async def ether_raw_server(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection: Optional[RpcClient],
+    config: ConfigSettings,
+    logging_level: int,
+    rpc_connection: Optional[RpcClient],
 ):
     new_client = server_fabric(
         config=config,

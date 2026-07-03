@@ -4,7 +4,6 @@
 import logging
 import sys
 
-
 __loggers = dict()
 
 
@@ -23,7 +22,9 @@ def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
 
     if level == logging.DEBUG:
         handler.setFormatter(
-            logging.Formatter("[%(asctime)s][%(levelname)-8s][%(name)-10s][%(filename)s:%(lineno)d]: %(message)s")
+            logging.Formatter(
+                "[%(asctime)s][%(levelname)-8s][%(name)-10s][%(filename)s:%(lineno)d]: %(message)s"
+            )
         )
     else:
         handler.setFormatter(

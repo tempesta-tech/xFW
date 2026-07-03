@@ -3,19 +3,18 @@
 
 # All imports need to prepare the env and preload all reqs
 
-import traceback
-import copy
 import asyncio
+import copy
 import dataclasses
 import time
+import traceback
 
 from framework.logger import *
 
-logger = get_logger('server')
+logger = get_logger("server")
 
 from framework.asyn import *
 from framework.cmp import *
-
 from framework.namespaces import *
 from framework.networks import *
 from framework.utils import *
@@ -78,7 +77,7 @@ class RpcServer:
     cmd_timeout: float
     server: asyncio.Server = None
     stop_if_not_connections_sec: int = 10
-    shutdown_message: str = '__SHUTDOWN__'
+    shutdown_message: str = "__SHUTDOWN__"
     client_connected: bool = False
     stop_task: asyncio.Task = None
 
@@ -92,18 +91,18 @@ class RpcServer:
         cmd = copy.copy(code)
 
         try:
-            if not cmd.startswith('await'):
+            if not cmd.startswith("await"):
                 local_ctx = {}
                 exec(cmd, global_ctx, local_ctx)
                 global_ctx.update(local_ctx)
-                res = local_ctx.get('res')
+                res = local_ctx.get("res")
             else:
-                cmd = f'async def coro(): return {cmd}'
+                cmd = f"async def coro(): return {cmd}"
                 exec(cmd, global_ctx)
-                coro = globals()['coro']
+                coro = globals()["coro"]
                 # this timeout should be greater then inner
                 res = await asyncio.wait_for(coro(), timeout=self.cmd_timeout)
-                cmd += '\nawait coro()'
+                cmd += "\nawait coro()"
 
         except Exception:
             res = traceback.format_exc()
@@ -112,9 +111,9 @@ class RpcServer:
             return cmd, str(res), time.time() - start_at
 
     async def handle_client(
-            self,
-            reader: asyncio.StreamReader,
-            writer: asyncio.StreamWriter,
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
     ):
         """
         Accepts new client connections and processes incoming messages.
@@ -125,16 +124,16 @@ class RpcServer:
         if no client has ever connected.
         """
         self.client_connected = True
-        addr = writer.get_extra_info('peername')
-        formatted_addr = f'{addr[0]}:{addr[1]}'
+        addr = writer.get_extra_info("peername")
+        formatted_addr = f"{addr[0]}:{addr[1]}"
         logger.info(f"New connection from {formatted_addr}")
 
         global_ctx = globals()
-        global_ctx['loop'] = asyncio.get_event_loop()
+        global_ctx["loop"] = asyncio.get_event_loop()
 
         try:
             while True:
-                data = await reader.readuntil(b'<<<')
+                data = await reader.readuntil(b"<<<")
 
                 if not data:
                     break
@@ -159,22 +158,22 @@ class RpcServer:
 
                 code, result, exec_time = await self.execute_code(global_ctx, message)
 
-                for line in code.split('\n'):
+                for line in code.split("\n"):
                     logger.info(line)
 
                 logger.info(f"------------------------------------------------")
 
-                if 'Traceback' in result:
-                    logger.info(f'Exec.Time={exec_time:.3f}s')
+                if "Traceback" in result:
+                    logger.info(f"Exec.Time={exec_time:.3f}s")
                     logger.info(f"------------------ ERROR -----------------------")
-                    for line in result.split('\n'):
+                    for line in result.split("\n"):
                         logger.info(line)
                 else:
-                    logger.info(f'Exec.Time={exec_time:.3f}s, Result={result}')
+                    logger.info(f"Exec.Time={exec_time:.3f}s, Result={result}")
 
                 logger.info(f"------------------------------------------------\n\n")
 
-                writer.write(f'{result}>>>'.encode())
+                writer.write(f"{result}>>>".encode())
                 await writer.drain()
 
         except (asyncio.CancelledError, TimeoutError):
@@ -204,8 +203,8 @@ class RpcServer:
         stops the server if none do.
         """
         logger.info(
-            f'will shut down server after {self.stop_if_not_connections_sec} seconds '
-            f'if nobody is connected'
+            f"will shut down server after {self.stop_if_not_connections_sec} seconds "
+            f"if nobody is connected"
         )
         start_time = time.time()
 
@@ -216,8 +215,8 @@ class RpcServer:
             await asyncio.sleep(1)
 
         logger.info(
-            f'server is going to shutdown - nobody connected '
-            f'after {self.stop_if_not_connections_sec} seconds'
+            f"server is going to shutdown - nobody connected "
+            f"after {self.stop_if_not_connections_sec} seconds"
         )
         await self.shutdown()
 
@@ -226,9 +225,7 @@ class RpcServer:
         Start the server
         """
         self.server = await asyncio.start_server(
-            client_connected_cb=self.handle_client,
-            host=self.host,
-            port=self.port
+            client_connected_cb=self.handle_client, host=self.host, port=self.port
         )
 
         if self.stop_if_not_connections_sec:

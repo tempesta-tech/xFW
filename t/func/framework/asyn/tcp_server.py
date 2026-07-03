@@ -2,31 +2,33 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import asyncio
-import struct
-import socket
 import logging
-
+import socket
+import struct
 from abc import ABC
-
-from framework.remote import RemoteServer
-from framework.stateful import IP4Mixin, IP6Mixin
-from framework.asyn.tcp_base import BaseTcpStateful
 from typing import Optional
 
+from framework.asyn.tcp_base import BaseTcpStateful
+from framework.remote import RemoteServer
+from framework.stateful import IP4Mixin, IP6Mixin
 
 __all__ = [
-    'TcpServer', 'TcpV4Server', 'TcpV6Server',
-    'TcpServerRemote', 'TcpV4ServerRemote', 'TcpV6ServerRemote'
+    "TcpServer",
+    "TcpV4Server",
+    "TcpV6Server",
+    "TcpServerRemote",
+    "TcpV4ServerRemote",
+    "TcpV6ServerRemote",
 ]
 
 
 class TCPServerProtocol(asyncio.Protocol):
     def __init__(
-            self,
-            messages: asyncio.Queue[Optional[Exception | str]],
-            logger: logging.Logger,
-            transports,
-            echo_mode: bool = False,
+        self,
+        messages: asyncio.Queue[Optional[Exception | str]],
+        logger: logging.Logger,
+        transports,
+        echo_mode: bool = False,
     ):
         self.messages = messages
         self.transport = None
@@ -38,8 +40,8 @@ class TCPServerProtocol(asyncio.Protocol):
         self._msg_buffer = bytearray()
 
     def connection_made(self, transport):
-        self.peer_name = transport.get_extra_info('peername')
-        self.logger.debug(f'connection from {self.peer_name}')
+        self.peer_name = transport.get_extra_info("peername")
+        self.logger.debug(f"connection from {self.peer_name}")
         self.transport = transport
         self.transports.append(transport)
 
@@ -52,10 +54,10 @@ class TCPServerProtocol(asyncio.Protocol):
                 break
 
             message = self._msg_buffer[:idx].decode() + "\n"
-            del self._msg_buffer[:idx + 1]
+            del self._msg_buffer[: idx + 1]
 
             self.req_n += 1
-            self.logger.debug(f'received from {self.peer_name}: {message}')
+            self.logger.debug(f"received from {self.peer_name}: {message}")
             self.messages.put_nowait(message)
 
         if self.echo_mode:
@@ -68,7 +70,7 @@ class ServerTransport(asyncio.Transport):
 
 
 class TcpServer(BaseTcpStateful, ABC):
-    def __init__(self, *args, echo_mode: bool = False,  **kwargs):
+    def __init__(self, *args, echo_mode: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         self.server: asyncio.Server = None
         self.transports: list[ServerTransport] = []
@@ -107,12 +109,12 @@ class TcpServer(BaseTcpStateful, ABC):
                     messages=self.messages,
                     logger=self.logger,
                     transports=self.transports,
-                    echo_mode=self.echo_mode
+                    echo_mode=self.echo_mode,
                 ),
-                sock=self.socket
+                sock=self.socket,
             )
         except Exception as e:
-            raise ConnectionError(f'Can not start TCP server: {e}') from e
+            raise ConnectionError(f"Can not start TCP server: {e}") from e
 
         await self.server.start_serving()
 
@@ -121,12 +123,12 @@ class TcpServer(BaseTcpStateful, ABC):
             if transport.is_closing():
                 continue
 
-            client_socket = transport.get_extra_info('socket')
-            client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+            client_socket = transport.get_extra_info("socket")
+            client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
             transport.abort()
-            self.logger.debug(f'closed {client_socket}')
+            self.logger.debug(f"closed {client_socket}")
 
-        self.logger.debug(f'closed {len(self.transports)} transports')
+        self.logger.debug(f"closed {len(self.transports)} transports")
 
     async def run_stop(self):
         self.close_all_clients_sockets()
@@ -134,12 +136,10 @@ class TcpServer(BaseTcpStateful, ABC):
         await super().run_stop()
 
 
-class TcpV4Server(IP4Mixin, TcpServer):
-    ...
+class TcpV4Server(IP4Mixin, TcpServer): ...
 
 
-class TcpV6Server(IP6Mixin, TcpServer):
-    ...
+class TcpV6Server(IP6Mixin, TcpServer): ...
 
 
 class TcpV4ServerRemote(RemoteServer, TcpV4Server):
@@ -154,5 +154,4 @@ class TcpV6ServerRemote(RemoteServer, TcpV6Server):
         TcpV6Server.__init__(self, *args, **kwargs)
 
 
-class TcpServerRemote(RemoteServer):
-    ...
+class TcpServerRemote(RemoteServer): ...

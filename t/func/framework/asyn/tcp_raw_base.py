@@ -1,22 +1,21 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import asyncio
 import abc
+import asyncio
 import socket
-import typing
 import time
+import typing
 from typing import Optional
 
 from scapy.layers.inet import TCP, Packet
 
+from framework.stateful import SocketBaseNetworkStateful
 from framework.utils import switch_coroutine
 
-
-from framework.stateful import SocketBaseNetworkStateful
-
-
-__all__ = ['BaseTcpRawStateful',]
+__all__ = [
+    "BaseTcpRawStateful",
+]
 
 
 class BaseTcpRawStateful(SocketBaseNetworkStateful):
@@ -25,12 +24,12 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
     socket_proto = socket.IPPROTO_TCP
 
     def __init__(
-            self,
-            *args,
-            auto_add_host: bool = True,
-            auto_ack_seq: bool = True,
-            log_requests: bool = True,
-            **kwargs
+        self,
+        *args,
+        auto_add_host: bool = True,
+        auto_ack_seq: bool = True,
+        log_requests: bool = True,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -83,14 +82,15 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
         added to the socket on socket creating
         """
         code, _, error = await self.run_host_cmd(
-            f'{self.iptables_binary_name} -I OUTPUT 1 -p tcp --tcp-flags RST RST '
-            f'-m mark --mark {self.sock_marker} -j ACCEPT',
+            f"{self.iptables_binary_name} -I OUTPUT 1 -p tcp --tcp-flags RST RST "
+            f"-m mark --mark {self.sock_marker} -j ACCEPT",
         )
-        assert code == 0, f'Can not set iptables rule to allow RST from current app: {error}'
+        assert code == 0, f"Can not set iptables rule to allow RST from current app: {error}"
 
         code, _, error = await self.run_host_cmd(
-            f'{self.iptables_binary_name} -A OUTPUT -p tcp --tcp-flags RST RST -j DROP')
-        assert code == 0, f'Can not set iptables rule to block RST from kernel: {error}'
+            f"{self.iptables_binary_name} -A OUTPUT -p tcp --tcp-flags RST RST -j DROP"
+        )
+        assert code == 0, f"Can not set iptables rule to block RST from kernel: {error}"
 
     async def on_socket_created(self):
         if not self.block_kernel_rst:
@@ -101,12 +101,11 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
     async def receive(self, buffer_len: int = 1024) -> typing.Optional[TCP]:
         try:
             response = await asyncio.wait_for(
-                self.loop.sock_recvfrom(self.socket, buffer_len),
-                timeout=self.timeout
+                self.loop.sock_recvfrom(self.socket, buffer_len), timeout=self.timeout
             )
         except asyncio.TimeoutError:
             if self.log_requests:
-                self.logger.info(f'{self} timeout - no data received')
+                self.logger.info(f"{self} timeout - no data received")
 
             return None
 
@@ -114,21 +113,21 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
         decoded = self.decode_data(data)
 
         if self.filter_packets and not self.is_packet_my(decoded):
-            self.logger.debug(f'{self} Skipped packet : {decoded}')
+            self.logger.debug(f"{self} Skipped packet : {decoded}")
             return await self.receive()
 
         self.last_response = decoded[TCP]
 
-        if self.has_flag(self.last_response, 'S'):
+        if self.has_flag(self.last_response, "S"):
             self.ack = self.last_response.seq + 1
-        elif self.has_flag(self.last_response, 'F'):
+        elif self.has_flag(self.last_response, "F"):
             self.ack = self.last_response.seq + 1
-        elif self.has_flag(self.last_response, 'P'):
+        elif self.has_flag(self.last_response, "P"):
             self.ack = self.last_response.seq + len(self.last_response.payload)
 
         if self.log_requests:
             self.logger.info(
-                f'received from {self.remote_ip}:{self.remote_port} '
+                f"received from {self.remote_ip}:{self.remote_port} "
                 f'"{self.last_response}, seq={self.last_response.seq}, ack={self.last_response.ack}"'
             )
 
@@ -140,8 +139,8 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
         if not response:
             return None
 
-        if self.has_flag(response, 'PA'):
-            await self.send(TCP(flags='A'))
+        if self.has_flag(response, "PA"):
+            await self.send(TCP(flags="A"))
 
         return response.payload.load.decode()
 
@@ -161,16 +160,16 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
             packet.ack = self.ack
 
             for index, option in enumerate(packet.options):
-                if option[0].lower() == 'timestamp':
-                    packet.options[index] = ('Timestamp', (int(time.time()), 0))
+                if option[0].lower() == "timestamp":
+                    packet.options[index] = ("Timestamp", (int(time.time()), 0))
 
         scapy_packet = self.create_packet(packet)
 
-        if self.has_flag(packet, 'S'):
+        if self.has_flag(packet, "S"):
             self.seq += 1
-        elif self.has_flag(packet, 'F'):
+        elif self.has_flag(packet, "F"):
             self.seq += 1
-        elif self.has_flag(packet, 'P'):
+        elif self.has_flag(packet, "P"):
             self.seq += len(packet.payload)
 
         self.last_request = scapy_packet
@@ -182,22 +181,18 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
             )
 
         return await asyncio.wait_for(
-            self.loop.sock_sendto(
-                self.socket,
-                bytes(scapy_packet),
-                self.get_sendto_dst()
-            ),
-            timeout=3
+            self.loop.sock_sendto(self.socket, bytes(scapy_packet), self.get_sendto_dst()),
+            timeout=3,
         )
 
     async def send_data(self, payload: str) -> bool:
-        await self.send(TCP(flags='PA') / payload.encode())
+        await self.send(TCP(flags="PA") / payload.encode())
         response = await self.receive()
 
         if not response:
             return False
 
-        return self.has_flag(response, 'A')
+        return self.has_flag(response, "A")
 
     @abc.abstractmethod
     async def handshake(self) -> bool:
@@ -209,25 +204,27 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
         await self.send(TCP(flags="FA"))
 
         response = await self.receive()
-        assert response is not None, 'Server did not replied'
+        assert response is not None, "Server did not replied"
 
-        if self.has_any_flag(response, {'RA', 'AR'}):
+        if self.has_any_flag(response, {"RA", "AR"}):
             return True
 
-        if self.has_any_flag(response, {'FA', 'AF'}):
+        if self.has_any_flag(response, {"FA", "AF"}):
             await self.send(TCP(flags="A"))
             return True
 
-        assert self.has_flag(response, 'A'), \
-            f'Unexpected reply packet with flags = {response.flags}. Expected A'
+        assert self.has_flag(
+            response, "A"
+        ), f"Unexpected reply packet with flags = {response.flags}. Expected A"
 
         await switch_coroutine()
 
         response = await self.receive()
-        assert response is not None, 'Server did not replied'
+        assert response is not None, "Server did not replied"
 
-        assert self.has_any_flag(response, {'FA', 'AF'}), \
-            f'Server replied with invalid packet: {response.flags}. Expected FA'
+        assert self.has_any_flag(
+            response, {"FA", "AF"}
+        ), f"Server replied with invalid packet: {response.flags}. Expected FA"
 
         await self.send(TCP(flags="A"))
 
@@ -239,6 +236,6 @@ class BaseTcpRawStateful(SocketBaseNetworkStateful):
 
     async def reset_receive(self) -> bool:
         response = await self.receive()
-        assert response is not None, 'RST was not received'
+        assert response is not None, "RST was not received"
 
-        return self.has_flag(response, 'R')
+        return self.has_flag(response, "R")

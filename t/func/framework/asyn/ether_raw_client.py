@@ -1,12 +1,13 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-from typing import Optional
-
 import asyncio
 import socket
-from scapy.layers.l2 import Ether
+from typing import Optional
+
 from scapy.all import Raw
+from scapy.layers.l2 import Ether
+
 from framework.stateful import SocketBaseNetworkStateful
 
 
@@ -17,14 +18,11 @@ class EtherRawClient(SocketBaseNetworkStateful):
 
     async def receive(self, *_, **__) -> Optional[bytes]:
         try:
-            data = await asyncio.wait_for(
-                self.loop.sock_recv(self.socket, 8096),
-                self.timeout
-            )
-            self.logger.debug(f'received data {data}')
+            data = await asyncio.wait_for(self.loop.sock_recv(self.socket, 8096), self.timeout)
+            self.logger.debug(f"received data {data}")
             return data
         except asyncio.TimeoutError:
-            self.logger.debug(f'timeout')
+            self.logger.debug(f"timeout")
             return None
 
     @property
@@ -33,7 +31,7 @@ class EtherRawClient(SocketBaseNetworkStateful):
 
     async def send_packet(self, packet: Ether):
         await self.loop.sock_sendall(self.socket, bytes(packet))
-        self.logger.info(f'Sending L2 packet {packet}')
+        self.logger.info(f"Sending L2 packet {packet}")
 
     async def send(self, data: str, src_mac: str, dst_mac: str):
         packet = Ether(dst=dst_mac, src=src_mac, type=self.socket_proto) / Raw(load=data.encode())

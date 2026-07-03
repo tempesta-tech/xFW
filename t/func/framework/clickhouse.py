@@ -1,16 +1,17 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import ipaddress
-import typing
 import datetime
-import os
+import ipaddress
 import logging
+import os
+import typing
 from dataclasses import dataclass
 
-from clickhouse_connect.driver.exceptions import DatabaseError, OperationalError
 from clickhouse_connect import get_async_client
 from clickhouse_connect.driver import AsyncClient
+from clickhouse_connect.driver.exceptions import DatabaseError, OperationalError
+
 from framework.utils import retry_on_failure
 
 
@@ -47,14 +48,14 @@ class ClickhouseClient:
                 database=self.database,
             )
             self.was_connected = True
-            self.logger.debug(f'connected to clickhouse db. Using table {self.table}')
+            self.logger.debug(f"connected to clickhouse db. Using table {self.table}")
 
         except OperationalError as e:
-            raise ConnectionError('Can not connect to Clickhouse') from e
+            raise ConnectionError("Can not connect to Clickhouse") from e
 
     @classmethod
     def gen_new_table_name(cls) -> str:
-        return f'escudo_test_{os.urandom(2).hex()}'
+        return f"escudo_test_{os.urandom(2).hex()}"
 
     @staticmethod
     def __build_log_record(db_record) -> LogRecord:
@@ -75,7 +76,7 @@ class ClickhouseClient:
             return
 
         await self.client.command(f"delete from {self.table} where true")
-        self.logger.debug('removed all records from the table')
+        self.logger.debug("removed all records from the table")
 
     async def records_count(self) -> int:
         """
@@ -128,7 +129,7 @@ class ClickhouseClient:
         prevent an errors while tests work with the different
         table schemas
         """
-        self.logger.debug(f'dropped the table {self.table}')
+        self.logger.debug(f"dropped the table {self.table}")
         return await self.client.command(f"drop table if exists {self.table}")
 
     @retry_on_failure(AssertionError)
@@ -138,4 +139,6 @@ class ClickhouseClient:
         because there may be a race condition between clickhouse and python.
         """
         records = await self.records_all()
-        assert len(records) == expected_records_n, msg or f"Current number of records: {len(records)}"
+        assert len(records) == expected_records_n, (
+            msg or f"Current number of records: {len(records)}"
+        )

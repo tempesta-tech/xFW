@@ -8,16 +8,15 @@ from dnslib import DNSRecord
 
 from framework.asyn.dns_client import DnsUdpClientProtocol
 from framework.asyn.udp_server import UdpServer
-from framework.stateful import IP4Mixin, IP6Mixin
 from framework.remote import RemoteServer
-
+from framework.stateful import IP4Mixin, IP6Mixin
 
 __all__ = [
-    'DnsUdpServer',
-    'DnsUdpV4Server',
-    'DnsUdpV6Server',
-    'DnsUdpV4ServerRemote',
-    'DnsUdpV6ServerRemote',
+    "DnsUdpServer",
+    "DnsUdpV4Server",
+    "DnsUdpV6Server",
+    "DnsUdpV4ServerRemote",
+    "DnsUdpV6ServerRemote",
 ]
 
 
@@ -48,27 +47,24 @@ class DnsUdpServer(UdpServer, ABC):
         return message.q.get_qname().idna()
 
     async def request_dns_server(self):
-        await self.send(DNSRecord.question('google.com.', qtype="A"))
+        await self.send(DNSRecord.question("google.com.", qtype="A"))
 
 
-class DnsUdpV4Server(DnsUdpServer, IP4Mixin):
-    ...
+class DnsUdpV4Server(DnsUdpServer, IP4Mixin): ...
 
 
-class DnsUdpV6Server(DnsUdpServer, IP6Mixin):
-    ...
+class DnsUdpV6Server(DnsUdpServer, IP6Mixin): ...
 
 
 class DnsUdpV4ServerRemote(RemoteServer, DnsUdpV4Server):
     remote_methods = [
-        'run_stop',
-        'start',
-        'stop',
-        'restart',
-
-        'update_config',
-        'receive_message',
-        'request_dns_server',
+        "run_stop",
+        "start",
+        "stop",
+        "restart",
+        "update_config",
+        "receive_message",
+        "request_dns_server",
     ]
 
     def __init__(self, *args, **kwargs) -> None:
@@ -78,15 +74,15 @@ class DnsUdpV4ServerRemote(RemoteServer, DnsUdpV4Server):
 
 class DnsUdpV6ServerRemote(RemoteServer, DnsUdpV6Server):
     remote_methods = [
-        'run_stop',
-        'start',
-        'stop',
-        'restart',
-
-        'update_config',
-        'receive_message',
-        'request_dns_server',
+        "run_stop",
+        "start",
+        "stop",
+        "restart",
+        "update_config",
+        "receive_message",
+        "request_dns_server",
     ]
+
     def __init__(self, *args, **kwargs) -> None:
         RemoteServer.__init__(self, *args, **kwargs)
         DnsUdpV6Server.__init__(self, *args, **kwargs)

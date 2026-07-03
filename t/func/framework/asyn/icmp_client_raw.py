@@ -6,14 +6,13 @@ import socket
 import typing
 from abc import ABC
 
-from scapy.layers.inet import IP, ICMP
+from scapy.layers.inet import ICMP, IP
 from scapy.layers.inet6 import ICMPv6EchoRequest
 from scapy.packet import Packet
 
-from framework.stateful import RawClientNetworkStateful, IP4Mixin, IP6Mixin
+from framework.stateful import IP4Mixin, IP6Mixin, RawClientNetworkStateful
 
-
-__all__ = ['IcmpRawClient', 'IcmpRawV4Client', 'IcmpRawV6Client']
+__all__ = ["IcmpRawClient", "IcmpRawV4Client", "IcmpRawV6Client"]
 
 
 class IcmpRawClient(RawClientNetworkStateful, ABC):
@@ -41,23 +40,18 @@ class IcmpRawClient(RawClientNetworkStateful, ABC):
         self.last_request = packet
 
         return await asyncio.wait_for(
-            self.loop.sock_sendto(
-                self.socket,
-                bytes(self.last_request),
-                self.get_sendto_dst()
-            ),
-            timeout=self.timeout
+            self.loop.sock_sendto(self.socket, bytes(self.last_request), self.get_sendto_dst()),
+            timeout=self.timeout,
         )
 
     async def receive(self, buffer_len: int = 1024) -> typing.Optional[ICMP]:
         try:
             response = await asyncio.wait_for(
-                self.loop.sock_recvfrom(self.socket, buffer_len),
-                timeout=self.timeout
+                self.loop.sock_recvfrom(self.socket, buffer_len), timeout=self.timeout
             )
         except asyncio.TimeoutError:
             if self.log_requests:
-                self.logger.info(f'{self} timeout - no data received')
+                self.logger.info(f"{self} timeout - no data received")
 
             return None
 

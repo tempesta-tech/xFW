@@ -4,18 +4,13 @@
 from abc import ABC
 from typing import Optional
 
-from dnslib import DNSRecord, A, RR
+from dnslib import RR, A, DNSRecord
+
 from framework.asyn.udp_base import BaseUdpProtocol
 from framework.asyn.udp_client import UdpClient
 from framework.stateful import IP4Mixin, IP6Mixin
 
-
-__all__ = [
-    'DnsUdpClient',
-    'DnsUdpV4Client',
-    'DnsUdpV6Client',
-    'DnsUdpClientProtocol'
-]
+__all__ = ["DnsUdpClient", "DnsUdpV4Client", "DnsUdpV6Client", "DnsUdpClientProtocol"]
 
 
 class DnsUdpClientProtocol(BaseUdpProtocol):
@@ -23,7 +18,7 @@ class DnsUdpClientProtocol(BaseUdpProtocol):
         message = DNSRecord.parse(data)
         self.messages.put_nowait(message)
         self.last_address = addr
-        self.logger.info(f'received from {addr} : {message}')
+        self.logger.info(f"received from {addr} : {message}")
 
 
 class DnsUdpClient(UdpClient, ABC):
@@ -33,14 +28,14 @@ class DnsUdpClient(UdpClient, ABC):
         return await super().receive(*args, **kwargs)
 
     async def send_query(self, query: DNSRecord):
-        self.logger.info(f'sending: {query}')
+        self.logger.info(f"sending: {query}")
         return await self.send_bytes(query.pack())
 
     async def request(self, domain: str):
         await self.send_query(DNSRecord.question(domain, qtype="A"))
 
     async def send_message(self):
-        return await self.request('google.com')
+        return await self.request("google.com")
 
     async def reply_for_non_existing_query(self):
         message: DNSRecord = await self.receive()
@@ -67,7 +62,9 @@ class DnsUdpClient(UdpClient, ABC):
 
         while len(reply.pack()) < response_size:
             fake_name = f"big{ip_counter}.google_com"
-            reply.add_ar(RR(fake_name, ttl=60, rdata=A(f"10.0.{ip_counter % 256}.{ip_counter // 256}")))
+            reply.add_ar(
+                RR(fake_name, ttl=60, rdata=A(f"10.0.{ip_counter % 256}.{ip_counter // 256}"))
+            )
             ip_counter += 1
 
         await self.send_query(reply)
@@ -83,7 +80,9 @@ class DnsUdpClient(UdpClient, ABC):
 
         for ip_counter in range(answers_amount):
             fake_name = f"big{ip_counter}.google_com"
-            reply.add_answer(RR(fake_name, ttl=60, rdata=A(f"10.0.{ip_counter % 256}.{ip_counter // 256}")))
+            reply.add_answer(
+                RR(fake_name, ttl=60, rdata=A(f"10.0.{ip_counter % 256}.{ip_counter // 256}"))
+            )
             ip_counter += 1
 
         await self.send_query(reply)
@@ -102,9 +101,7 @@ class DnsUdpClient(UdpClient, ABC):
         return True
 
 
-class DnsUdpV4Client(DnsUdpClient, IP4Mixin):
-    ...
+class DnsUdpV4Client(DnsUdpClient, IP4Mixin): ...
 
 
-class DnsUdpV6Client(DnsUdpClient, IP6Mixin):
-    ...
+class DnsUdpV6Client(DnsUdpClient, IP6Mixin): ...

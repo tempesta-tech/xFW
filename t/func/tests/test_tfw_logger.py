@@ -3,21 +3,19 @@
 
 import asyncio
 import os.path
-import pytest
 from datetime import datetime, timezone
 
-from framework.asyn import UdpServer, UdpClient
+import pytest
+
+from framework.asyn import UdpClient, UdpServer
 from framework.clickhouse import ClickhouseClient
-from framework.xfw import XFW
 from framework.cmp import check_connection
 from framework.utils import client_cloner
+from framework.xfw import XFW
 
 
 @pytest.mark.clickhouse
-async def test_table_created_after_xfw_startup(
-        xfw: XFW,
-        clickhouse_client: ClickhouseClient
-):
+async def test_table_created_after_xfw_startup(xfw: XFW, clickhouse_client: ClickhouseClient):
     await xfw.stop()
     await clickhouse_client.connect()
 
@@ -38,28 +36,28 @@ async def test_log_file_created(xfw: XFW):
     await xfw.start()
     assert os.path.exists(xfw.tfw_logger_log_file) is True
 
-    with open(xfw.tfw_logger_log_file, 'r') as f:
+    with open(xfw.tfw_logger_log_file, "r") as f:
         data = f.read()
 
-    assert 'Starting Tempesta FW Logger' in data
-    assert 'IncidentLogProcessor started. Timer interval' in data
+    assert "Starting Tempesta FW Logger" in data
+    assert "IncidentLogProcessor started. Timer interval" in data
 
     await xfw.stop()
 
-    with open(xfw.tfw_logger_log_file, 'r') as f:
+    with open(xfw.tfw_logger_log_file, "r") as f:
         data = f.read()
 
-    assert 'Tempesta FW Logger stopped' in data
-    assert 'PID file removed' in data
+    assert "Tempesta FW Logger stopped" in data
+    assert "PID file removed" in data
 
 
 @pytest.mark.clickhouse
 async def test_log_data_time_correctness(
-        xfw: XFW,
-        clickhouse_client: ClickhouseClient,
-        ip_version: str,
-        udp_client: UdpClient,
-        udp_server: UdpServer,
+    xfw: XFW,
+    clickhouse_client: ClickhouseClient,
+    ip_version: str,
+    udp_client: UdpClient,
+    udp_server: UdpServer,
 ):
     await udp_server.start()
     await udp_client.start()
@@ -76,8 +74,7 @@ async def test_log_data_time_correctness(
 
     time_before = datetime.now(tz=timezone.utc)
 
-    assert await check_connection(udp_client, udp_server) is False, \
-        'Request is not blocked'
+    assert await check_connection(udp_client, udp_server) is False, "Request is not blocked"
 
     await clickhouse_client.wait_for_number_of_records(expected_records_n=1)
     time_after = datetime.now(tz=timezone.utc)
@@ -96,11 +93,11 @@ async def test_log_data_time_correctness(
 
 @pytest.mark.clickhouse
 async def test_log_data_counter_correctness(
-        xfw: XFW,
-        clickhouse_client: ClickhouseClient,
-        ip_version: str,
-        udp_server: UdpServer,
-        udp_client: UdpClient,
+    xfw: XFW,
+    clickhouse_client: ClickhouseClient,
+    ip_version: str,
+    udp_server: UdpServer,
+    udp_client: UdpClient,
 ):
     await udp_server.start()
     await udp_client.start()
@@ -115,13 +112,13 @@ async def test_log_data_counter_correctness(
         }}
     """)
 
-    await udp_client.send('0123456789')
+    await udp_client.send("0123456789")
     assert await udp_server.receive() is None
 
     await clickhouse_client.wait_for_number_of_records(expected_records_n=1)
     db_records = await clickhouse_client.records_all()
 
-    packet_size = 52 if ip_version == "ip4" else 72 # packet size for UDP
+    packet_size = 52 if ip_version == "ip4" else 72  # packet size for UDP
     for record in db_records:
         assert record.reason == 128
         assert record.bytes == record.packets * packet_size
@@ -130,36 +127,30 @@ async def test_log_data_counter_correctness(
 
 @pytest.mark.clickhouse
 async def test_multiple_requests_logs(
-        xfw: XFW,
-        clickhouse_client: ClickhouseClient,
-        udp_ip4_client: UdpClient,
-        udp_ip4_server: UdpServer,
+    xfw: XFW,
+    clickhouse_client: ClickhouseClient,
+    udp_ip4_client: UdpClient,
+    udp_ip4_server: UdpServer,
 ):
     await clickhouse_client.connect()
     await udp_ip4_server.start()
 
-    clients = client_cloner(
-        client=udp_ip4_client,
-        amount=10
-    )
+    clients = client_cloner(client=udp_ip4_client, amount=10)
     for client in clients:
         await client.start()
 
-    await xfw.rules_set(
-        f"""
+    await xfw.rules_set(f"""
         xfw {{ 
             defaults {{ dst: allow; }} 
             dst ip4.udp : block {{
                 {udp_ip4_server.ip_testing}:{udp_ip4_server.port}
             }}
         }}
-        """
-    )
+        """)
 
-    results = await asyncio.gather(*[
-        check_connection(client, udp_ip4_client)
-        for client in clients
-    ])
+    results = await asyncio.gather(
+        *[check_connection(client, udp_ip4_client) for client in clients]
+    )
 
     assert not any(results)
     await clickhouse_client.wait_for_number_of_records(expected_records_n=10)
@@ -168,4 +159,4 @@ async def test_multiple_requests_logs(
     clients_ips = {client.ipv4 for client in clients}
     blocked_ips = {str(record.address.ipv4_mapped) for record in records}
     diff = clients_ips - blocked_ips
-    assert diff == set(), f'Not all blocked clients where appeared in the db: {diff}'
+    assert diff == set(), f"Not all blocked clients where appeared in the db: {diff}"

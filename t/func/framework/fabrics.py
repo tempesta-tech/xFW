@@ -2,25 +2,23 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import socket
-
 from typing import Type, TypeVar, Union
 
-from config import ConfigSettings, TestingModel, NetworkType
+from config import ConfigSettings, NetworkType, TestingModel
 from framework.logger import get_logger
 
-
-TClient = TypeVar('TClient')
-TLocalServer = TypeVar('TLocalServer')
-TRemoteServer = TypeVar('TRemoteServer')
+TClient = TypeVar("TClient")
+TLocalServer = TypeVar("TLocalServer")
+TRemoteServer = TypeVar("TRemoteServer")
 
 
 def client_fabric(
-        config: ConfigSettings,
-        logging_level: int,
-        local_class: Type[TClient],
-        remote_port: int = None,
-        force_ip4: bool = False,
-        **extra_params,
+    config: ConfigSettings,
+    logging_level: int,
+    local_class: Type[TClient],
+    remote_port: int = None,
+    force_ip4: bool = False,
+    **extra_params,
 ) -> TClient:
     """
     Creates the client instance based on the configuration
@@ -58,22 +56,22 @@ def client_fabric(
 
     if config.network_type == NetworkType.veth_nat:
         if bind_ip4:
-            params['remote_ip'] = config.backend_ipv4_host
+            params["remote_ip"] = config.backend_ipv4_host
         else:
-            params['remote_ip'] = config.backend_ipv6_host
+            params["remote_ip"] = config.backend_ipv6_host
 
     return local_class(**params)
 
 
 def server_fabric(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection,
-        local_class: Type[TLocalServer],
-        remote_class: Type[TRemoteServer],
-        port: int = None,
-        force_ip4: bool = False,
-        **extra_params
+    config: ConfigSettings,
+    logging_level: int,
+    rpc_connection,
+    local_class: Type[TLocalServer],
+    remote_class: Type[TRemoteServer],
+    port: int = None,
+    force_ip4: bool = False,
+    **extra_params,
 ) -> Union[TLocalServer, TRemoteServer]:
     """
     Creates the server instance based on the configuration
@@ -116,26 +114,26 @@ def server_fabric(
     params.update(extra_params)
 
     if config.network_type in {NetworkType.veth_gate, NetworkType.veth_nat}:
-        params['namespace'] = config.backend_namespace
+        params["namespace"] = config.backend_namespace
 
     if config.network_type == NetworkType.veth_nat:
         if bind_ip4:
-            params['ipv4_testing'] = config.backend_ipv4_host
+            params["ipv4_testing"] = config.backend_ipv4_host
         else:
-            params['ipv6_testing'] = config.backend_ipv6_host
+            params["ipv6_testing"] = config.backend_ipv6_host
 
     return cls(**params)
 
 
 def xfw_fabric(
-        config: ConfigSettings,
-        logging_level: int,
-        rpc_connection,
-        clickhouse_client,
-        local_class: Type[TLocalServer],
-        remote_class: Type[TRemoteServer],
-        geo: bool = False,
-        **extra_params,
+    config: ConfigSettings,
+    logging_level: int,
+    rpc_connection,
+    clickhouse_client,
+    local_class: Type[TLocalServer],
+    remote_class: Type[TRemoteServer],
+    geo: bool = False,
+    **extra_params,
 ) -> Union[TLocalServer, TRemoteServer]:
     """
     Creates the XFW instance based on the configuration,
@@ -169,6 +167,6 @@ def xfw_fabric(
     params.update(extra_params)
 
     if geo:
-        params['geolite2_db_path'] = config.xfw_geolite2_country_db_path
+        params["geolite2_db_path"] = config.xfw_geolite2_country_db_path
 
     return cls(**params)
