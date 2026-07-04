@@ -60,7 +60,7 @@ async def test_skip_query_requests(
 
     await dns_udp_client.send_query(query)
     assert (
-        await dns_udp_server.receive_message()
+        await dns_udp_server.receive_dns_record()
     ), "Any OPCODE != QUERY should be skipped by the XFW"
 
 
@@ -101,7 +101,7 @@ async def test_block_invalid_rcodes(
 
     await dns_udp_client.send_query(query)
     assert (
-        not await dns_udp_server.receive_message()
+        not await dns_udp_server.receive_dns_record()
     ), "Any queries with RCODES except OK should be dropped by the XFW"
 
 
@@ -117,7 +117,7 @@ async def test_drop_query_with_answer(
     query.add_answer(RR("google.com.", ttl=300, rdata=A("1.2.3.4")))
 
     await dns_udp_client.send_query(query)
-    assert not await dns_udp_server.receive_message(), "Query with answers is not blocked"
+    assert not await dns_udp_server.receive_dns_record(), "Query with answers is not blocked"
 
 
 async def test_drop_query_with_authority(
@@ -132,7 +132,7 @@ async def test_drop_query_with_authority(
     query.add_auth(RR("google.com.", ttl=300, rdata=NS("ns.google.com.")))
 
     await dns_udp_client.send_query(query)
-    assert not await dns_udp_server.receive_message(), "Query with authority is not blocked"
+    assert not await dns_udp_server.receive_dns_record(), "Query with authority is not blocked"
 
 
 async def test_pass_ixfr_request_without_answer_and_auth(
@@ -147,7 +147,7 @@ async def test_pass_ixfr_request_without_answer_and_auth(
 
     await dns_udp_client.send_query(query)
     assert (
-        await dns_udp_server.receive_message()
+        await dns_udp_server.receive_dns_record()
     ), "IXFR Query without authority and answer is blocked"
 
 
@@ -163,7 +163,7 @@ async def test_dont_block_ixfr_request_with_answer(
     query.add_answer(RR("google.com.", ttl=300, rdata=A("1.2.3.4")))
 
     await dns_udp_client.send_query(query)
-    assert await dns_udp_server.receive_message(), "IXFR Query with answer is not blocked"
+    assert await dns_udp_server.receive_dns_record(), "IXFR Query with answer is not blocked"
 
 
 async def test_block_ixfr_request_with_authority(
@@ -178,7 +178,7 @@ async def test_block_ixfr_request_with_authority(
     query.add_auth(RR("google.com.", ttl=300, rdata=NS("ns.google.com.")))
 
     await dns_udp_client.send_query(query)
-    assert not await dns_udp_server.receive_message(), "IXFR Query with authority is not blocked"
+    assert not await dns_udp_server.receive_dns_record(), "IXFR Query with authority is not blocked"
 
 
 async def test_block_ixfr_request_with_authority_and_answers(
@@ -195,7 +195,7 @@ async def test_block_ixfr_request_with_authority_and_answers(
     query.add_answer(RR("google.com.", ttl=300, rdata=A("1.2.3.5")))
 
     await dns_udp_client.send_query(query)
-    assert not await dns_udp_server.receive_message(), "IXFR Query with authority is not blocked"
+    assert not await dns_udp_server.receive_dns_record(), "IXFR Query with authority is not blocked"
 
 
 async def test_skip_query_with_2_additional_sections(
@@ -211,7 +211,7 @@ async def test_skip_query_with_2_additional_sections(
     query.add_ar(RR(f"boo.bar.", rtype=QTYPE.A, rdata=A("192.0.2.2")))
 
     await dns_udp_client.send_query(query)
-    assert await dns_udp_server.receive_message(), "Query with 2 additional sections is blocked"
+    assert await dns_udp_server.receive_dns_record(), "Query with 2 additional sections is blocked"
 
 
 async def test_block_query_with_more_than_2_additional_sections(
@@ -229,7 +229,7 @@ async def test_block_query_with_more_than_2_additional_sections(
 
     await dns_udp_client.send_query(query)
     assert (
-        not await dns_udp_server.receive_message()
+        not await dns_udp_server.receive_dns_record()
     ), "Query with more then 2 additional sections is not blocked"
 
 
@@ -248,7 +248,7 @@ async def test_dont_block_ixfr_query_with_more_than_2_additional_sections(
 
     await dns_udp_client.send_query(query)
     assert (
-        await dns_udp_server.receive_message()
+        await dns_udp_server.receive_dns_record()
     ), "IXFR Query with more than 2 additional sections is blocked"
 
 
@@ -306,7 +306,7 @@ async def test_normal_request_response(
     await xfw.rules_set("xfw { dns_filter; }")
 
     await new_dns_client.request_dns_server()
-    assert await new_dns_server.receive(), "DNS client did not receive request"
+    assert await new_dns_server.receive_dns_record(), "DNS client did not receive request"
 
 
 async def test_reply_on_unexisting_queries_with_dns_filter_off_is_allowed(
@@ -317,7 +317,9 @@ async def test_reply_on_unexisting_queries_with_dns_filter_off_is_allowed(
         await new_dns_server.reply_for_non_existing_query() is True
     ), "DNS client did not receive request"
 
-    assert await new_dns_client.receive(), "Server did not receive answer on unexisting query"
+    assert (
+        await new_dns_client.receive_dns_record()
+    ), "Server did not receive answer on unexisting query"
 
 
 async def test_reply_on_unexisting_query_is_blocked(
@@ -332,7 +334,9 @@ async def test_reply_on_unexisting_query_is_blocked(
         await new_dns_server.reply_for_non_existing_query() is True
     ), "DNS client did not receive request"
 
-    assert not await new_dns_client.receive(), "Server receive answer on unexisting query"
+    assert (
+        not await new_dns_client.receive_dns_record()
+    ), "Server receive answer on unexisting query"
 
 
 @pytest.mark.parametrize(
@@ -365,9 +369,9 @@ async def test_block_reply_with_size(
     ), "DNS client did not receive request"
 
     if reply_blocked:
-        assert not await new_dns_client.receive(), "Server answer is not blocked"
+        assert not await new_dns_client.receive_dns_record(), "Server answer is not blocked"
     else:
-        assert await new_dns_client.receive(), "Server answer is blocked"
+        assert await new_dns_client.receive_dns_record(), "Server answer is blocked"
 
 
 @pytest.mark.parametrize(
@@ -400,9 +404,9 @@ async def test_block_or_skip_reply_with_multiple_answers(
     ), "DNS client did not receive request"
 
     if reply_blocked:
-        assert not await new_dns_client.receive(), "Server answer is not blocked"
+        assert not await new_dns_client.receive_dns_record(), "Server answer is not blocked"
     else:
-        assert await new_dns_client.receive(), "Server answer is blocked"
+        assert await new_dns_client.receive_dns_record(), "Server answer is blocked"
 
 
 @pytest.mark.parametrize(
@@ -422,6 +426,6 @@ async def test_block_or_skip_by_ttl(
     assert await new_dns_server.reply_with_ttl(ttl) is True, "DNS client did not receive request"
 
     if reply_blocked:
-        assert not await new_dns_client.receive(), "Server answer is not blocked"
+        assert not await new_dns_client.receive_dns_record(), "Server answer is not blocked"
     else:
-        assert await new_dns_client.receive(), "Server answer is blocked"
+        assert await new_dns_client.receive_dns_record(), "Server answer is blocked"

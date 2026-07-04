@@ -403,14 +403,19 @@ class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
         self.sock_marker = 0x10
         self.message_polling_interval = 0.01
         self.log_msg = log_msg
-        self.last_response = None
-        self.last_request = None
+        self.last_response: bytes = None
+        self.last_request: bytes = None
+        self.sender_info = None
 
     def create_socket(self) -> socket.socket:
         """
         Create a new socket
         """
         return socket.socket(self.socket_family, self.socket_type, self.socket_proto)
+
+    @property
+    @abc.abstractmethod
+    def ping_message(self) -> bytes: ...
 
     @property
     @abc.abstractmethod
@@ -478,36 +483,79 @@ class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
         await self.check_socket_closed()
         self.logger.debug("socket is cleaned")
 
+    async def receive_block(self) -> bool:
+        """
+        Check if the incoming data stream has ended or is empty.
+
+        Returns True if the connection is closed/empty (received None),
+        and False if data is available.
+        """
+        return await self._receive() is None
+
+    @abc.abstractmethod
+    async def _send(self, data: bytes) -> None:
+        """Low-level method to send raw binary data to the remote side."""
+
+    @abc.abstractmethod
+    async def _receive(self, *args, **kwargs) -> typing.Optional[bytes]:
+        """Low-level method to receive a raw message from the remote side."""
+
+    async def ping(self):
+        """
+        Send a validation request (ping) to the already connected remote side.
+        Transmits the predefined `ping_message` through the established connection.
+        """
+        return await self._send(self.ping_message)
+
+    async def pong(self) -> bool:
+        """
+        Await and validate the expected validation response (pong) from the remote side.
+        Reads incoming data and verifies if it matches the expected `ping_message`.
+        """
+        return await self._receive() == self.ping_message
+
+    async def ping_pong(self) -> None:
+        """
+        Perform a full connection health check sequence (Ping-Pong).
+        Sends a ping request and immediately validates the subsequent pong response.
+        """
+        await self.ping()
+        assert await self.pong(), "Ping-pong failed: Connection timeout"
+
 
 class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful, abc.ABC):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.transport: typing.Optional[asyncio.BaseTransport] = None
+        self.transport: typing.Optional[asyncio.Transport | asyncio.DatagramTransport] = None
         self.protocol: typing.Optional[asyncio.BaseProtocol] = None
-        self.messages: asyncio.Queue[typing.Optional[Exception | str]] = asyncio.Queue()
+        self.messages: asyncio.Queue[typing.Optional[Exception | bytes]] = asyncio.Queue()
 
-    @abc.abstractmethod
-    async def send(self, data: str):
-        """
-        send data
-        """
+    @property
+    def ping_message(self) -> bytes:
+        return b"ping\n"
 
-    async def send_message(self):
-        """
-        Send the message to the already connected server
-        """
-        return await self.send(data="test\n")
+    async def _send(self, data: bytes) -> None:
+        """Low-level method to send raw binary data to the remote side."""
+        self.last_request = data
 
-    async def receive(self, *_, **__) -> typing.Optional[str]:
-        """
-        Receive a new message from the client
-        """
+        if self.log_msg:
+            self.logger.info(f'sending "{data}" to {self.remote_ip}:{self.remote_port}')
+
+        if isinstance(self.transport, asyncio.DatagramTransport):
+            self.transport.sendto(data, self.destination_address)
+        else:
+            self.transport.write(data)
+
+    async def _receive(self) -> typing.Optional[bytes]:
+        """Low-level method to receive a raw message from the remote side."""
         try:
             msg = await asyncio.wait_for(self.messages.get(), timeout=self.timeout)
 
             if isinstance(msg, Exception):
                 self.logger.info(f"({self}) connection closed by remote side")
                 raise msg
+
+            self.last_response = msg
 
             if self.log_msg:
                 self.logger.info(f'({self}) received = "{msg}"')
@@ -517,25 +565,27 @@ class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful, abc.ABC):
                 self.logger.info(f"({self}) timeout - no data received")
             return None
 
-    async def receive_message(self, *args, **kwargs) -> bool:
-        """
-        Receive a special text message from the client
-        """
-        data = await self.receive()
-
-        if not data:
-            return False
-
-        return data == "test\n"
-
     async def run_stop(self):
         if self.transport:
             self.transport.abort()
 
         await super().run_stop()
 
+    async def send_message(self, message_to_send: str) -> None:
+        """Send a text message to the remote side."""
+        await self._send(data=message_to_send.encode())
 
-class RawSocketNetworkStateful(RegularKernelSocketNetworkStateful, abc.ABC):
+    async def receive_message(self) -> typing.Optional[str]:
+        """Receive a text message from the remote side."""
+        raw_data = await self._receive()
+
+        if raw_data is None:
+            return None
+
+        return raw_data.decode(errors="ignore")
+
+
+class RawSocketNetworkStateful(SocketBaseNetworkStateful, abc.ABC):
     """
     The abstract class for the services based on the custom defined protocol
     uses the SOCK_RAW
@@ -543,27 +593,72 @@ class RawSocketNetworkStateful(RegularKernelSocketNetworkStateful, abc.ABC):
 
     socket_type = socket.SOCK_RAW
 
-    def __init__(self, *args, auto_add_host: bool = True, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.auto_add_host = auto_add_host
+    @property
+    def ping_message(self) -> bytes:
+        return bytes(self.create_packet(b"ping\n"))
 
     @abc.abstractmethod
-    def create_packet(self, packet: Packet) -> Packet:
-        """
-        Build or modify packet to send
-        """
+    def create_packet(self, packet: Packet | str | bytes) -> Packet:
+        """Build or modify packet to send."""
 
     @abc.abstractmethod
     def get_sendto_dst(self) -> tuple:
-        """
-        The tuple with destination address and destination port
-        """
+        """The tuple with destination address and destination port."""
 
     @abc.abstractmethod
     def decode_data(self, data: bytes) -> Packet:
+        """Decode received data from the server."""
+
+    async def send_packet(self, packet: Packet | str | bytes) -> None:
         """
-        Decode received data from the server
+        Build and transmit a Scapy packet to the remote side.
+
+        Converts the high-level input (Scapy Packet object, hex-string, or raw bytes)
+        into a valid network packet using `create_packet`
         """
+        await self._send(bytes(self.create_packet(packet)))
+
+    async def receive_packet(self) -> typing.Optional[Packet]:
+        """
+        Receive raw network data and reconstruct it into a Scapy packet.
+
+        Retrieves raw binary data from the network using the internal low-level
+        `_receive` method.
+        """
+        raw_data = await self._receive()
+
+        if raw_data is None:
+            return None
+
+        return self.decode_data(raw_data)
+
+    async def _send(self, data: bytes) -> None:
+        """Low-level method to send raw binary data to the remote side."""
+        self.last_request = data
+
+        if self.log_msg:
+            self.logger.info(f'sending "{data}" to {self.remote_ip}:{self.remote_port}')
+
+        await asyncio.wait_for(
+            self.loop.sock_sendto(self.socket, data, self.get_sendto_dst()), timeout=self.timeout
+        )
+
+    async def _receive(self) -> typing.Optional[bytes]:
+        """Low-level method to receive a raw message from the remote side."""
+        try:
+            self.last_response, self.sender_info = await asyncio.wait_for(
+                self.loop.sock_recvfrom(self.socket, 4096), timeout=self.timeout
+            )
+        except asyncio.TimeoutError:
+            if self.log_msg:
+                self.logger.info(f"TimeoutError - no data received")
+
+            return None
+
+        if self.log_msg:
+            self.logger.info(f'received from {self.ip_testing} "{self.last_response}"')
+
+        return self.last_response
 
 
 class IP4Mixin(SocketBaseNetworkStateful, abc.ABC):

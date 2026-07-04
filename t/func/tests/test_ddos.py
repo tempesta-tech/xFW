@@ -23,7 +23,7 @@ async def count_packets(server: EtherRawServer, start_time: float, wait_time_sec
     packets = []
 
     while True:
-        request = await server.receive()
+        request = await server._receive()
 
         if request is None:
             continue

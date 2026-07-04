@@ -1,3 +1,4 @@
+from .dns_base import *
 from .dns_client import *
 from .dns_server import *
 from .ether_raw_client import *

@@ -74,7 +74,7 @@ class TcpRawSynCookieClient(TcpRawClient):
         total_replies = 0
 
         while not self.stop_receive:
-            response = await super().receive()
+            response = await super().receive_packet()
 
             if not response:
                 continue
@@ -96,7 +96,7 @@ class TcpRawSynCookieClient(TcpRawClient):
         )
 
         while counter < amount:
-            await self.send(packet)
+            await self.send_packet(packet)
             await asyncio.sleep(sleep_time)
             counter += 1
 
@@ -131,9 +131,9 @@ class TcpRawSynCookieClient(TcpRawClient):
                 window=64240,
                 options=(("MSS", 1460),),
             )
-            await self.send(packet)
+            await self.send_packet(packet)
 
-            response = await super().receive()
+            response = await super().receive_packet()
 
             # probably, the server can answer with rst or something else,
             # we skip such situations and register them as complete
@@ -144,7 +144,7 @@ class TcpRawSynCookieClient(TcpRawClient):
                 continue
 
             self.ack -= 1
-            await self.send(TCP(flags="A"))
+            await self.send_packet(TCP(flags="A"))
 
 
 class TcpRawSynCookieIpv4Client(TcpRawSynCookieClient, TcpIpV4RawClient):
@@ -262,9 +262,9 @@ async def test_normal_connection(
 
     # STAGE 2: Send data
     stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
-    await tcp_raw_client.send(TCP(flags="PA") / b"hello")
+    await tcp_raw_client.send_packet(TCP(flags="PA") / b"hello")
 
-    answer = await tcp_raw_client.receive()
+    answer = await tcp_raw_client.receive_packet()
     assert answer is not None
     assert tcp_raw_client.has_flag(answer, "A")
 
@@ -725,9 +725,9 @@ async def test_flood_allowed_by_del_rule(
     )
     await xfw_with_forced_syncookie.rules_set("xfw { tcp_syncookies/del; }")
 
-    await tcp_raw_client.send(TCP(flags="S"))
+    await tcp_raw_client.send_packet(TCP(flags="S"))
 
-    response = await tcp_raw_client.receive()
+    response = await tcp_raw_client.receive_packet()
     assert tcp_raw_client.has_flag(
         response, "SA"
     ), f"Unexpected reply packet with flags = {response.flags}. Expected SA"

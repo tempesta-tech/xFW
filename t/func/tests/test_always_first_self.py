@@ -47,14 +47,14 @@ async def test_raw_tcp_client_with_handshake(
 ):
     assert await tcp_raw_client.handshake() is True
 
-    await tcp_raw_client.send(TCP(flags="PA") / b"test_data_1")
-    response = await tcp_raw_client.receive()
+    await tcp_raw_client.send_packet(TCP(flags="PA") / b"test_data_1")
+    response = await tcp_raw_client.receive_packet()
     assert tcp_raw_client.has_flag(
         response, "A"
     ), f"Unexpected reply packet with flags = {response.flags}. Expected A"
 
-    await tcp_raw_client.send(TCP(flags="PA") / b"test_data_2")
-    response = await tcp_raw_client.receive()
+    await tcp_raw_client.send_packet(TCP(flags="PA") / b"test_data_2")
+    response = await tcp_raw_client.receive_packet()
     assert tcp_raw_client.has_flag(
         response, "A"
     ), f"Unexpected reply packet with flags = {response.flags}. Expected A"
@@ -66,9 +66,7 @@ async def test_raw_udp_client_and_server(
     udp_server: UdpServer, udp_raw_client: UdpRawClient, start_udp_server_and_raw_clients
 ):
     await udp_raw_client.ping()
-
-    response = await udp_server.receive()
-    assert response == "ping"
+    assert await udp_server.pong()
 
 
 async def test_icmp_raw_client(
@@ -101,8 +99,8 @@ async def test_dns_udp_client_server(
     dns_udp_client: DnsUdpClient,
     start_dns_udp_server_and_clients,
 ):
-    await dns_udp_client.send_message()
-    assert await dns_udp_server.receive_message() == "google.com."
+    await dns_udp_client.ping()
+    assert await dns_udp_server.pong()
 
 
 async def test_raw_socket_tcp_traffic_collisions(
@@ -114,8 +112,8 @@ async def test_raw_socket_tcp_traffic_collisions(
     await tcp_raw_client.start()
     await tcp_raw_client_2.start()
 
-    await tcp_raw_client.send(tcp_raw_client.valid_syn_packet)
-    assert await tcp_raw_client_2.receive() is None
-    assert await tcp_raw_client.receive() is not None
+    await tcp_raw_client.send_packet(tcp_raw_client.valid_syn_packet)
+    assert await tcp_raw_client_2.receive_packet() is None
+    assert await tcp_raw_client.receive_packet() is not None
 
     await tcp_raw_client_2.stop()

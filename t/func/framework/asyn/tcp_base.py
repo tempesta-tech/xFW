@@ -21,12 +21,6 @@ class BaseTcpStateful(RegularKernelSocketNetworkStateful, ABC):
         super().__init__(*args, **kwargs)
         self.available_rst_connection_closing: bool = True
 
-    async def send(self, data: str):
-        if self.log_msg:
-            self.logger.info(f'{self} sending to {self.remote_ip}:{self.remote_port} "{data}"')
-
-        self.transport.write(data.encode())
-
     def use_rst_for_connection_closing(self):
         """
         For the TCP protocol use RST flag for connection closing.

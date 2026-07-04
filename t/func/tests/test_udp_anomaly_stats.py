@@ -29,12 +29,12 @@ def stats_counters() -> list[str]:
     [
         pytest.param(
             "ip4",
-            dict(xfw_udp_anom_zero_port_packets=10, xfw_udp_anom_zero_port_bytes=460),
+            dict(xfw_udp_anom_zero_port_packets=10, xfw_udp_anom_zero_port_bytes=470),
             id="ip4-zero-port",
         ),
         pytest.param(
             "ip6",
-            dict(xfw_udp_anom_zero_port_packets=10, xfw_udp_anom_zero_port_bytes=660),
+            dict(xfw_udp_anom_zero_port_packets=10, xfw_udp_anom_zero_port_bytes=670),
             id="ip6-zero-port",
         ),
     ],

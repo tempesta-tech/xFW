@@ -21,9 +21,9 @@ async def check_connection(
             return False
 
     try:
-        await asyncio.wait_for(client.send_message(), timeout)
+        await asyncio.wait_for(client.ping(), timeout)
 
-        if not await asyncio.wait_for(server.receive_message(), timeout):
+        if not await asyncio.wait_for(server.pong(), timeout):
             return False
 
         return True
