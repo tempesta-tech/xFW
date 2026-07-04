@@ -513,7 +513,7 @@ async def icmp_ip6_raw_client(
 async def gre_ip4_raw_client(
     config: ConfigSettings,
     logging_level: int,
-) -> GreRawClient:
+) -> BaseGreRawStateful:
     new_client = client_fabric(
         config=config,
         logging_level=logging_level,
@@ -527,7 +527,7 @@ async def gre_ip4_raw_client(
 async def gre_ip6_raw_client(
     config: ConfigSettings,
     logging_level: int,
-) -> GreRawClient:
+) -> BaseGreRawStateful:
     new_client = client_fabric(
         config=config,
         logging_level=logging_level,
@@ -535,6 +535,36 @@ async def gre_ip6_raw_client(
     )
     yield new_client
     await new_client.stop()
+
+
+@pytest.fixture
+async def gre_ip4_raw_server(
+    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
+) -> UdpServer:
+    new_server = server_fabric(
+        config=config,
+        logging_level=logging_level,
+        rpc_connection=rpc_connection,
+        local_class=GreRawV4Server,
+        remote_class=GreRawV4Server,
+    )
+    yield new_server
+    await new_server.stop()
+
+
+@pytest.fixture
+async def gre_ip6_raw_server(
+    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
+) -> UdpServer:
+    new_server = server_fabric(
+        config=config,
+        logging_level=logging_level,
+        rpc_connection=rpc_connection,
+        local_class=GreRawV6Server,
+        remote_class=GreRawV6Server,
+    )
+    yield new_server
+    await new_server.stop()
 
 
 @pytest.fixture(params=["udp", "tcp"])
@@ -655,6 +685,32 @@ def client(request: FixtureRequest, protocol, ip_version) -> RegularKernelSocket
     return request.getfixturevalue(f"{protocol}_{ip_version}_client")
 
 
+@pytest.fixture(scope="function")
+def dynamic_client(request: pytest.FixtureRequest, ip_version) -> SocketBaseNetworkStateful:
+    """
+    Dynamically returns a client instance based on test parameters.
+
+    How it works:
+    1. Receives the target fixture name as a string via `request.param`.
+    2. Uses `getfixturevalue` to dynamically resolve and initialize that fixture.
+    3. Depend on `ip_version` to ensure the correct IP context is applied.
+    """
+    return request.getfixturevalue(request.param)
+
+
+@pytest.fixture(scope="function")
+def dynamic_server(request: pytest.FixtureRequest, ip_version) -> SocketBaseNetworkStateful:
+    """
+    Dynamically returns a server instance based on test parameters.
+
+    How it works:
+    1. Receives the target fixture name as a string via `request.param`.
+    2. Uses `getfixturevalue` to dynamically resolve and initialize that fixture.
+    3. Depend on `ip_version` to ensure the correct IP context is applied.
+    """
+    return request.getfixturevalue(request.param)
+
+
 @pytest.fixture
 def tcp_server(config: ConfigSettings, request: FixtureRequest, ip_version: str) -> TcpServer:
     return request.getfixturevalue(f"tcp_{ip_version}_server")
@@ -696,8 +752,13 @@ def icmp_raw_client(request: FixtureRequest, ip_version) -> IcmpRawClient:
 
 
 @pytest.fixture
-def gre_raw_client(request: FixtureRequest, ip_version) -> GreRawClient:
+def gre_raw_client(request: FixtureRequest, ip_version) -> BaseGreRawStateful:
     return request.getfixturevalue(f"gre_{ip_version}_raw_client")
+
+
+@pytest.fixture
+def gre_raw_server(request: FixtureRequest, ip_version) -> BaseGreRawStateful:
+    return request.getfixturevalue(f"gre_{ip_version}_raw_server")
 
 
 @pytest.fixture
@@ -750,8 +811,8 @@ async def start_udp_server_and_icmp_clients(udp_server, icmp_raw_client):
 
 
 @pytest.fixture
-async def start_udp_server_and_gre_clients(udp_server, gre_raw_client):
-    await udp_server.start()
+async def start_gre_server_and_gre_clients(gre_raw_server, gre_raw_client):
+    await gre_raw_server.start()
     await gre_raw_client.start()
     yield
 
