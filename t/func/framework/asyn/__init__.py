@@ -3,7 +3,9 @@ from .dns_client import *
 from .dns_server import *
 from .ether_raw_client import *
 from .ether_raw_server import *
-from .gre_client import *
+from .gre_client_raw import *
+from .gre_raw_base import *
+from .gre_server_raw import *
 from .icmp_client_raw import *
 from .tcp_client import *
 from .tcp_client_raw import *

@@ -632,6 +632,15 @@ class RawSocketNetworkStateful(SocketBaseNetworkStateful, abc.ABC):
 
         return self.decode_data(raw_data)
 
+    async def receive_expected_packet(self, expected_packet: Packet) -> None:
+        received_packet = await self.receive_packet()
+
+        self.logger.info(f"{received_packet = }")
+        self.logger.info(f"{expected_packet = }")
+
+        assert received_packet is not None
+        assert bytes(expected_packet) == bytes(received_packet)
+
     async def _send(self, data: bytes) -> None:
         """Low-level method to send raw binary data to the remote side."""
         self.last_request = data
