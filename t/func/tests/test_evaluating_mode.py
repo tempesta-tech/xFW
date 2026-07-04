@@ -273,9 +273,9 @@ async def test_tcp_anomaly_filter(
 
     metrics = ["xfw_tcp_anom_bad_flags_packets", "xfw_tcp_anom_bad_flags_bytes"]
     async with xfw.metrics_diff(metrics) as diff_metrics:
-        await asyncio.gather(*[tcp_ip4_raw_client.send(packet) for _ in range(5)])
+        await asyncio.gather(*[tcp_ip4_raw_client.send_packet(packet) for _ in range(5)])
 
-    assert await tcp_ip4_raw_server.receive_packet() == "SR", "Client is blocked"
+    assert await tcp_ip4_raw_server.receive_tcp_flags() == "SR", "Client is blocked"
     assert metrics_increased(metrics, diff_metrics) is True
 
 
@@ -289,10 +289,10 @@ async def test_tcp_auth_filter_tcp_flood_from_non_existing_session(
 
     metrics = ["xfw_tcp_auth_failed_packets", "xfw_tcp_auth_failed_bytes"]
     async with xfw.metrics_diff(metrics) as diff_metrics:
-        await tcp_raw_client.send(TCP(flags="A"))
+        await tcp_raw_client.send_packet(TCP(flags="A"))
 
     assert (
-        await tcp_raw_server.receive_packet() == "A"
+        await tcp_raw_server.receive_tcp_flags() == "A"
     ), f"TCP packet with A without session is skipped"
     assert metrics_increased(metrics, diff_metrics) is True
 
@@ -313,7 +313,7 @@ async def test_tcp_flags_filter(
     metrics = ["xfw_syn_rate_limited_packets", "xfw_syn_rate_limited_bytes"]
     async with xfw.metrics_diff(metrics) as diff_metrics:
         await asyncio.gather(
-            *[tcp_raw_client.send(tcp_raw_client.valid_syn_packet) for _ in range(10)]
+            *[tcp_raw_client.send_packet(tcp_raw_client.valid_syn_packet) for _ in range(10)]
         )
 
     assert await tcp_raw_server.receive_many_packets(10) == 10
@@ -336,9 +336,9 @@ async def test_udp_anomaly_filter_zero_port_is_blocked(
 
     metrics = ["xfw_udp_anom_zero_port_packets", "xfw_udp_anom_zero_port_bytes"]
     async with xfw.metrics_diff(metrics) as diff_metrics:
-        await udp_raw_client.send(packet / "Hello :)")
+        await udp_raw_client.send_packet(packet / "Hello :)")
 
-    assert await udp_server.receive(), f"Zero source port port is blocked"
+    assert await udp_server.receive_message() == "Hello :)", f"Zero source port port is blocked"
     assert metrics_increased(metrics, diff_metrics) is True
 
 

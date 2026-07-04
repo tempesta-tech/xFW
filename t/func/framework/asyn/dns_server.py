@@ -2,12 +2,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 from abc import ABC
-from typing import Optional
 
 from dnslib import DNSRecord
 
-from framework.asyn.dns_client import DnsUdpClientProtocol
-from framework.asyn.udp_server import UdpServer
+from framework.asyn.dns_base import BaseDnsStateful
 from framework.remote import RemoteServer
 from framework.stateful import IP4Mixin, IP6Mixin
 
@@ -20,31 +18,14 @@ __all__ = [
 ]
 
 
-class DnsUdpServer(UdpServer, ABC):
-    transmitting_protocol = DnsUdpClientProtocol
-
-    async def receive(self, *args, **kwargs) -> Optional[DNSRecord]:
-        return await super().receive(*args, **kwargs)
-
+class DnsUdpServer(BaseDnsStateful, ABC):
     async def update_config(self, client_ip: str, client_port: int, my_port: int):
         self.port = my_port
         self.remote_ip = client_ip
         self.remote_port = client_port
 
-    async def send(self, data: DNSRecord):
-        self.logger.info(f'sending "{data}" to {self.remote_ip}:{self.remote_port}')
-        await self.send_bytes(data.pack())
-
-    async def receive_message(self) -> Optional[str]:
-        message: DNSRecord = await self.receive()
-
-        if not message:
-            return None
-
-        return message.q.get_qname().idna()
-
     async def request_dns_server(self):
-        await self.send(DNSRecord.question("google.com.", qtype="A"))
+        await self._send(DNSRecord.question("google.com.", qtype="A").pack())
 
 
 class DnsUdpV4Server(DnsUdpServer, IP4Mixin): ...

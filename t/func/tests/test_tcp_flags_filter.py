@@ -82,10 +82,10 @@ async def test_block(
         }}
         """)
 
-    await asyncio.gather(*[tcp_raw_client.send(blocking_packet) for _ in range(10)])
+    await asyncio.gather(*[tcp_raw_client.send_packet(blocking_packet) for _ in range(10)])
     assert await tcp_raw_server.receive_many_packets(10) == 5
 
-    await asyncio.gather(*[tcp_raw_client.send(non_blocking_packet) for _ in range(10)])
+    await asyncio.gather(*[tcp_raw_client.send_packet(non_blocking_packet) for _ in range(10)])
     assert await tcp_raw_server.receive_many_packets(10) == 10
 
 
@@ -111,12 +111,12 @@ async def test_change_limits(
             tcp_flags {blocking_packet_name} : ratelimit=test;
         }}
         """)
-    await asyncio.gather(*[tcp_raw_client.send(blocking_packet) for _ in range(10)])
-    requests = await asyncio.gather(*[tcp_raw_server.receive() for _ in range(10)])
+    await asyncio.gather(*[tcp_raw_client.send_packet(blocking_packet) for _ in range(10)])
+    requests = await asyncio.gather(*[tcp_raw_server.receive_packet() for _ in range(10)])
     assert len([request for request in requests if request]) == 4
 
-    await asyncio.gather(*[tcp_raw_client.send(non_blocking_packet) for _ in range(10)])
-    requests = await asyncio.gather(*[tcp_raw_server.receive() for _ in range(10)])
+    await asyncio.gather(*[tcp_raw_client.send_packet(non_blocking_packet) for _ in range(10)])
+    requests = await asyncio.gather(*[tcp_raw_server.receive_packet() for _ in range(10)])
     assert len([request for request in requests if request]) == 10
 
 
@@ -140,5 +140,5 @@ async def test_unblock(
         }}
         """)
 
-    await asyncio.gather(*[tcp_raw_client.send(blocking_packet) for _ in range(10)])
+    await asyncio.gather(*[tcp_raw_client.send_packet(blocking_packet) for _ in range(10)])
     assert await tcp_raw_server.receive_many_packets() == 10

@@ -97,53 +97,48 @@ class BaseTcpRawStateful(RawSocketNetworkStateful, abc.ABC):
 
         await self.block_kernel_rst_package_from_unknown_client()
 
-    async def receive(self, buffer_len: int = 1024) -> typing.Optional[TCP]:
-        try:
-            response = await asyncio.wait_for(
-                self.loop.sock_recvfrom(self.socket, buffer_len), timeout=self.timeout
-            )
-        except asyncio.TimeoutError:
-            if self.log_msg:
-                self.logger.info(f"{self} timeout - no data received")
+    async def receive_block(self) -> bool:
+        return await self.receive_packet() is None
 
+    async def receive_packet(self) -> typing.Optional[TCP]:
+        decoded = await super().receive_packet()
+
+        if decoded is None:
             return None
-
-        data, self.sender_info = response
-        decoded = self.decode_data(data)
 
         if self.filter_packets and not self.is_packet_my(decoded):
             self.logger.debug(f"{self} Skipped packet : {decoded}")
-            return await self.receive()
+            return await self.receive_packet()
 
-        self.last_response = decoded[TCP]
+        tcp_packet = decoded[TCP]
 
-        if self.has_flag(self.last_response, "S"):
-            self.ack = self.last_response.seq + 1
-        elif self.has_flag(self.last_response, "F"):
-            self.ack = self.last_response.seq + 1
-        elif self.has_flag(self.last_response, "P"):
-            self.ack = self.last_response.seq + len(self.last_response.payload)
+        if self.has_flag(tcp_packet, "S"):
+            self.ack = tcp_packet.seq + 1
+        elif self.has_flag(tcp_packet, "F"):
+            self.ack = tcp_packet.seq + 1
+        elif self.has_flag(tcp_packet, "P"):
+            self.ack = tcp_packet.seq + len(tcp_packet.payload)
 
         if self.log_msg:
             self.logger.info(
                 f"received from {self.remote_ip}:{self.remote_port} "
-                f'"{self.last_response}, seq={self.last_response.seq}, ack={self.last_response.ack}"'
+                f'"{tcp_packet}, seq={tcp_packet.seq}, ack={tcp_packet.ack}"'
             )
 
-        return self.last_response
+        return tcp_packet
 
     async def receive_data(self) -> Optional[str]:
-        response = await self.receive()
+        response = await self.receive_packet()
 
         if not response:
             return None
 
         if self.has_flag(response, "PA"):
-            await self.send(TCP(flags="A"))
+            await self.send_packet(TCP(flags="A"))
 
         return response.payload.load.decode()
 
-    async def send(self, packet: TCP) -> int:
+    async def send_packet(self, packet: TCP) -> int:
         if self.seq is None:
             self.seq = packet.seq or 0
 
@@ -179,14 +174,11 @@ class BaseTcpRawStateful(RawSocketNetworkStateful, abc.ABC):
                 f'seq={scapy_packet.seq}, ack={scapy_packet.ack}"'
             )
 
-        return await asyncio.wait_for(
-            self.loop.sock_sendto(self.socket, bytes(scapy_packet), self.get_sendto_dst()),
-            timeout=3,
-        )
+        await self._send(bytes(scapy_packet))
 
     async def send_data(self, payload: str) -> bool:
-        await self.send(TCP(flags="PA") / payload.encode())
-        response = await self.receive()
+        await self.send_packet(TCP(flags="PA") / payload.encode())
+        response = await self.receive_packet()
 
         if not response:
             return False
@@ -200,16 +192,16 @@ class BaseTcpRawStateful(RawSocketNetworkStateful, abc.ABC):
         """
 
     async def close_connection(self) -> bool:
-        await self.send(TCP(flags="FA"))
+        await self.send_packet(TCP(flags="FA"))
 
-        response = await self.receive()
+        response = await self.receive_packet()
         assert response is not None, "Server did not replied"
 
         if self.has_any_flag(response, {"RA", "AR"}):
             return True
 
         if self.has_any_flag(response, {"FA", "AF"}):
-            await self.send(TCP(flags="A"))
+            await self.send_packet(TCP(flags="A"))
             return True
 
         assert self.has_flag(
@@ -218,23 +210,23 @@ class BaseTcpRawStateful(RawSocketNetworkStateful, abc.ABC):
 
         await switch_coroutine()
 
-        response = await self.receive()
+        response = await self.receive_packet()
         assert response is not None, "Server did not replied"
 
         assert self.has_any_flag(
             response, {"FA", "AF"}
         ), f"Server replied with invalid packet: {response.flags}. Expected FA"
 
-        await self.send(TCP(flags="A"))
+        await self.send_packet(TCP(flags="A"))
 
         return True
 
     async def reset_send(self):
-        await self.send(TCP(flags="R"))
+        await self.send_packet(TCP(flags="R"))
         return True
 
     async def reset_receive(self) -> bool:
-        response = await self.receive()
+        response = await self.receive_packet()
         assert response is not None, "RST was not received"
 
         return self.has_flag(response, "R")

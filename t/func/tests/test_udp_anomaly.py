@@ -16,10 +16,9 @@ async def test_normal_connection(
     start_udp_server_and_raw_clients,
 ):
     await xfw.rules_set("xfw { }")
-    await udp_raw_client.send(UDP() / b"Hello :)")
+    await udp_raw_client.send_packet(b"Hello :)")
 
-    response = await udp_server.receive()
-    assert response == "Hello :)"
+    assert await udp_server.receive_message() == "Hello :)"
 
 
 @pytest.mark.parametrize("port_type", ["sport", "dport"], ids=["src", "dst"])
@@ -39,7 +38,6 @@ async def test_zero_port_is_blocked(
     setattr(packet, port_type, 0)
 
     await xfw.rules_set("xfw { }")
-    await udp_raw_client.send(packet / "Hello :)")
+    await udp_raw_client.send_packet(packet / "Hello :)")
 
-    response = await udp_server.receive()
-    assert response is None, f"Zero {port_type} port is not blocked"
+    assert await udp_server.receive_block(), f"Zero {port_type} port is not blocked"

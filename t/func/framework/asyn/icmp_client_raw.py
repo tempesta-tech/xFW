@@ -1,9 +1,7 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import asyncio
 import socket
-import typing
 from abc import ABC
 
 from scapy.layers.inet import ICMP, IP
@@ -22,46 +20,15 @@ class IcmpRawClient(RawSocketNetworkStateful, ABC):
     echo_request_type: int
     echo_response_types: set[int]
 
+    @property
+    def ping_message(self) -> bytes:
+        return bytes(self.packet_class(type=self.echo_request_type))
+
     def create_packet(self, packet: Packet) -> Packet:
         return packet
 
-    async def send(self, packet: ICMP) -> int:
-        if self.log_msg:
-            self.logger.info(f'{self} sending to {self.remote_ip}:{self.remote_port} "{packet}"')
-
-        self.last_request = packet
-
-        return await asyncio.wait_for(
-            self.loop.sock_sendto(self.socket, bytes(self.last_request), self.get_sendto_dst()),
-            timeout=self.timeout,
-        )
-
-    async def receive(self, buffer_len: int = 1024) -> typing.Optional[ICMP]:
-        try:
-            response = await asyncio.wait_for(
-                self.loop.sock_recvfrom(self.socket, buffer_len), timeout=self.timeout
-            )
-        except asyncio.TimeoutError:
-            if self.log_msg:
-                self.logger.info(f"{self} timeout - no data received")
-
-            return None
-
-        data, _ = response
-        decoded = self.decode_data(data)
-
-        self.last_response = decoded[ICMP]
-
-        if self.log_msg:
-            self.logger.info(f'received from {self.ip_testing} "{self.last_response}"')
-
-        return self.last_response
-
-    async def ping(self):
-        await self.send(self.packet_class(type=self.echo_request_type))
-
     async def pong(self) -> bool:
-        response = await self.receive()
+        response = await self.receive_packet()
 
         if not response:
             return False

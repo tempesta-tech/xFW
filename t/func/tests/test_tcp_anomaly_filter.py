@@ -144,11 +144,10 @@ async def test_block_invalid_packet(
 ):
     await xfw.rules_set(rules)
 
-    await tcp_raw_client.send(fail_packet)
-    response = await tcp_raw_server.receive_packet()
-    assert response is None, f"Broken packet {fail_packet} is not blocked"
+    await tcp_raw_client.send_packet(fail_packet)
+    assert await tcp_raw_server.receive_block(), f"Broken packet {fail_packet} is not blocked"
 
-    await tcp_raw_client.send(ok_packet)
+    await tcp_raw_client.send_packet(ok_packet)
     response = await tcp_raw_server.receive_packet()
     assert response is not None, f"Ok packet {ok_packet} is blocked"
 
@@ -172,10 +171,9 @@ async def test_zero_port_is_blocked(
     await xfw.rules_set(
         "xfw { tcp_anomaly_filter syn_without_opt" " syn_with_payload syn_with_seqno=0 bad_flags; }"
     )
-    await tcp_raw_client.send(packet)
+    await tcp_raw_client.send_packet(packet)
 
-    response = await tcp_raw_server.receive_packet()
-    assert response is None, f"Zero {port_type} port is not blocked"
+    assert await tcp_raw_server.receive_block(), f"Zero {port_type} port is not blocked"
 
 
 @pytest.mark.parametrize(
@@ -264,9 +262,9 @@ async def test_blocked_invalid_flags(
 
     for invalid_flag in invalid_flags:
         packet = get_tcp_packet(flag=invalid_flag)
-        await tcp_raw_client.send(packet)
+        await tcp_raw_client.send_packet(packet)
 
-        response = await tcp_raw_server.receive_packet()
+        response = await tcp_raw_server.receive_tcp_flags()
 
         if response is None:
             continue
@@ -288,12 +286,12 @@ async def test_bad_flags_overriding(
     await xfw.rules_set("xfw { tcp_anomaly_filter bad_flags; }")
 
     default_blocking_packet = get_tcp_packet(flag="SP")
-    await tcp_raw_client.send(default_blocking_packet)
-    assert await tcp_raw_server.receive_packet() is None, "The default bad packet is not blocked"
+    await tcp_raw_client.send_packet(default_blocking_packet)
+    assert await tcp_raw_server.receive_block(), "The default bad packet is not blocked"
 
     await xfw.rules_set("xfw { tcp_anomaly_filter bad_flags(RST+PSH); }")
 
-    await tcp_raw_client.send(default_blocking_packet)
+    await tcp_raw_client.send_packet(default_blocking_packet)
     assert (
         await tcp_raw_server.receive_packet() is not None
     ), "The default bad packet should not be blocked as default list of bad flags is override"
@@ -308,13 +306,12 @@ async def test_delete_filter(
     broken_packet = get_tcp_packet(flag="SF")
     await xfw.rules_set("xfw { tcp_anomaly_filter; }")
 
-    await tcp_raw_client.send(broken_packet)
-    response = await tcp_raw_server.receive_packet()
-    assert response is None, f"Broken packet {broken_packet} is not blocked"
+    await tcp_raw_client.send_packet(broken_packet)
+    assert await tcp_raw_server.receive_block(), f"Broken packet {broken_packet} is not blocked"
 
     await xfw.rules_patch("xfw { tcp_anomaly_filter/del; }")
 
-    await tcp_raw_client.send(broken_packet)
+    await tcp_raw_client.send_packet(broken_packet)
     response = await tcp_raw_server.receive_packet()
     assert (
         response is not None

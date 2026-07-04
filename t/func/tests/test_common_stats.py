@@ -357,7 +357,7 @@ async def test_ingress_stats(
 
     async with xfw.metrics_diff(stats_counters) as diff:
         await asyncio.gather(*[getattr(client, method)(src_mac, dst_mac) for _ in range(10)])
-        responses = await asyncio.gather(*[server.receive() for _ in range(10)])
+        responses = await asyncio.gather(*[server.receive_packet() for _ in range(10)])
 
     await client.stop()
     await server.stop()
@@ -395,7 +395,7 @@ async def test_ingress_preload_stats(
     await udp_ip4_client.start()
 
     async with xfw.metrics_diff(stats_counters) as diff:
-        await asyncio.gather(*[udp_ip4_client.send_message() for _ in range(10)])
+        await asyncio.gather(*[udp_ip4_client.ping() for _ in range(10)])
 
     invalid_metrics = compare_metrics_diff(
         compare_metrics=stats_counters, all_metrics=diff, diff_metrics=counters, strict=True
@@ -526,7 +526,7 @@ async def test_egress_stats(
 
     async with xfw.metrics_diff(stats_counters) as diff:
         await asyncio.gather(*[getattr(server, method)(src_mac, dst_mac) for _ in range(10)])
-        responses = await asyncio.gather(*[client.receive() for _ in range(10)])
+        responses = await asyncio.gather(*[client.receive_packet() for _ in range(10)])
 
     invalid_metrics = compare_metrics_diff(
         compare_metrics=stats_counters,
@@ -567,7 +567,7 @@ async def test_egress_preload_stats(
     await udp_ip4_client.start()
 
     async with xfw.metrics_diff(stats_counters) as diff:
-        await asyncio.gather(*[udp_ip4_server.send("message") for _ in range(10)])
+        await asyncio.gather(*[udp_ip4_server.send_message("message") for _ in range(10)])
 
     invalid_metrics = compare_metrics_diff(
         compare_metrics=stats_counters,
@@ -605,7 +605,7 @@ async def test_clickhouse_reports_stats(
 
     async with xfw.metrics_diff(stats_counters) as diff:
         await asyncio.gather(
-            *[udp_ip4_client.send_message() for _ in range(10)],
+            *[udp_ip4_client.ping() for _ in range(10)],
         )
         await asyncio.sleep(3)
 

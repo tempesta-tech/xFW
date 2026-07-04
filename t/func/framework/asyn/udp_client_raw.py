@@ -7,6 +7,7 @@ import typing
 from abc import ABC
 
 from scapy.layers.inet import IP, TCP, UDP, Ether
+from scapy.packet import Packet
 
 from framework.stateful import IP4Mixin, IP6Mixin, RawSocketNetworkStateful
 
@@ -16,43 +17,30 @@ __all__ = ["UdpRawClient", "UdpIpV4RawClient", "UdpIpV6RawClient"]
 class UdpRawClient(RawSocketNetworkStateful, ABC):
     socket_proto = socket.IPPROTO_UDP
 
-    async def send(self, packet: UDP) -> int:
+    def __init__(self, *args, auto_add_host: bool = True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.auto_add_host = auto_add_host
+
+    def create_packet(self, packet: Packet | str | bytes) -> Packet:
+        packet = packet.encode() if isinstance(packet, str) else packet
+
+        if isinstance(packet, bytes):
+            packet = UDP() / packet
+
         if self.auto_add_host:
             packet.sport = self.port
             packet.dport = self.remote_port
 
-        scapy_packet = self.create_packet(packet)
-        self.logger.info(f'{self} sending to {self.remote_ip}:{self.remote_port} "{scapy_packet}"')
+        return packet
 
-        return await asyncio.wait_for(
-            self.loop.sock_sendto(self.socket, bytes(scapy_packet), self.get_sendto_dst()),
-            timeout=3,
-        )
+    async def _receive(self) -> typing.Optional[bytes]:
+        await super()._receive()
 
-    async def receive(self, buffer_len: int = 1024) -> typing.Optional[TCP]:
-        try:
-            response = await asyncio.wait_for(
-                self.loop.sock_recvfrom(self.socket, buffer_len), timeout=3
-            )
-        except asyncio.TimeoutError:
-            self.logger.info(f"{self} timeout - no data received")
-            return None
+        if not self.decode_data(self.last_response).haslayer(UDP):
+            self.logger.warning(f"{self} skipped caught data: {Ether(self.last_response)}")
+            return await self._receive()
 
-        data, _ = response
-        decoded = self.decode_data(data)
-
-        if not decoded.haslayer(UDP):
-            self.logger.warning(f"{self} skipped caught data: {Ether(data)}")
-            return await self.receive()
-
-        self.last_response = decoded[UDP]
-        self.logger.info(
-            f'received from {self.ip_testing}:{self.remote_port} "{self.last_response}"'
-        )
         return self.last_response
-
-    async def ping(self):
-        return await self.send(UDP() / b"ping")
 
 
 class UdpIpV4RawClient(UdpRawClient, IP4Mixin):
@@ -60,8 +48,8 @@ class UdpIpV4RawClient(UdpRawClient, IP4Mixin):
         super().set_socket_options(sock)
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
 
-    def create_packet(self, packet: UDP) -> UDP:
-        return IP(src=self.ip, dst=self.remote_ip) / packet
+    def create_packet(self, packet: UDP | str | bytes) -> UDP:
+        return IP(src=self.ip, dst=self.remote_ip) / super().create_packet(packet)
 
     def get_sendto_dst(self):
         return self.remote_ip, self.remote_port
@@ -75,8 +63,8 @@ class UdpIpV6RawClient(UdpRawClient, IP6Mixin):
         super().set_socket_options(sock)
         sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_CHECKSUM, 6)
 
-    def create_packet(self, packet: UDP) -> UDP:
-        return packet
+    def create_packet(self, packet: UDP | str | bytes) -> UDP:
+        return super().create_packet(packet)
 
     def get_sendto_dst(self):
         return self.remote_ip, 0, 0, 0

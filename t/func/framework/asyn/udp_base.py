@@ -16,16 +16,17 @@ __all__ = [
 
 
 class BaseUdpProtocol(asyncio.DatagramProtocol):
-    def __init__(self, logger: logging.Logger, messages: asyncio.Queue[Optional[Exception | str]]):
+    def __init__(
+        self, logger: logging.Logger, messages: asyncio.Queue[Optional[Exception | bytes]]
+    ):
         self.logger: logging.Logger = logger
         self.messages = messages
         self.last_address = None
 
     def datagram_received(self, data, addr):
-        message = data.decode()
-        self.messages.put_nowait(message)
+        self.messages.put_nowait(data)
         self.last_address = addr
-        self.logger.debug(f"received from {addr} : {message}")
+        self.logger.debug(f"received from {addr} : {data}")
 
 
 class BaseUdpStateful(RegularKernelSocketNetworkStateful, ABC):
@@ -41,10 +42,3 @@ class BaseUdpStateful(RegularKernelSocketNetworkStateful, ABC):
             ),
             sock=self.socket,
         )
-
-    async def send_bytes(self, data: bytes):
-        self.logger.info(f'sending "{data}" to {self.remote_ip}:{self.remote_port}')
-        self.transport.sendto(data, self.destination_address)
-
-    async def send(self, data: str):
-        await self.send_bytes(data.encode())

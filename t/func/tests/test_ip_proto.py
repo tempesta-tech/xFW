@@ -12,7 +12,7 @@ from framework.xfw import XFW
 async def run_gre_test(xfw, gre_raw_client, rule: str):
     await xfw.rules_set(rule)
 
-    await gre_raw_client.send_payload(b"XDP_GRE_TEST")
+    await gre_raw_client.send_packet(b"XDP_GRE_TEST")
     return await gre_raw_client.receive()
 
 

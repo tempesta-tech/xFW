@@ -10,6 +10,7 @@ from framework.asyn import (
     TcpIpV4RawClient,
     TcpIpV6RawClient,
     TcpRawClient,
+    TcpServer,
     TcpV4Server,
     TcpV6Server,
 )
@@ -98,8 +99,8 @@ async def test_common(
     tcp_ip6_raw_client: TcpIpV6RawClient,
     client_cloner,
 ):
-    server = locals().get(f"tcp_{protocol}_server")
-    client = locals().get(f"tcp_{protocol}_raw_client")
+    server: TcpServer = locals().get(f"tcp_{protocol}_server")
+    client: TcpRawClient = locals().get(f"tcp_{protocol}_raw_client")
     client.auto_ack_seq = False
     client_2 = client_cloner(cloner=client, amount=1)[0]
     client_2.auto_ack_seq = False
@@ -114,7 +115,8 @@ async def test_common(
 
     async with xfw.metrics_diff(stats_counters) as diff:
         await asyncio.gather(
-            *[client.send(packet) for i in range(5)] + [client_2.send(packet) for i in range(5)]
+            *[client.send_packet(packet) for i in range(5)]
+            + [client_2.send_packet(packet) for i in range(5)]
         )
 
     invalid_metrics = compare_metrics_diff(
@@ -173,8 +175,8 @@ async def test_zero_port(
 
     async with xfw.metrics_diff(stats_counters, wait_softirq=True) as diff:
         await asyncio.gather(
-            *[client.send(client.valid_syn_packet) for i in range(5)]
-            + [client_2.send(client_2.valid_syn_packet) for i in range(5)]
+            *[client.send_packet(client.valid_syn_packet) for i in range(5)]
+            + [client_2.send_packet(client_2.valid_syn_packet) for i in range(5)]
         )
 
     invalid_metrics = compare_metrics_diff(

@@ -25,7 +25,7 @@ __all__ = [
 class TCPServerProtocol(asyncio.Protocol):
     def __init__(
         self,
-        messages: asyncio.Queue[Optional[Exception | str]],
+        messages: asyncio.Queue[Optional[Exception | bytes]],
         logger: logging.Logger,
         transports,
         echo_mode: bool = False,
@@ -53,7 +53,7 @@ class TCPServerProtocol(asyncio.Protocol):
             if idx == -1:
                 break
 
-            message = self._msg_buffer[:idx].decode() + "\n"
+            message = self._msg_buffer[:idx] + b"\n"
             del self._msg_buffer[: idx + 1]
 
             self.req_n += 1

@@ -111,8 +111,8 @@ async def test_log_data_counter_correctness(
         }}
     """)
 
-    await udp_client.send("0123456789")
-    assert await udp_server.receive() is None
+    await udp_client.send_message("0123456789")
+    assert await udp_server.receive_block()
 
     await clickhouse_client.wait_for_number_of_records(expected_records_n=1)
     db_records = await clickhouse_client.records_all()

@@ -30,13 +30,13 @@ class TcpRawServer(BaseTcpRawStateful, ABC):
         """
         Note: e1000 and rtl8139 don't start handshake without WScale option
         """
-        client_syn = await self.receive()
+        client_syn = await self.receive_packet()
         assert self.has_flag(client_syn, "S")
 
-        self.set_client_data(ip=self.sender_info[0], port=self.last_response.sport)
+        self.set_client_data(ip=self.sender_info[0], port=client_syn.sport)
 
-        await self.send(TCP(flags="SA", seq=2223334, options=client_syn.options))
-        response = await self.receive()
+        await self.send_packet(TCP(flags="SA", seq=2223334, options=client_syn.options))
+        response = await self.receive_packet()
         assert self.has_flag(
             response, "A"
         ), f"Unexpected reply packet with flags = {response}. Expected A Flag"
@@ -44,16 +44,16 @@ class TcpRawServer(BaseTcpRawStateful, ABC):
         return True
 
     async def close_connection(self) -> bool:
-        response = await self.receive()
+        response = await self.receive_packet()
         assert response is not None, "Client did not start closing connection"
 
         if not self.has_any_flag(response, {"FA", "AF"}):
             return False
 
-        await self.send(TCP(flags="A"))
-        await self.send(TCP(flags="FA"))
+        await self.send_packet(TCP(flags="A"))
+        await self.send_packet(TCP(flags="FA"))
 
-        response = await self.receive()
+        response = await self.receive_packet()
 
         return self.has_flag(response, "A")
 
@@ -72,8 +72,8 @@ class TcpRawServer(BaseTcpRawStateful, ABC):
 
         return True
 
-    async def receive_packet(self) -> Optional[str]:
-        response = await self.receive()
+    async def receive_tcp_flags(self) -> Optional[str]:
+        response = await self.receive_packet()
 
         if not response:
             return None

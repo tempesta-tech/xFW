@@ -45,15 +45,15 @@ class TcpRawClient(BaseTcpRawStateful, RawSocketNetworkStateful, ABC):
         """
         Note: e1000 and rtl8139 don't start handshake without WScale option
         """
-        await self.send(packet or self.valid_syn_packet)
+        await self.send_packet(packet or self.valid_syn_packet)
 
-        response = await self.receive()
+        response = await self.receive_packet()
         assert response is not None, "Server did not replied"
         assert self.has_flag(
             response, "SA"
         ), f"Unexpected reply packet with flags = {response.flags}. Expected SA. Packet: {response}"
 
-        await self.send(TCP(flags="A"))
+        await self.send_packet(TCP(flags="A"))
 
         return True
 

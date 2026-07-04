@@ -46,7 +46,7 @@ async def test_block_non_existing_session(
     tcp_ip6_raw_client: TcpRawClient,
     client_cloner,
 ):
-    client = locals().get(f"tcp_{protocol}_raw_client")
+    client: TcpRawClient = locals().get(f"tcp_{protocol}_raw_client")
     client.auto_ack_seq = False
     client_2 = client_cloner(cloner=client, amount=1)[0]
     client_2.auto_ack_seq = False
@@ -58,8 +58,8 @@ async def test_block_non_existing_session(
 
     async with xfw.metrics_diff(stats_counters) as diff:
         await asyncio.gather(
-            *[client.send(TCP(flags="A")) for i in range(5)]
-            + [client_2.send(TCP(flags="A")) for i in range(5)]
+            *[client.send_packet(TCP(flags="A")) for i in range(5)]
+            + [client_2.send_packet(TCP(flags="A")) for i in range(5)]
         )
 
     invalid_metrics = compare_metrics_diff(

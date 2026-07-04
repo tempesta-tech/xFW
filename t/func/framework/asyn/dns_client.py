@@ -2,43 +2,22 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 from abc import ABC
-from typing import Optional
 
 from dnslib import RR, A, DNSRecord
 
-from framework.asyn.udp_base import BaseUdpProtocol
-from framework.asyn.udp_client import UdpClient
+from framework.asyn.dns_base import BaseDnsStateful
 from framework.stateful import IP4Mixin, IP6Mixin
 
-__all__ = ["DnsUdpClient", "DnsUdpV4Client", "DnsUdpV6Client", "DnsUdpClientProtocol"]
+__all__ = [
+    "DnsUdpClient",
+    "DnsUdpV4Client",
+    "DnsUdpV6Client",
+]
 
 
-class DnsUdpClientProtocol(BaseUdpProtocol):
-    def datagram_received(self, data, addr):
-        message = DNSRecord.parse(data)
-        self.messages.put_nowait(message)
-        self.last_address = addr
-        self.logger.info(f"received from {addr} : {message}")
-
-
-class DnsUdpClient(UdpClient, ABC):
-    transmitting_protocol = DnsUdpClientProtocol
-
-    async def receive(self, *args, **kwargs) -> Optional[DNSRecord]:
-        return await super().receive(*args, **kwargs)
-
-    async def send_query(self, query: DNSRecord):
-        self.logger.info(f"sending: {query}")
-        return await self.send_bytes(query.pack())
-
-    async def request(self, domain: str):
-        await self.send_query(DNSRecord.question(domain, qtype="A"))
-
-    async def send_message(self):
-        return await self.request("google.com")
-
-    async def reply_for_non_existing_query(self):
-        message: DNSRecord = await self.receive()
+class DnsUdpClient(BaseDnsStateful, ABC):
+    async def reply_for_non_existing_query(self) -> bool:
+        message: DNSRecord = await self.receive_dns_record()
 
         if not message:
             return False
@@ -50,8 +29,8 @@ class DnsUdpClient(UdpClient, ABC):
         await self.send_query(reply)
         return True
 
-    async def reply_with_size_bytes(self, response_size: int):
-        message: DNSRecord = await self.receive()
+    async def reply_with_size_bytes(self, response_size: int) -> bool:
+        message = await self.receive_dns_record()
 
         if not message:
             return False
@@ -70,8 +49,8 @@ class DnsUdpClient(UdpClient, ABC):
         await self.send_query(reply)
         return True
 
-    async def reply_with_multiple_answers(self, answers_amount: int):
-        message: DNSRecord = await self.receive()
+    async def reply_with_multiple_answers(self, answers_amount: int) -> bool:
+        message: DNSRecord = await self.receive_dns_record()
 
         if not message:
             return False
@@ -89,7 +68,7 @@ class DnsUdpClient(UdpClient, ABC):
         return True
 
     async def reply_with_ttl(self, ttl: int) -> bool:
-        message: DNSRecord = await self.receive()
+        message: DNSRecord = await self.receive_dns_record()
 
         if not message:
             return False

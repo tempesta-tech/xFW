@@ -14,7 +14,9 @@ __all__ = ["TcpClient", "TcpV4Client", "TcpV6Client"]
 
 
 class TCPClientProtocol(asyncio.Protocol):
-    def __init__(self, messages: asyncio.Queue[Optional[str | Exception]], logger: logging.Logger):
+    def __init__(
+        self, messages: asyncio.Queue[Optional[bytes | Exception]], logger: logging.Logger
+    ):
         self.transport = None
         self.messages = messages
         self.logger = logger
@@ -38,7 +40,7 @@ class TCPClientProtocol(asyncio.Protocol):
             if i == -1:
                 break
 
-            message = self._msg_buffer[:i].decode() + "\n"
+            message = self._msg_buffer[:i] + b"\n"
             del self._msg_buffer[: i + 1]
 
             self.resp_n += 1
@@ -71,10 +73,6 @@ class TcpClient(BaseTcpStateful, ABC):
             ),
             timeout=self.timeout,
         )
-
-    async def ping_pong(self):
-        await self.send_message()
-        assert await self.receive_message(), f"({self}) Ping-pong failed: Connection timeout"
 
     async def generate_traffic(self, messages_pps: int, duration: float, function: Callable = None):
         """Sets messages_pps 0 to disable the traffic generation limit."""

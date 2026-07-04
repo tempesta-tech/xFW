@@ -15,7 +15,18 @@ class EtherRawClient(SocketBaseNetworkStateful):
     socket_family = socket.PF_PACKET
     socket_type = socket.SOCK_RAW
 
-    async def receive(self, *_, **__) -> Optional[bytes]:
+    @property
+    def ping_message(self) -> bytes:
+        return b""
+
+    def create_packet(self, data: str, src_mac: str, dst_mac: str) -> Ether:
+        return Ether(dst=dst_mac, src=src_mac, type=self.socket_proto) / Raw(load=data.encode())
+
+    def decode_data(self, data: bytes) -> Ether:
+        return Ether(data)
+
+    async def _receive(self) -> Optional[bytes]:
+        """Low-level method to receive a raw message from the remote side."""
         try:
             data = await asyncio.wait_for(self.loop.sock_recv(self.socket, 8096), self.timeout)
             self.logger.debug(f"received data {data}")
@@ -28,13 +39,27 @@ class EtherRawClient(SocketBaseNetworkStateful):
     def bind_params(self):
         return self.network_interface, 0
 
-    async def send_packet(self, packet: Ether):
+    async def _send(self, packet: bytes) -> None:
+        """Low-level method to send raw binary data to the remote side."""
         await self.loop.sock_sendall(self.socket, bytes(packet))
         self.logger.info(f"Sending L2 packet {packet}")
 
-    async def send(self, data: str, src_mac: str, dst_mac: str):
-        packet = Ether(dst=dst_mac, src=src_mac, type=self.socket_proto) / Raw(load=data.encode())
-        await self.send_packet(packet)
+    async def send_packet(self, packet: Ether) -> None:
+        await self._send(bytes(packet))
+
+    async def receive_packet(self) -> Optional[Ether]:
+        """
+        Receive raw network data and reconstruct it into a Scapy packet.
+
+        Retrieves raw binary data from the network using the internal low-level
+        `_receive` method.
+        """
+        raw_data = await self._receive()
+
+        if raw_data is None:
+            return None
+
+        return self.decode_data(raw_data)
 
     async def set_sock_proto(self, proto: int):
         self.socket_proto = proto

@@ -86,8 +86,8 @@ async def test_dst_udp_stats(
 
     async with xfw.metrics_diff(dst_stats_counters) as diff:
         await asyncio.gather(
-            *[client.send(f"12345{i}") for i in range(5)]
-            + [client_2.send(f"12345{i}") for i in range(5)]
+            *[client.send_message(f"12345{i}") for i in range(5)]
+            + [client_2.send_message(f"12345{i}") for i in range(5)]
         )
 
     invalid_metrics = compare_metrics_diff(
@@ -173,8 +173,14 @@ async def test_dst_tcp_stats(
 
     async with xfw.metrics_diff(dst_stats_counters, wait_softirq=True) as diff:
         await asyncio.gather(
-            *[client.send(TCP(flags="PA", seq=22211) / f"012345{i}".encode()) for i in range(5)]
-            + [client_2.send(TCP(flags="PA", seq=32211) / f"012345{i}".encode()) for i in range(5)]
+            *[
+                client.send_packet(TCP(flags="PA", seq=22211) / f"012345{i}".encode())
+                for i in range(5)
+            ]
+            + [
+                client_2.send_packet(TCP(flags="PA", seq=32211) / f"012345{i}".encode())
+                for i in range(5)
+            ]
         )
 
     invalid_metrics = compare_metrics_diff(

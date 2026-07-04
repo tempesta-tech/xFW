@@ -54,10 +54,10 @@ async def test_block_tcp_flood_from_non_existing_session(
     connection was not established with the turned on filter
     """
     await xfw.rules_set("xfw { tcp_auth_filter; }")
-    await tcp_raw_client.send(TCP(flags=tcp_flag))
+    await tcp_raw_client.send_packet(TCP(flags=tcp_flag))
 
     assert (
-        await tcp_raw_server.receive_packet() is None
+        await tcp_raw_server.receive_block()
     ), f"TCP packet with {tcp_flag} without session is not skipped"
 
 
@@ -89,7 +89,7 @@ async def test_block_closed_session(
         tcp_raw_server.close_connection(),
     ) == [True, True], "Client and server can not correctly close the connection"
 
-    await tcp_raw_client.send(TCP(flags="P") / b"111")
+    await tcp_raw_client.send_packet(TCP(flags="P") / b"111")
     response = await tcp_raw_server.receive_packet()
     assert response is not None, (
         f"TCP packet with payload immediately after connection close is allowed as the "
@@ -98,15 +98,15 @@ async def test_block_closed_session(
 
     await asyncio.sleep(65)
 
-    await tcp_raw_client.send(TCP(flags="P") / b"111")
-    response = await tcp_raw_server.receive_packet()
+    await tcp_raw_client.send_packet(TCP(flags="P") / b"111")
     assert (
-        response is None
+        await tcp_raw_server.receive_block()
     ), f"TCP packet with payload should be skipped as the connection session is cleared"
 
-    await tcp_raw_client.send(TCP(flags=tcp_flag))
-    response = await tcp_raw_server.receive_packet()
-    assert response is None, f"TCP packet with {tcp_flag} without session is not skipped"
+    await tcp_raw_client.send_packet(TCP(flags=tcp_flag))
+    assert (
+        await tcp_raw_server.receive_block()
+    ), f"TCP packet with {tcp_flag} without session is not skipped"
 
 
 async def test_block_reset_session(
@@ -136,15 +136,15 @@ async def test_block_reset_session(
         tcp_raw_server.reset_receive(),
     ) == [True, True], "Server has not received client RST packet"
 
-    await tcp_raw_client.send(TCP(flags="P") / b"111")
-    response = await tcp_raw_server.receive_packet()
+    await tcp_raw_client.send_packet(TCP(flags="P") / b"111")
     assert (
-        response is None
+        await tcp_raw_server.receive_block()
     ), f"TCP packet with payload immediately after connection close is not allowed"
 
-    await tcp_raw_client.send(TCP(flags=tcp_flag))
-    response = await tcp_raw_server.receive_packet()
-    assert response is None, f"TCP packet with {tcp_flag} without session is not skipped"
+    await tcp_raw_client.send_packet(TCP(flags=tcp_flag))
+    assert (
+        await tcp_raw_server.receive_block()
+    ), f"TCP packet with {tcp_flag} without session is not skipped"
 
 
 async def test_unblock_non_existing_session(
@@ -160,9 +160,9 @@ async def test_unblock_non_existing_session(
     await xfw.rules_set("xfw { tcp_auth_filter; }")
     await xfw.rules_patch("xfw { tcp_auth_filter/del; }")
 
-    await tcp_raw_client.send(TCP(flags="A"))
+    await tcp_raw_client.send_packet(TCP(flags="A"))
 
-    response = await tcp_raw_server.receive_packet()
+    response = await tcp_raw_server.receive_tcp_flags()
     assert response == "A", f"TCP packet with A without session is not allowed"
 
 
@@ -221,7 +221,7 @@ async def test_allow_tcp_flood_after_connection(
         tcp_raw_server.handshake(),
     ) == [True, True], "Client and server can not establish connection"
 
-    await tcp_raw_client.send(TCP(flags=tcp_flag))
+    await tcp_raw_client.send_packet(TCP(flags=tcp_flag))
     assert (
-        await tcp_raw_server.receive_packet() == tcp_flag
+        await tcp_raw_server.receive_tcp_flags() == tcp_flag
     ), f"TCP packet with {tcp_flag} with session is not allowed"

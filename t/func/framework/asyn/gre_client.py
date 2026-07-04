@@ -28,39 +28,6 @@ class GreRawClient(RawSocketNetworkStateful, abc.ABC):
     def decode_data(self, data: bytes) -> Packet:
         return GRE(data)
 
-    async def send(self, packet: Packet) -> int:
-        if self.log_requests:
-            self.logger.info(f"{self} sending GRE '{packet.summary()}'")
-
-        self.last_request = packet
-
-        return await asyncio.wait_for(
-            self.loop.sock_sendto(self.socket, bytes(packet), self.get_sendto_dst()),
-            timeout=self.timeout,
-        )
-
-    async def receive(self, buffer_len: int = 4096) -> typing.Optional[Packet]:
-        try:
-            data, _ = await asyncio.wait_for(
-                self.loop.sock_recvfrom(self.socket, buffer_len), timeout=self.timeout
-            )
-        except asyncio.TimeoutError:
-            if self.log_requests:
-                self.logger.info(f"{self} timeout - no GRE data received")
-            return None
-
-        decoded = self.decode_data(data)
-        self.last_response = decoded
-
-        if self.log_requests:
-            self.logger.info(f"{self} received GRE packet")
-
-        return decoded
-
-    async def send_payload(self, payload: Packet, wrap: bool = True) -> int:
-        packet = self.create_packet(payload) if wrap else payload
-        return await self.send(packet)
-
 
 class GreRawV4Client(GreRawClient, IP4Mixin):
     def get_sendto_dst(self) -> tuple:
