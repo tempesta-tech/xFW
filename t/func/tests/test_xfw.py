@@ -14,7 +14,6 @@ from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.utils import (
     RetryException,
     RetryNotHelpedException,
-    client_cloner,
 )
 from framework.xfw import XFW, State
 
@@ -411,13 +410,14 @@ async def test_restart_under_traffic(
     xfw: XFW,
     tcp_server: TcpServer,
     tcp_client: TcpClient,
+    client_cloner,
 ):
     messages_pps = 0
     load_duration = 10
     load_duration_middle = load_duration / 2
     tasks = []
     clients = client_cloner(
-        client=tcp_client,
+        cloner=tcp_client,
         amount=10,
     )
 
@@ -425,18 +425,18 @@ async def test_restart_under_traffic(
     tcp_server.log_request = False
     await tcp_server.start()
 
-    for client in clients:
-        client.timeout = 5
-        client.log_request = False
-        await client.start()
+    for cl in clients:
+        cl.timeout = 5
+        cl.log_request = False
+        await cl.start()
 
-    for client in clients:
+    for cl in clients:
         tasks.append(
             asyncio.create_task(
-                client.generate_traffic(
+                cl.generate_traffic(
                     messages_pps=messages_pps,
                     duration=load_duration,
-                    function=getattr(client, function),
+                    function=getattr(cl, function),
                 )
             )
         )
@@ -451,7 +451,7 @@ async def test_restart_under_traffic(
         await xfw.restart_daemon()
 
     await asyncio.gather(*tasks)
-    client_responses = sum(client.resp_n for client in clients)
+    client_responses = sum(cl.resp_n for cl in clients)
     server_requests = tcp_server.req_n
     assert (
         client_responses == server_requests

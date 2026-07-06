@@ -19,7 +19,6 @@ from framework.asyn import (
 )
 from framework.cmp import check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
-from framework.utils import client_cloner
 
 
 @pytest.mark.nic_e1000_warmup
@@ -107,8 +106,7 @@ async def test_dns_udp_client_server(
 
 
 async def test_raw_socket_tcp_traffic_collisions(
-    tcp_raw_client: TcpRawClient,
-    tcp_server: TcpServer,
+    tcp_raw_client: TcpRawClient, tcp_server: TcpServer, client_cloner
 ):
     tcp_raw_client_2 = client_cloner(tcp_raw_client, 1)[0]
 

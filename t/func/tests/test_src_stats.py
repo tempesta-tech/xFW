@@ -6,8 +6,8 @@ import asyncio
 import pytest
 from scapy.layers.inet import TCP
 
-from framework.asyn import TcpClient, TcpRawClient, TcpServer, UdpClient, UdpServer
-from framework.utils import client_cloner, compare_metrics_diff
+from framework.asyn import TcpRawClient, TcpServer, UdpClient, UdpServer
+from framework.utils import compare_metrics_diff
 from framework.xfw import XFW
 
 
@@ -197,10 +197,11 @@ async def test_src_udp_stats(
     udp_ip6_server: UdpServer,
     udp_ip4_client: UdpClient,
     udp_ip6_client: UdpClient,
+    client_cloner,
 ):
     server = locals().get(f"udp_{ip}_server")
     client = locals().get(f"udp_{ip}_client")
-    client_2 = client_cloner(client=client, amount=1)[0]
+    client_2 = client_cloner(cloner=client, amount=1)[0]
 
     await server.start()
     await client.start()
@@ -433,6 +434,7 @@ async def test_src_tcp_stats(
     tcp_ip6_server: TcpServer,
     tcp_ip4_raw_client: TcpRawClient,
     tcp_ip6_raw_client: TcpRawClient,
+    client_cloner,
 ):
     """
     We have to use in this test TcpRawSocket because
@@ -443,7 +445,7 @@ async def test_src_tcp_stats(
     """
     server: TcpServer = locals().get(f"tcp_{ip}_server")
     client: TcpRawClient = locals().get(f"tcp_{ip}_raw_client")
-    client_2: TcpRawClient = client_cloner(client=client, amount=1)[0]
+    client_2: TcpRawClient = client_cloner(cloner=client, amount=1)[0]
 
     await server.start()
     await client.start()

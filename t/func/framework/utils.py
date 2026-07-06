@@ -1,13 +1,15 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+from __future__ import annotations
+
 import asyncio
 import dataclasses
 import enum
 import functools
 import logging
 from contextlib import asynccontextmanager
-from typing import Callable, TypeVar, Union
+from typing import TYPE_CHECKING, Callable, Optional, Protocol, Type, Union
 
 import backoff
 from scapy.layers.inet import TCP
@@ -15,8 +17,19 @@ from scapy.layers.inet6 import Raw
 
 from framework.logger import get_logger
 
-T = TypeVar("T")
+if TYPE_CHECKING:
+    from framework.stateful import RegularKernelSocketNetworkStateful
+
 logger = get_logger("utils")
+
+
+class ClonerCallable(Protocol):
+    def __call__(
+        self,
+        cloner: RegularKernelSocketNetworkStateful,
+        amount: int,
+        fabric: Optional[Type[RegularKernelSocketNetworkStateful]] = None,
+    ) -> list[RegularKernelSocketNetworkStateful]: ...
 
 
 class RetryException(Exception):
@@ -80,71 +93,6 @@ async def run_cmd(
         return await _log_when_done(process)
 
     return process, None, None
-
-
-def client_cloner(client: T, amount: int, fabric=None) -> list[T]:
-    ports = client.generate_new_ports(amount)
-    addresses = client.generate_new_addresses(amount)
-    class_to_create = client.__class__
-
-    if fabric:
-        class_to_create = fabric
-
-    clients = []
-
-    for port, address in zip(ports, addresses):
-        clients.append(
-            class_to_create(
-                network_interface=client.network_interface,
-                ipv4=address if client.ipv4 else None,
-                ipv4_mask=client.ipv4_mask if client.ipv4 else None,
-                ipv6=address if client.ipv6 else None,
-                ipv6_mask=client.ipv6_mask if client.ipv6 else None,
-                port=port,
-                remote_ip=client.remote_ip,
-                remote_port=client.remote_port,
-                logger=client.logger,
-                namespace=client.namespace,
-                testing_model=client.testing_model,
-                timeout=client.timeout,
-            )
-        )
-
-    return clients
-
-
-def server_cloner(
-    server: T,
-    amount: int,
-    fabric=None,
-) -> list[T]:
-    ports = server.generate_new_ports(amount)
-    addresses = server.generate_new_addresses(amount)
-    class_to_create = server.__class__
-
-    if fabric:
-        class_to_create = fabric
-
-    servers = []
-
-    for port, address in zip(ports, addresses):
-        servers.append(
-            class_to_create(
-                network_interface=server.network_interface,
-                ipv4=address if server.ipv4 else None,
-                ipv4_mask=server.ipv4_mask if server.ipv4 else None,
-                ipv6=address if server.ipv6 else None,
-                ipv6_mask=server.ipv6_mask if server.ipv6 else None,
-                port=port,
-                logger=server.logger,
-                testing_model=server.testing_model,
-                rpc_connection=server.rpc_connection,
-                timeout=server.timeout,
-                namespace=server.namespace,
-            )
-        )
-
-    return servers
 
 
 @asynccontextmanager

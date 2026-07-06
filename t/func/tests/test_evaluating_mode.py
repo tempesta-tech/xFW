@@ -19,7 +19,7 @@ from framework.asyn import (
 from framework.clickhouse import ClickhouseClient
 from framework.cmp import check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
-from framework.utils import client_cloner, metrics_increased
+from framework.utils import metrics_increased
 from framework.xfw import XFW
 
 
@@ -348,11 +348,12 @@ async def test_multiple_requests_logs_without_blocking(
     clickhouse_client: ClickhouseClient,
     udp_ip4_client: UdpClient,
     udp_ip4_server: UdpServer,
+    client_cloner,
 ):
     await clickhouse_client.connect()
     await udp_ip4_server.start()
 
-    clients = client_cloner(client=udp_ip4_client, amount=10)
+    clients = client_cloner(cloner=udp_ip4_client, amount=10)
     for client in clients:
         await client.start()
 

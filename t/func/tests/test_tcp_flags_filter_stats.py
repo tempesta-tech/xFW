@@ -11,7 +11,7 @@ from framework.asyn import (
     TcpIpV6RawClient,
     TcpIpV6RawServer,
 )
-from framework.utils import client_cloner, compare_metrics_diff
+from framework.utils import compare_metrics_diff
 from framework.xfw import XFW
 
 
@@ -85,11 +85,12 @@ async def test_tcp_flags_filter_stats(
     tcp_ip6_raw_server: TcpIpV6RawServer,
     tcp_ip4_raw_client: TcpIpV4RawClient,
     tcp_ip6_raw_client: TcpIpV6RawClient,
+    client_cloner,
 ):
     server = locals().get(f"tcp_{protocol}_raw_server")
     client = locals().get(f"tcp_{protocol}_raw_client")
     client.auto_ack_seq = False
-    client_2 = client_cloner(client=client, amount=1)[0]
+    client_2 = client_cloner(cloner=client, amount=1)[0]
     client_2.auto_ack_seq = False
 
     await server.start()

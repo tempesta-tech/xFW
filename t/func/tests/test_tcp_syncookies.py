@@ -12,14 +12,13 @@ from scapy.layers.inet import TCP
 
 from config import ConfigSettings
 from framework.asyn import (
-    TcpClient,
     TcpIpV4RawClient,
     TcpIpV6RawClient,
     TcpRawClient,
     TcpServer,
 )
 from framework.fabrics import client_fabric
-from framework.utils import client_cloner, get_tcp_packet, run_in_background
+from framework.utils import get_tcp_packet, run_in_background
 from framework.xfw import XFW
 
 SynStats = tuple[int, int, int]
@@ -208,10 +207,10 @@ async def xfw_with_forced_syncookie(xfw: XFW) -> XFW:
 
 @pytest.fixture
 async def group_of_clients(
-    tcp_syncookie_client: TcpRawSynCookieClient,
+    tcp_syncookie_client: TcpRawSynCookieClient, client_cloner
 ) -> list[TcpRawSynCookieClient]:
     clients: list[TcpRawClient] = client_cloner(
-        client=tcp_syncookie_client,
+        cloner=tcp_syncookie_client,
         amount=2,
     )
 
