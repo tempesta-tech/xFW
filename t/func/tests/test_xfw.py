@@ -346,7 +346,7 @@ async def test_xfw_push_config_multiple_same(
 
 
 async def test_delete_iface_while_xfw_is_running(
-    network_class,
+    network,
     config: ConfigSettings,
     conf_logger: logging.Logger,
     xfw: XFW,
@@ -354,7 +354,6 @@ async def test_delete_iface_while_xfw_is_running(
     """
     Prevent BPF duplicates
     """
-    network = network_class(logger=conf_logger, config=config)
 
     await xfw.rules_push_config(" xfw { defaults { dst: allow; } } ")
     await network.destroy()
