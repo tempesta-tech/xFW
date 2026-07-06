@@ -10,7 +10,6 @@ import pytest
 from framework.asyn import UdpClient, UdpServer
 from framework.clickhouse import ClickhouseClient
 from framework.cmp import check_connection
-from framework.utils import client_cloner
 from framework.xfw import XFW
 
 
@@ -131,11 +130,12 @@ async def test_multiple_requests_logs(
     clickhouse_client: ClickhouseClient,
     udp_ip4_client: UdpClient,
     udp_ip4_server: UdpServer,
+    client_cloner,
 ):
     await clickhouse_client.connect()
     await udp_ip4_server.start()
 
-    clients = client_cloner(client=udp_ip4_client, amount=10)
+    clients = client_cloner(cloner=udp_ip4_client, amount=10)
     for client in clients:
         await client.start()
 
@@ -149,7 +149,7 @@ async def test_multiple_requests_logs(
         """)
 
     results = await asyncio.gather(
-        *[check_connection(client, udp_ip4_client) for client in clients]
+        *[check_connection(client, udp_ip4_server) for client in clients]
     )
 
     assert not any(results)

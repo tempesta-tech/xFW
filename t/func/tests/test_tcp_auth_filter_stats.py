@@ -7,7 +7,7 @@ import pytest
 from scapy.layers.inet import TCP
 
 from framework.asyn import TcpRawClient, TcpRawServer
-from framework.utils import client_cloner, compare_metrics_diff
+from framework.utils import compare_metrics_diff
 from framework.xfw import XFW
 
 
@@ -44,10 +44,11 @@ async def test_block_non_existing_session(
     tcp_ip4_raw_client: TcpRawClient,
     tcp_ip6_raw_server: TcpRawServer,
     tcp_ip6_raw_client: TcpRawClient,
+    client_cloner,
 ):
     client = locals().get(f"tcp_{protocol}_raw_client")
     client.auto_ack_seq = False
-    client_2 = client_cloner(client=client, amount=1)[0]
+    client_2 = client_cloner(cloner=client, amount=1)[0]
     client_2.auto_ack_seq = False
 
     await client.start()

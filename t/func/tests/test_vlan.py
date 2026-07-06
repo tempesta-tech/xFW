@@ -15,7 +15,6 @@ from scapy.layers.l2 import Dot1Q
 
 from framework.asyn.ether_raw_client import EtherRawClient
 from framework.asyn.ether_raw_server import EtherRawServer
-from framework.utils import server_cloner
 from framework.xfw import XFW
 
 SOL_PACKET = 263
@@ -105,7 +104,7 @@ class Ether802Dot1QServer(EtherRawServer):
 
 
 @pytest.fixture
-async def ether_802_dot_1q_server(ether_raw_server: EtherRawServer):
+async def ether_802_dot_1q_server(ether_raw_server: EtherRawServer, server_cloner):
     server = server_cloner(ether_raw_server, fabric=Ether802Dot1QServer, amount=1)[0]
     yield server
     await server.stop()

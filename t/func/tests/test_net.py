@@ -6,7 +6,6 @@ import pytest
 from config import ConfigSettings
 from framework.cmp import check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
-from framework.utils import client_cloner, server_cloner
 from framework.xfw import XFW
 
 
@@ -19,10 +18,9 @@ async def backend_protected(
 
 @pytest.fixture
 async def backend_not_protected(
-    backend_protected: RegularKernelSocketNetworkStateful,
-    config: ConfigSettings,
+    backend_protected: RegularKernelSocketNetworkStateful, config: ConfigSettings, server_cloner
 ) -> RegularKernelSocketNetworkStateful:
-    new_server = server_cloner(server=backend_protected, amount=1)[0]
+    new_server = server_cloner(cloner=backend_protected, amount=1)[0]
     yield new_server
     await new_server.stop()
 
@@ -42,8 +40,9 @@ async def client_protected(
 async def client_not_protected(
     client: RegularKernelSocketNetworkStateful,
     backend_not_protected: RegularKernelSocketNetworkStateful,
+    client_cloner,
 ):
-    new_client = client_cloner(client=client, amount=1)[0]
+    new_client = client_cloner(cloner=client, amount=1)[0]
     new_client.remote_ip = backend_not_protected.ip
     new_client.remote_port = backend_not_protected.port
 

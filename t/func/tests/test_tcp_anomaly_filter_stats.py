@@ -13,7 +13,7 @@ from framework.asyn import (
     TcpV4Server,
     TcpV6Server,
 )
-from framework.utils import client_cloner, compare_metrics_diff, get_tcp_packet
+from framework.utils import compare_metrics_diff, get_tcp_packet
 from framework.xfw import XFW
 
 
@@ -96,11 +96,12 @@ async def test_common(
     tcp_ip6_server: TcpV6Server,
     tcp_ip4_raw_client: TcpIpV4RawClient,
     tcp_ip6_raw_client: TcpIpV6RawClient,
+    client_cloner,
 ):
     server = locals().get(f"tcp_{protocol}_server")
     client = locals().get(f"tcp_{protocol}_raw_client")
     client.auto_ack_seq = False
-    client_2 = client_cloner(client=client, amount=1)[0]
+    client_2 = client_cloner(cloner=client, amount=1)[0]
     client_2.auto_ack_seq = False
 
     await server.start()
@@ -151,11 +152,12 @@ async def test_zero_port(
     tcp_ip6_server: TcpV6Server,
     tcp_ip4_raw_client: TcpIpV4RawClient,
     tcp_ip6_raw_client: TcpIpV6RawClient,
+    client_cloner,
 ):
     server = locals().get(f"tcp_{protocol}_server")
     client: TcpRawClient = locals().get(f"tcp_{protocol}_raw_client")
     client.auto_ack_seq = False
-    client_2: TcpRawClient = client_cloner(client=client, amount=1)[0]
+    client_2: TcpRawClient = client_cloner(cloner=client, amount=1)[0]
     client_2.auto_ack_seq = False
 
     await server.start()

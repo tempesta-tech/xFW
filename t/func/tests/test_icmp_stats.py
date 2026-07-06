@@ -6,7 +6,7 @@ import asyncio
 import pytest
 
 from framework.asyn import IcmpRawClient, UdpServer
-from framework.utils import client_cloner, compare_metrics_diff
+from framework.utils import compare_metrics_diff
 from framework.xfw import XFW
 
 
@@ -108,6 +108,7 @@ async def test_icmp_stats(
     udp_ip6_server: UdpServer,
     icmp_ip4_raw_client: IcmpRawClient,
     icmp_ip6_raw_client: IcmpRawClient,
+    client_cloner,
 ):
     """
     TODO: The IP6 tests have a diapason of values. The minimal
@@ -118,7 +119,7 @@ async def test_icmp_stats(
     """
     await locals().get(f"udp_{protocol}_server").start()
     client = locals().get(f"icmp_{protocol}_raw_client")
-    client_2 = client_cloner(client=client, amount=1)[0]
+    client_2 = client_cloner(cloner=client, amount=1)[0]
 
     await client.start()
     await client_2.start()

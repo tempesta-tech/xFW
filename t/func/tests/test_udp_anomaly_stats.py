@@ -12,7 +12,7 @@ from framework.asyn import (
     UdpV4Server,
     UdpV6Server,
 )
-from framework.utils import client_cloner, compare_metrics_diff
+from framework.utils import compare_metrics_diff
 from framework.xfw import XFW
 
 
@@ -48,10 +48,11 @@ async def test_zero_port(
     udp_ip6_server: UdpV6Server,
     udp_ip4_raw_client: UdpIpV4RawClient,
     udp_ip6_raw_client: UdpIpV6RawClient,
+    client_cloner,
 ):
     server = locals().get(f"udp_{protocol}_server")
     client: UdpRawClient = locals().get(f"udp_{protocol}_raw_client")
-    client_2: UdpRawClient = client_cloner(client=client, amount=1)[0]
+    client_2: UdpRawClient = client_cloner(cloner=client, amount=1)[0]
 
     await server.start()
     await client.start()
