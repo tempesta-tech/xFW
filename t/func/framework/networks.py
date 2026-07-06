@@ -295,6 +295,27 @@ class LocalVeth(BaseNetwork):
     async def destroy(self):
         await self._delete_namespace(name=self.config.client_namespace)
 
+    async def flush_arp_cache(self, namespace: str) -> None:
+        """
+        Resets (clears) the IPv4 and IPv6 neighbor tables inside the specified namespace.
+
+        - 'ip neigh flush all' — deletes all ARP (IPv4) entries.
+        - 'ip -6 neigh flush all' — deletes all Neighbor Discovery (IPv6) entries.
+
+        This forces the OS to redefine MAC addresses at the first opportunity.
+        when trying to contact a neighboring node in a new test.
+        """
+        await asyncio.gather(
+            run_cmd(
+                cmd=self._with_netns(cmd="ip neigh flush all", namespace=namespace),
+                logger=self.logger,
+            ),
+            run_cmd(
+                cmd=self._with_netns(cmd="ip -6 neigh flush all", namespace=namespace),
+                logger=self.logger,
+            ),
+        )
+
 
 class LocalGateVeth(LocalVeth):
 

@@ -4,7 +4,7 @@ import pytest
 
 
 async def test_block_by_default_gre(
-    xfw, gre_raw_client, gre_raw_server, start_gre_server_and_gre_clients
+    xfw, gre_raw_client, gre_raw_server, start_gre_server_and_gre_clients, flush_arp_cache
 ):
     """Verify that xFW block GRE packets by default."""
     await xfw.rules_set("xfw { }")
@@ -12,7 +12,7 @@ async def test_block_by_default_gre(
     assert await gre_raw_server.receive_block()
 
 
-async def test_allow_icmp_by_default(xfw, icmp_raw_client, udp_server):
+async def test_allow_icmp_by_default(xfw, icmp_raw_client, udp_server, flush_arp_cache):
     """Verify that xFW allow ICMP and ICMPv6 packets by default."""
     await udp_server.start()
     await icmp_raw_client.start()
@@ -30,7 +30,7 @@ async def test_allow_icmp_by_default(xfw, icmp_raw_client, udp_server):
     ],
     indirect=["dynamic_client", "dynamic_server"],
 )
-async def test_allow_by_default(xfw, dynamic_client, dynamic_server):
+async def test_allow_by_default(xfw, dynamic_client, dynamic_server, flush_arp_cache):
     """Verify that xFW allow TCP/UDP packets by default."""
     await dynamic_server.start()
     await dynamic_client.start()
@@ -54,7 +54,7 @@ async def test_allow_by_default(xfw, dynamic_client, dynamic_server):
     ],
     indirect=["dynamic_client", "dynamic_server"],
 )
-async def test_allow(xfw, dynamic_client, dynamic_server, proto_config):
+async def test_allow(xfw, dynamic_client, dynamic_server, proto_config, flush_arp_cache):
     """
     Verify that xFW allows packet type with ip_proto correct {<proto_type>, 58}.
     58 - allows ICMPv6 that requires for IPv6.
@@ -81,7 +81,7 @@ async def test_allow(xfw, dynamic_client, dynamic_server, proto_config):
     ],
     indirect=["dynamic_client", "dynamic_server"],
 )
-async def test_block(xfw, dynamic_client, dynamic_server, proto_config):
+async def test_block(xfw, dynamic_client, dynamic_server, proto_config, flush_arp_cache):
     """
     Verify that xFW blocks an undeclared proto.
     """
@@ -103,7 +103,12 @@ async def test_block(xfw, dynamic_client, dynamic_server, proto_config):
     ],
 )
 async def test_ignore_internal_packets(
-    xfw, gre_raw_client, gre_raw_server, start_gre_server_and_gre_clients, packet_method
+    xfw,
+    gre_raw_client,
+    gre_raw_server,
+    start_gre_server_and_gre_clients,
+    flush_arp_cache,
+    packet_method,
 ):
     """
     Verify that xFW ignores internal packets encapsulated within GRE.
