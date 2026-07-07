@@ -488,6 +488,24 @@ async def udp_ip6_client(
 
 
 @pytest.fixture
+async def udp_ip4_mapped_ip6_server(
+    config: ConfigSettings,
+    logging_level: int,
+    rpc_connection,
+) -> UdpServer:
+    new_server = server_fabric(
+        config=config,
+        logging_level=logging_level,
+        local_class=UdpV6ServerMappedIP,
+        rpc_connection=rpc_connection,
+        remote_class=UdpV6ServerRemote,
+        force_ip4=True,
+    )
+    yield new_server
+    await new_server.stop()
+
+
+@pytest.fixture
 async def udp_ip6_raw_client(
     config: ConfigSettings,
     logging_level: int,

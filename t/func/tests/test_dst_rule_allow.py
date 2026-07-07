@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+import pytest
 
 from framework.cmp import check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
@@ -134,3 +135,23 @@ async def test_dst_allow_only_one_protocol_subtype(
         assert (
             await check_connection(new_client, new_server) is False
         ), f"Server {new_server.ip_testing}:{new_server.port} is not blocked"
+
+
+@pytest.mark.skip("ISSUE: 336 (escudo)")
+async def test_dst_allowed_ip_mapped(
+    xfw: XFW,
+    udp_ip4_client: RegularKernelSocketNetworkStateful,
+    udp_ip4_mapped_ip6_server: RegularKernelSocketNetworkStateful,
+):
+    await xfw.rules_set(f"""
+        xfw {{
+            defaults {{ dst: block; }}
+            dst ip6.udp : allow {{
+                {udp_ip4_mapped_ip6_server.ip_testing}:{udp_ip4_mapped_ip6_server.port}
+            }}
+        }}
+        """)
+
+    assert (
+        await check_connection(udp_ip4_client, udp_ip4_mapped_ip6_server) is True
+    ), f"Server {udp_ip4_mapped_ip6_server.ip_testing}:{udp_ip4_mapped_ip6_server.port} is not available"
