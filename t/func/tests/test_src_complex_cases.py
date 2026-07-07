@@ -8,7 +8,6 @@ import pytest
 from framework.cmp import check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
-from tests.conftest import ip_version
 
 
 @pytest.fixture

@@ -270,3 +270,22 @@ async def test_src_allow_only_one_protocol_subtype(
         assert (
             await check_connection(new_client, new_server) is False
         ), f"Server {new_server.ip_testing}:{new_server.port} is not blocked"
+
+
+async def test_src_allowed_by_ip_mapped(
+    xfw: XFW,
+    udp_ip4_client: RegularKernelSocketNetworkStateful,
+    udp_ip4_mapped_ip6_server: RegularKernelSocketNetworkStateful,
+):
+    await xfw.rules_set(f"""
+        xfw {{
+            defaults {{ src_ip ip4: block; }}
+            src=extended_group ip4.udp : allow {{
+                {udp_ip4_client.ip_testing}
+            }}
+        }}
+        """)
+
+    assert (
+        await check_connection(udp_ip4_client, udp_ip4_mapped_ip6_server) is True
+    ), f"Client {udp_ip4_client.ip_testing} is not allowed"

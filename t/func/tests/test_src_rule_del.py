@@ -364,3 +364,28 @@ async def test_src_del_only_one_protocol_subtype(
         assert (
             await check_connection(new_client, new_server) is False
         ), f"Server {new_server.ip_testing}:{new_server.port} is not blocked"
+
+
+async def test_src_del_block_by_ip_mapped(
+    xfw: XFW,
+    udp_ip4_client: RegularKernelSocketNetworkStateful,
+    udp_ip4_mapped_ip6_server: RegularKernelSocketNetworkStateful,
+):
+    await xfw.rules_set(f"""
+        xfw {{
+            defaults {{ src_ip: allow; }}
+            src=extended_group ip4.udp : block {{
+                {udp_ip4_client.ip_testing}
+            }}
+        }}
+        """)
+    await xfw.rules_patch(f"""
+        xfw {{
+            src=extended_group/del ip4.udp {{
+                {udp_ip4_client.ip_testing}
+            }}
+        }}
+        """)
+    assert await check_connection(
+        udp_ip4_client, udp_ip4_mapped_ip6_server
+    ), f"Client {udp_ip4_client.ip_testing} is not blocked"
