@@ -91,6 +91,58 @@ unsigned long get_config_hz()
 	throw Except("Failed to determine CONFIG_HZ (no fallback available)");
 }
 
+/**
+ * Round the given value to the nearest power of two.
+ *
+ * The sliding-window implementation replaces division and modulo by
+ * bit shifts and masks. Since those operations require the window size
+ * to be a power of two, the configured number of jiffies per window
+ * is rounded to the nearest power of two.
+ *
+ * Examples:
+ *	1000 -> 1024
+ *	900 -> 1024
+ *	700 -> 512
+ * Values exactly halfway between two powers of two are rounded up.
+ *
+ * @param value Value to round.
+ * @return The nearest power of two. Returns 1 for values less than or equal
+ *         to 1.
+ */
+constexpr uint32_t
+xfw_round_pow2(uint32_t value) noexcept
+{
+	if (value <= 1)
+		return 1;
+
+	const uint32_t hi = std::bit_ceil(value);
+	const uint32_t lo = hi >> 1;
+
+	if (value == hi)
+		return hi;
+
+	return (value - lo < hi - value) ? lo : hi;
+}
+
+/**
+ * Compute log2() of a power-of-two value.
+ *
+ * The returned value is later used as the shift amount for replacing
+ * division by the window size:
+ *	window_idx = ts >> window_shift;
+ *
+ * Since the argument is guaranteed to be a power of two, log2(value)
+ * is equal to the number of trailing zero bits.
+ *
+ * @param value Non-zero power-of-two value.
+ * @return log2(value).
+ */
+constexpr uint32_t
+xfw_ilog2(uint32_t value) noexcept
+{
+	return std::countr_zero(value);
+}
+
 /*
  * Reconcile rate limit bucket ownership between previous configuration state
  * and a new rule being constructed.
@@ -165,9 +217,16 @@ find_ptr(const Map &map, const Key &key)
 	return nullptr;
 }
 
-BpfMapsManager::BpfMapsManager(): hz_(get_config_hz())
+BpfMapsManager::BpfMapsManager()
+	: hz_(get_config_hz())
+	, rl_window_jiffies_(xfw_round_pow2(hz_))
+	, rl_window_shift_(xfw_ilog2(rl_window_jiffies_))
+	, rl_window_mask_(rl_window_jiffies_ - 1)
+	, rl_max_rate_(std::numeric_limits<uint64_t>::max() >> rl_window_shift_)
 {
-	TE_DBG("Bpf maps are ready to use.");
+	TE_DBG("Bpf program parameters: HZ=%u, rl_window_jiffies=%u, "
+	       "rl_window_shift=%u, rl_window_mask=0x%x",
+	       hz_, rl_window_jiffies_, rl_window_shift_, rl_window_mask_);
 }
 
 void
@@ -246,6 +305,11 @@ void
 BpfMapsManager::set_simple_rules(const XfwConfig &config)
 {
 	auto cfg = get_config();
+
+	/* The values will be active after turn_filtration_on has called. */
+	cfg.rl_window.jiffies = rl_window_jiffies_;
+	cfg.rl_window.shift = rl_window_shift_;
+	cfg.rl_window.mask = rl_window_mask_;
 
 	using BitsetT = std::decay_t<decltype(config.ip_proto_filter_->protocols_)>;
 	static_assert(
@@ -615,6 +679,10 @@ BpfMapsManager::set_ratelimits(const XfwConfig::Ratelimits &ratelimits)
 	const auto& src = ratelimits.get_all();
 	for (size_t i = 0; i < src.size(); ++i) {
 		if (src[i].state_ == XfwConfig::Ratelimit::State::Active) {
+			if (src[i].pps_ > rl_max_rate_)
+				throw Except("Too big rl pps value {}", src[i].pps_);
+			if (src[i].bps_ > rl_max_rate_)
+				throw Except("Too big rl bps value {}", src[i].bps_);
 			cfg.named_rates[i].packets = src[i].pps_;
 			cfg.named_rates[i].bytes = src[i].bps_;
 		}

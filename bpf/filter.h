@@ -41,7 +41,7 @@
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__type(key, uint32_t);
-	__type(value, XfwRLimitLeakyBckt);
+	__type(value, XfwRLimitSlidingWindow);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__uint(max_entries, XFW_MAX_RATE_LIMITER_BUCKETS);
 	__uint(map_flags, BPF_F_MMAPABLE);
@@ -154,37 +154,71 @@ count_tx_stat(const XfwGlobalCtx *ctx, enum XfwTxStat reason)
  */
 static __always_inline bool
 xfw_is_within_rlimit(const XfwGlobalCtx *ctx, const XfwPacketRate *rate,
-			 XfwRLimitLeakyBckt *bucket)
+                     XfwRLimitSlidingWindow *bucket)
 {
-	uint64_t refill_ts = READ_ONCE(bucket->nrefill_jiff);
+	const uint64_t window_idx = ctx->ts_jiff >> ctx->cfg->rl_window.shift;
+	const uint64_t offset = ctx->ts_jiff & ctx->cfg->rl_window.mask;
+	const uint64_t overlap = ctx->cfg->rl_window.jiffies - offset;
+
+	XfwRLimitSlot *curr = &bucket->slot[window_idx & 1];
+	XfwRLimitSlot *prev = &bucket->slot[(window_idx - 1) & 1];
+
 	/*
-	 * TODO #87: fix with Cloudflare ratelimiting.
-	 *
-	 * - Instead of spinlocking or doing any kind of cas-loop, we just allow
-	 * only single thread to perform refill and potentially loose any
-	 * concurrent rate adjustments going from other threads. For this
-	 * assumption we're awarded with the wait-free bucket refill.
-	 */
-	if (ctx->ts_jiff > refill_ts &&
-	    __atomic_compare_exchange_n(&bucket->nrefill_jiff, &refill_ts,
-					ctx->ts_jiff + JIFFIES_PER_SEC, false,
-					__ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
-	{
-		WRITE_ONCE(bucket->pkt_tok, rate->packets);
-		WRITE_ONCE(bucket->byte_tok, rate->bytes);
-	}
-	/*
-	 * In case if only one limit is set,
-	 * default value for absent limit would be INT64_MAX
-	 * That ensures correct logic in one limit case
-	 */
-	if (bucket->pkt_tok <= 0 || bucket->byte_tok <= 0) {
-		return false;
+	* Lazily recycle the slot when it is reused for a new window.
+	*
+	* Concurrent CPUs may race while resetting the slot, resulting in a few
+	* lost updates around the window boundary. This is acceptable for this
+	* approximate lock-free rate limiter.
+	*/
+	if (READ_ONCE(curr->window_idx) != window_idx) {
+		WRITE_ONCE(curr->pkts, 0);
+		WRITE_ONCE(curr->bytes, 0);
+		WRITE_ONCE(curr->window_idx, window_idx);
 	}
 
-	__atomic_sub_fetch(&bucket->pkt_tok, 1, __ATOMIC_RELAXED);
-	__atomic_sub_fetch(&bucket->byte_tok, ctx->pkt_sz,
-			   __ATOMIC_RELAXED);
+	uint64_t curr_pkts = READ_ONCE(curr->pkts);
+	uint64_t curr_bytes = READ_ONCE(curr->bytes);
+
+	uint64_t prev_pkts = 0;
+	uint64_t prev_bytes = 0;
+
+	if (window_idx != 0 && READ_ONCE(prev->window_idx) == window_idx - 1) {
+		prev_pkts = READ_ONCE(prev->pkts);
+		prev_bytes = READ_ONCE(prev->bytes);
+	}
+
+	/*
+	 * Approximate sliding-window interpolation:
+	 *	effective = current + previous * remaining_fraction
+	 *
+	 * The multiplication is performed before the shift. Configuration
+	 * validation guarantees:
+	 *	max_rate * window_jiffies <= UINT64_MAX
+	 *
+	 * Therefore, the intermediate multiplication cannot overflow uint64_t.
+	 * With a 1024-jiffy window the theoretical maximum supported rate is:
+	 *
+	 *   UINT64_MAX / 1024
+	 *       = 18,014,398,509,481,983 bytes/s (≈18 PB/s)
+	 */
+	uint64_t effective_pkts =
+		curr_pkts + (prev_pkts * overlap >> ctx->cfg->rl_window.shift);
+
+	uint64_t effective_bytes =
+		curr_bytes + (prev_bytes * overlap >> ctx->cfg->rl_window.shift);
+
+	if (effective_pkts >= rate->packets)
+		return false;
+
+	if (ctx->pkt_sz > rate->bytes)
+		return false;
+
+	if (effective_bytes > rate->bytes - ctx->pkt_sz)
+		return false;
+
+	__atomic_fetch_add(&curr->pkts, 1, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&curr->bytes, ctx->pkt_sz, __ATOMIC_RELAXED);
+
 	return true;
 }
 
@@ -201,7 +235,7 @@ xfw_is_within_rlimit(const XfwGlobalCtx *ctx, const XfwPacketRate *rate,
 static __always_inline bool
 xfw_is_allowed_by_rlimits(const XfwGlobalCtx *ctx, const XfwRLimitRule *rule)
 {
-	XfwRLimitLeakyBckt *bucket;
+	XfwRLimitSlidingWindow *bucket;
 
 	if (!rule)
 		return true;

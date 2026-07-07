@@ -218,8 +218,8 @@ private:
 		       IndexPoolTransaction &tx);
 
 private:
-	using RLimitsMap = BpfMmapedArrayMap<XfwRLimitLeakyBckt,
-						XFW_MAX_RATE_LIMITER_BUCKETS>;
+	using RLimitsMap = BpfMmapedArrayMap<XfwRLimitSlidingWindow,
+					     XFW_MAX_RATE_LIMITER_BUCKETS>;
 
 	/*
 	* Reset callback invoked when a previously used index is ready to be reused.
@@ -260,6 +260,26 @@ private:
 	 * while staying consistent with kernel timing semantics.
 	 */
 	const uint64_t	hz_;
+
+	/* Sliding-window parameters for ratelimits. */
+	const uint32_t	rl_window_jiffies_;
+	const uint32_t	rl_window_shift_;
+	const uint32_t	rl_window_mask_;
+
+	/*
+	 * The sliding-window implementation computes the weighted contribution
+	 * of the previous window as:
+	 *	previous * overlap / window_size
+	 *
+	 * Since multiplication is performed before division (implemented as a
+	 * right shift, see xfw_is_within_rlimit), the configured packet and 
+	 * byte rates must satisfy:
+	 *	max_rate * window_jiffies <= UINT64_MAX
+	 *
+	 * As the window size is always a power of two, the maximum supported
+	 * rate is computed as UINT64_MAX >> window_shift.
+	 */
+	const uint64_t	rl_max_rate_;
 
 	FilterCfgMap	cfg_map_{MAP_CFG_STR};
 	BpfStats	global_stats_;

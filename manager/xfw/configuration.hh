@@ -203,8 +203,8 @@ public:
 		};
 
 		std::string	alias_;
-		uint64_t		pps_ = 0;
-		uint64_t		bps_ = 0;
+		uint64_t	pps_ = 0;
+		uint64_t	bps_ = 0;
 		State		state_ = State::ReadyToUse;
 	};
 

@@ -67,34 +67,43 @@ typedef struct XfwSrcRule {
 } XfwSrcRule;
 
 /**
- * Generic rate limiting action implementing the leaky buckets algorithm.
+ * Sliding-window rate limiter slot.
  *
- * @pkt_tok		- tokens for packet counter
- * @byte_tok		- tokens for byte counter
- * @nrefill_jiff	- timestamp in jiffies for the next refill of the bucket
- *
- * This structure may reside in one of three maps:
- * MAP_RATELIMIT_REF, MAP_SRC_RATELIMIT_REF, or MAP_SRC_PORT_RL_REF.
+ * @window_idx	Window identifier this slot belongs to.
+ * @pkts	Number of packets observed within the window.
+ * @bytes	Number of bytes observed within the window.
  */
-typedef struct XfwRLimitLeakyBckt {
-	int64_t			pkt_tok;
-	int64_t			byte_tok;
-	/* TODO #87: Timestamp of the next refill interval (in jiffies). */
-	uint64_t		nrefill_jiff;
+typedef struct {
+	uint64_t	window_idx;
+	uint64_t	pkts;
+	uint64_t	bytes;
+} XfwRLimitSlot;
 
+/**
+ * Sliding-window rate limiter state.
+ *
+ * The limiter maintains two slots corresponding to the current and the
+ * previous windows. The effective rate is computed by combining the current
+ * window with a weighted contribution from the previous one.
+ *
+ * Slots are recycled lazily when reused for a new window. Since the
+ * implementation is intentionally lock-free, concurrent rollover may lose a
+ * few accounting updates around a window boundary. Such errors are bounded
+ * and acceptable for this approximate rate limiter.
+ */
+typedef struct XfwRLimitSlidingWindow {
+	XfwRLimitSlot	slot[2];
 #ifdef __cplusplus
-		/* TODO #87: Exhaust the bucket so the next check refills it first. */
 	void
 	reset() noexcept
 	{
-		/* TODO #87: Maybe we will not need reset function after #87. */
-		nrefill_jiff = 0;
+		std::memset(slot, 0, sizeof(slot));
 	}
 #endif
-} __attribute__((aligned(64))) XfwRLimitLeakyBckt;
+} __attribute__((aligned(64))) XfwRLimitSlidingWindow;
 
 typedef struct XfwRLimitRule {
-	/* Used to read the XfwRLimitLeakyBckt at bucket_idx from the
+	/* Used to read the XfwRLimitSlidingWindow at bucket_idx from the
 	 * preallocated bucket array (MAP_RATELIMIT_REF).
 	 */
 	uint32_t	bucket_idx;
