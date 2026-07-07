@@ -247,12 +247,9 @@ async def xfw(
     )
     try:
         await xfw.start()
-    except AssertionError as e:
+        yield xfw
+    finally:
         await xfw.stop()
-        pytest.fail(f"The XFW service have not started in time. Error: {e}")
-
-    yield xfw
-    await xfw.stop()
 
 
 @pytest.fixture
