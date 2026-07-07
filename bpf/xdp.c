@@ -44,7 +44,7 @@ SHADOW_MAP(MAP_ICMP_BASENAME, BPF_MAP_TYPE_HASH, XFW_MAX_ICMP_RULES, XfwIcmpKey,
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
 	__type(key, XfwIp); /* IPv4/6 address */
-	__type(value, XfwRLimitLeakyBckt);
+	__type(value, XfwRLimitSlidingWindow);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__uint(max_entries, XFW_MAX_SRC_RATE_LIMITER_BUCKETS);
 } MAP_SRC_RATELIM_REF SEC(".maps");
@@ -52,7 +52,7 @@ struct {
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__type(key, __be16); /* ports */
-	__type(value, XfwRLimitLeakyBckt);
+	__type(value, XfwRLimitSlidingWindow);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__uint(max_entries, XFW_MAX_PORTS);
 } MAP_SRC_PORT_RL_REF SEC(".maps");
@@ -204,8 +204,8 @@ src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
 			/* XFW_ACTION_RATE_LIMIT */
 			XFW_ASSERT(default_rule->action == XFW_ACTION_RATE_LIMIT);
 
-			XfwRLimitLeakyBckt *b = XFW_MAP_LOOKUP_OR_INIT(
-				&MAP_SRC_PORT_RL_REF, &port, XfwRLimitLeakyBckt);
+			XfwRLimitSlidingWindow *b = XFW_MAP_LOOKUP_OR_INIT(
+				&MAP_SRC_PORT_RL_REF, &port, XfwRLimitSlidingWindow);
 			XFW_ASSERT(b);
 
 			const XfwRLimitIdx idx = default_rule->rlimit.named_idx;
@@ -226,8 +226,8 @@ src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
 
 	XFW_ASSERT(rule->action == XFW_ACTION_RATE_LIMIT);
 
-	XfwRLimitLeakyBckt *b = XFW_MAP_LOOKUP_OR_INIT(&MAP_SRC_PORT_RL_REF, &port,
-						       XfwRLimitLeakyBckt);
+	XfwRLimitSlidingWindow *b = XFW_MAP_LOOKUP_OR_INIT(&MAP_SRC_PORT_RL_REF, &port,
+						       XfwRLimitSlidingWindow);
 	XFW_ASSERT(b);
 	XFW_ASSERT(rule->named_idx < XFW_MAX_NAMED_RATELIMITS);
 	if (xfw_is_within_rlimit(ctx, &ctx->cfg->named_rates[rule->named_idx], b))
@@ -304,10 +304,10 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
 			/* XFW_ACTION_RATE_LIMIT */
 			XFW_ASSERT(rule->action == XFW_ACTION_RATE_LIMIT);
 
-			XfwRLimitLeakyBckt *b = XFW_MAP_LOOKUP_OR_INIT(
+			XfwRLimitSlidingWindow *b = XFW_MAP_LOOKUP_OR_INIT(
 							&MAP_SRC_RATELIM_REF,
 							&ctx->ilog_addr.in6,
-							XfwRLimitLeakyBckt);
+							XfwRLimitSlidingWindow);
 			XFW_ASSERT(b);
 
 			XFW_ASSERT(rule->named_idx < XFW_MAX_NAMED_RATELIMITS);
@@ -330,9 +330,9 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
 
 	XFW_ASSERT(default_rule->action == XFW_ACTION_RATE_LIMIT);
 
-	XfwRLimitLeakyBckt *b = XFW_MAP_LOOKUP_OR_INIT(&MAP_SRC_RATELIM_REF,
+	XfwRLimitSlidingWindow *b = XFW_MAP_LOOKUP_OR_INIT(&MAP_SRC_RATELIM_REF,
 						       &ctx->ilog_addr.in6,
-						       XfwRLimitLeakyBckt);
+						       XfwRLimitSlidingWindow);
 	XFW_ASSERT(b);
 
 	const XfwRLimitIdx idx = default_rule->rlimit.named_idx;

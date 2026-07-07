@@ -72,19 +72,27 @@ typedef struct XfwRulesCfg {
 typedef struct XfwPacketRate {
 	uint64_t	packets;
 	uint64_t	bytes;
-
-#ifdef __cplusplus
-	XfwPacketRate() noexcept
-		/*
-		 * TODO #488: we have to use UINT64_MAX here, but can't due to
-		 * xfw_is_within_rlimit implementation. Maybe will be fixed
-		 * with #87.
-		 */
-		: packets(INT64_MAX)
-		, bytes(INT64_MAX)
-	{}
-#endif
 } XfwPacketRate;
+
+/**
+ * Sliding-window parameters used by the rate limiter.
+ *
+ * To avoid expensive division and modulo operations in the hot path,
+ * the configured window size is rounded to the nearest power of two
+ * during userspace initialization. This allows window calculations to
+ * use only bit shifts and masks:
+ *	window_idx = ts_jiff >> shift;
+ *	offset     = ts_jiff & mask;
+ *
+ * @jiffies  Sliding-window size in jiffies (power of two).
+ * @shift    log2(@jiffies), used instead of division.
+ * @mask     @jiffies - 1, used instead of modulo.
+ */
+typedef struct XfwRlWindow {
+	uint32_t	jiffies;
+	uint32_t	shift;
+	uint32_t	mask;
+} XfwRlWindow;
 
 /**
  * The main configuration handler.
@@ -101,5 +109,6 @@ typedef struct XfwFilterCfg {
 	uint8_t			amap_dst;
 	uint8_t			amap_prot_net;
 
+	XfwRlWindow		rl_window;
 	XfwPacketRate		named_rates[XFW_MAX_NAMED_RATELIMITS];
 } XfwFilterCfg;

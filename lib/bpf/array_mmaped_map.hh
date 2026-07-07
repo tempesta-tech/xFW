@@ -20,7 +20,7 @@
  * ownership transfer.
  *
  * Example usage:
- *   BpfMmapedArrayMap<XfwRLimitLeakyBckt, XFW_MAX_RATE_LIMITER_BUCKETS> map("map_name");
+ *   BpfMmapedArrayMap<XfwRLimitSlidingWindow, MAX_BUCKETS> map("map_name");
  *   (*map)[10] = {};              // Directly write to the mapped array
  *   auto val = (*map)[20];        // Directly read
  * 
