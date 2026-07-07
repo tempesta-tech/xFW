@@ -7,7 +7,7 @@ import subprocess
 import tarfile
 from io import BytesIO
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 import pytest
@@ -621,7 +621,7 @@ async def client_cloner(server_cloner) -> ClonerCallable:
     _clones: list[RegularKernelSocketNetworkStateful] = []
 
     def wrapper(
-        cloner: RegularKernelSocketNetworkStateful, amount: int, fabric: Optional[typing.Any] = None
+        cloner: RegularKernelSocketNetworkStateful, amount: int, fabric: Optional[Any] = None
     ) -> list[RegularKernelSocketNetworkStateful]:
         nonlocal _clones
 
@@ -660,7 +660,7 @@ async def server_cloner() -> ClonerCallable:
     _clones: list[RegularKernelSocketNetworkStateful] = []
 
     def wrapper(
-        cloner: RegularKernelSocketNetworkStateful, amount: int, fabric: Optional[typing.Any] = None
+        cloner: RegularKernelSocketNetworkStateful, amount: int, fabric: Optional[Any] = None
     ) -> list[RegularKernelSocketNetworkStateful]:
         nonlocal _clones
 
