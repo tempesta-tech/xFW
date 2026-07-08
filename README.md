@@ -5,8 +5,8 @@ An XDP/TC eBPF volumetric DDoS protection solution.
 ## Documentation
 
 
-See Tempesta Escudo [Wiki](https://github.com/tempesta-tech/xfw/wiki) for Tempesta
-xFW documentation.
+See Tempesta Escudo [Wiki](https://tempesta-tech.com/tempesta-escudo/knowledge-base/XFW/)
+for Tempesta xFW documentation.
 
 
 ## Build
