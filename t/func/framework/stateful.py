@@ -450,9 +450,11 @@ class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
         """
         Create new socket, bind with params and call the callback function
         """
+        _, stdout, _ = await self.run_host_cmd(cmd="ip a")
+        self.logger.debug(stdout)
+
         self.socket = self.create_socket()
         self.set_socket_options(self.socket)
-        stdout, _, stderr = await run_cmd(cmd="ip a", logger=self.logger, log_output=True)
         self.socket.bind(self.bind_params)
 
         await self.on_socket_created()
