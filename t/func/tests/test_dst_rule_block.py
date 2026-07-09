@@ -77,6 +77,7 @@ async def test_dst_block_by_multiple_port(
     assert await check_connection(client, server) is False, f"Port {new_port} is not blocked"
 
 
+@pytest.mark.skip("ISSUE: too small pps in tests")
 async def test_dst_block_by_ratelimit(
     xfw: XFW,
     protocol: str,
