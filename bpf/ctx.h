@@ -65,10 +65,14 @@ typedef struct XfwGlobalCtx {
 	uint8_t		l4_proto;
 	XfwMd		*ctx;
 	struct ethhdr	*eth;
-	struct iphdr	*iph4;
-	struct ipv6hdr	*iph6;
-	struct tcphdr	*th;
-	struct udphdr	*uh;
+	union {
+		struct iphdr	*iph4;
+		struct ipv6hdr	*iph6;
+	};
+	union {
+		struct tcphdr	*th;
+		struct udphdr	*uh;
+	};
 	uint64_t	ts_jiff;
 	XfwIp		ilog_addr;
 } XfwGlobalCtx;

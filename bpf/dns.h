@@ -94,10 +94,10 @@ STATIC_ASSERT(sizeof(XfwPacketMetadata) <= 32,
 
 typedef struct XfwDnsCtx {
 	XfwMd		*ctx;
+	XfwPerCpuStats	*g_stats;
 	XfwHdrCursor	hdr_cur;
 	XfwIp		ilog_addr;
 	uint32_t	pkt_sz;
-	XfwPerCpuStats	*g_stats;
 } XfwDnsCtx;
 
 SIMPLE_PARSE_FUNC_DECL(parse_dnshdr, XfwDnsHdr);
@@ -423,11 +423,11 @@ ingress_dns_filter(XfwGlobalCtx *ctx)
 
 	uint16_t cur_pos = ctx->hdr_cur.pos - XFW_CTX_DATA_BGN(ctx->ctx);
 	uint16_t is_ipv4, ip_pos;
-	if (ctx->iph4) {
+	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		is_ipv4 = 1;
 		ip_pos = (void*)ctx->iph4 - XFW_CTX_DATA_BGN(ctx->ctx);
 	}
-	else if (likely(ctx->iph6)) {
+	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
 		is_ipv4 = 0;
 		ip_pos = (void*)ctx->iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
 	}

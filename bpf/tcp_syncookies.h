@@ -445,7 +445,7 @@ tcp_syncookies_make_synack(XfwGlobalCtx *ctx, uint32_t cookie, uint16_t mss,
 	memcpy(ctx->eth->h_dest, tmp_eth.h_source, sizeof(tmp_eth.h_source));
 	memcpy(ctx->eth->h_source, tmp_eth.h_dest, sizeof(tmp_eth.h_dest));
 
-	if (ctx->iph4) {
+	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		uint64_t ip_csum = csum_unfold(ctx->iph4->check);
 		uint16_t ip_len = bpf_ntohs(ctx->iph4->tot_len) + d_len;
 		ipv4_set_ttl_csum(ctx, &ip_csum);
@@ -457,7 +457,9 @@ tcp_syncookies_make_synack(XfwGlobalCtx *ctx, uint32_t cookie, uint16_t mss,
 
 		tcp_ipv4_csum_update(ctx, csum);
 	}
-	else if (ctx->iph6) {
+	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
+		VERIFY_TRUE_OR_RETURN((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end,
+				      -EINVAL);
 		ctx->iph6->hop_limit = XFW_DEFAULT_TTL;
 		uint16_t payload_len = bpf_ntohs(ctx->iph6->payload_len);
 		ctx->iph6->payload_len = bpf_htons(payload_len + d_len);
@@ -487,14 +489,16 @@ tcp_sk_listen_lookup(const XfwGlobalCtx *ctx)
 	struct bpf_sock_tuple t;
 	size_t tlen;
 
-	if (ctx->iph4) {
+	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		tlen = sizeof(t.ipv4);
 		t.ipv4.sport = ctx->th->source;
 		t.ipv4.dport = ctx->th->dest;
 		t.ipv4.saddr = ctx->iph4->saddr;
 		t.ipv4.daddr = ctx->iph4->daddr;
 	}
-	else if (ctx->iph6) {
+	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
+		VERIFY_TRUE_OR_RETURN((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end,
+				      NULL);
 		tlen = sizeof(t.ipv6);
 		t.ipv6.sport = ctx->th->source;
 		t.ipv6.dport = ctx->th->dest;
@@ -525,7 +529,7 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 	    && !tcp_syncookies_passive_mode(ctx, ts))
 		return XFW_CTX_CONTINUE;
 
-	const bool is_ip4 = ctx->iph4 != NULL;
+	const bool is_ip4 = (ctx->ipver == bpf_ntohs(ETH_P_IP));
 	void *iph = is_ip4 ? (void *)ctx->iph4 : (void *)ctx->iph6;
 	uint32_t iph_len = is_ip4 ? sizeof(struct iphdr) : sizeof(struct ipv6hdr);
 	XFW_ASSERT(iph && iph + iph_len <= ctx->hdr_cur.end);
@@ -622,12 +626,18 @@ tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx)
 	 * API backward compatibility. Reference:
 	 * https://groups.google.com/g/clang-built-linux/c/Ehb-mZnip-E/m/nRWGW24PBAAJ
 	 */
-	if (ctx->iph4) {
+	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		int r = bpf_tcp_raw_check_syncookie_ipv4(ctx->iph4, ctx->th);
 		if (r < 0)
 			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SYNCOOKIE_FAILED,
 				"IPv4 ACK with invalid cookie, retcode=%d.", r);
-	} else if (ctx->iph6) {
+	}
+	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
+		VERIFY_TRUE_OR_RETURN((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end,
+				      XFW_CTX_DROP);
+		VERIFY_TRUE_OR_RETURN((void *)(ctx->th + 1) <= ctx->hdr_cur.end,
+				      XFW_CTX_DROP);
+
 		int r = bpf_tcp_raw_check_syncookie_ipv6(ctx->iph6, ctx->th);
 		if (r < 0)
 			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SYNCOOKIE_FAILED,
