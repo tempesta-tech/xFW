@@ -237,7 +237,7 @@ tcp_parse_opts(XfwGlobalCtx *ctx, XfwTCPOpts *opts)
 			VERIFY_TRUE_OR_RETURN(e <= o_end && e <= d_end, -EINVAL);
 			VERIFY_TRUE_OR_RETURN(o[i + 1] == TCPOPT_WSCALE_SZ, -EINVAL);
 			opts->wscale = o[i + 2];
-			VERIFY_TRUE_OR_RETURN(o[i] <= TCPOPT_WSCALE_MAX, -EINVAL);
+			VERIFY_TRUE_OR_RETURN(o[i + 2] <= TCPOPT_WSCALE_MAX, -EINVAL);
 			i += TCPOPT_WSCALE_SZ;
 			continue;
 
