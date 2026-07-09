@@ -197,7 +197,8 @@ src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
 		XfwActionRule *default_rule = &ctx->cfg->rules.defaults[src_default];
 		switch (default_rule->action) {
 		case XFW_ACTION_BLOCK:
-			return XFW_MAKE_CTX_DROP(ctx, XFW_SRC_PORT_DEFAULT_BLOCKED);
+			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_PORT_DEFAULT_BLOCKED,
+						     ": %u", bpf_ntohs(port));
 		case XFW_ACTION_ALLOW:
 			return XFW_CTX_CONTINUE;
 		default:
@@ -219,10 +220,12 @@ src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
 	}
 
 	if (rule->action == XFW_ACTION_BLOCK)
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_PORT_BLOCKED, ": %u", port);
+		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_PORT_BLOCKED,
+					     ": %u", bpf_ntohs(port));
 
 	if (rule->action == XFW_ACTION_ALLOW)
-		return XFW_MAKE_CTX_PASS_EXT(ctx, XFW_SRC_PORT_ALLOWED, ": %u", port);
+		return XFW_MAKE_CTX_PASS_EXT(ctx, XFW_SRC_PORT_ALLOWED,
+					     ": %u", bpf_ntohs(port));
 
 	XFW_ASSERT(rule->action == XFW_ACTION_RATE_LIMIT);
 
@@ -233,7 +236,8 @@ src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
 	if (xfw_is_within_rlimit(ctx, &ctx->cfg->named_rates[rule->named_idx], b))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_PORT_RATE_LIMITED, ": %u", port);
+	return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_PORT_RATE_LIMITED,
+				     ": %u", bpf_ntohs(port));
 }
 
 static __always_inline void
