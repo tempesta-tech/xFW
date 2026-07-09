@@ -161,7 +161,7 @@ icmp_filter(const XfwGlobalCtx *ctx, const XfwIcmpKey *key)
 }
 
 static __always_inline uint8_t
-src_port_default_by_protos(int ipver, uint8_t l4_proto)
+src_port_default_by_protos(uint16_t ipver, uint8_t l4_proto)
 {
 	if (ipver == bpf_ntohs(ETH_P_IP)) {
 		if (l4_proto == XFW_L4_PROTO_TCP) {
@@ -667,9 +667,10 @@ xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 		return XFW_MAKE_CTX_PASS(ctx, XFW_PRELOAD_INGRESS);
 	}
 
-	ctx->ipver = parse_ethhdr(&ctx->hdr_cur, &ctx->eth);
-	if (unlikely(ctx->ipver < 0))
+	int ipver = parse_ethhdr(&ctx->hdr_cur, &ctx->eth);
+	if (unlikely(ipver < 0))
 		return XFW_MAKE_CTX_DROP(ctx, XFW_ETH_BADHDR_INGRESS);
+	ctx->ipver = ipver;
 
 	int r;
 	/* Helper structure for src filter, filled on L3, used on L4. */
