@@ -15,7 +15,7 @@
 #endif
 
 #include "static_assert.h"
-#include "statistics.h"
+#include "drop_stats.h"
 
 /**
  * Maximum incidents per CPU.
@@ -53,7 +53,7 @@ typedef struct IncidentLogStat {
 		: reason{0}, packets{0}, bytes{0}
 	{}
 #endif
-	STATIC_ASSERT(XFW_DECISION_STAT_MAX <= sizeof(IncidentLogReasons) * 8,
+	STATIC_ASSERT(XFW_DROP_STAT_MAX <= sizeof(IncidentLogReasons) * 8,
 		"Number of flags exceeds the number of bits in IncidentLogStat::reason");
 } IncidentLogStat;
 

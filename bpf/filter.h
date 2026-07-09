@@ -78,59 +78,68 @@ finalize_result(const XfwGlobalCtx *ctx, int code)
 	return code;
 }
 
-#define XFW_MAKE_CTX_DECISION_CODE(ctx, code, reason_idx, prefix, postfix,\
-				   args...)				\
-({									\
-	XFW_CTX_DBG(prefix "%s" postfix, xfw_decision_stat[reason_idx].desc,\
-		    ##args);						\
-	code;								\
-})
+static __always_inline void
+count_traffic_stat(const XfwGlobalCtx *ctx, enum XfwTrafficStat reason)
+{
+	++ctx->g_stats->traffic[reason].packets;
+	ctx->g_stats->traffic[reason].bytes += ctx->pkt_sz;
+}
+
+static __always_inline void
+count_pass_stat(const XfwGlobalCtx *ctx, enum XfwPassStat reason)
+{
+	++ctx->g_stats->pass[reason].packets;
+	ctx->g_stats->pass[reason].bytes += ctx->pkt_sz;
+}
+
+static __always_inline void
+count_tx_stat(const XfwGlobalCtx *ctx, enum XfwTxStat reason)
+{
+	++ctx->g_stats->transmitted[reason].packets;
+	ctx->g_stats->transmitted[reason].bytes += ctx->pkt_sz;
+}
 
 /**
- * Avoid returning DROP codes directly without using this function, as it is
+ * Avoid returning DROP codes directly without using these 2 functions, as it is
  * easy to forget updating the dropped packet statistics.
  */
-
-#define XFW_MAKE_CTX_DROP(ctx, reason_idx, args...)			\
-({									\
-	REGISTER_INCIDENT(ctx, reason_idx);				\
-	XFW_MAKE_CTX_DECISION_CODE(ctx, XFW_CTX_DROP, reason_idx, "[DROP]",\
-				   "", ##args);				\
-})
-
 #define XFW_MAKE_CTX_DROP_EXT(ctx, reason_idx, postfix, args...)	\
 ({									\
 	REGISTER_INCIDENT(ctx, reason_idx);				\
-	XFW_MAKE_CTX_DECISION_CODE(ctx, XFW_CTX_DROP, reason_idx, "[DROP]",\
-				   postfix, ##args);			\
+	XFW_CTX_DBG("[DROP] %s" postfix,				\
+		    xfw_drop_stats[reason_idx].desc, ##args);	\
+	XFW_CTX_DROP;							\
 })
 
+#define XFW_MAKE_CTX_DROP(ctx, reason_idx, args...)			\
+	XFW_MAKE_CTX_DROP_EXT(ctx, reason_idx, "", ##args)
+
 /**
- * Avoid returning PASS codes directly without using this function, as it is
+ * Avoid returning PASS codes directly without using these 2 functions, as it is
  * easy to forget updating the passed packet statistics.
  */
-#define XFW_MAKE_CTX_PASS(ctx, reason_idx, args...)			\
-	XFW_MAKE_CTX_DECISION_CODE(ctx, XFW_CTX_PASS, reason_idx, "[PASS]",\
-				   "", ##args)
-
 #define XFW_MAKE_CTX_PASS_EXT(ctx, reason_idx, postfix, args...)	\
-	XFW_MAKE_CTX_DECISION_CODE(ctx, XFW_CTX_PASS, reason_idx, "[PASS]",\
-				   postfix, ##args)
+({									\
+	count_pass_stat(ctx, reason_idx);				\
+	XFW_CTX_DBG("[PASS] %s" postfix,				\
+		    xfw_pass_stats[reason_idx].desc, ##args);		\
+	XFW_CTX_PASS;							\
+})
+
+#define XFW_MAKE_CTX_PASS(ctx, reason_idx, args...)			\
+	XFW_MAKE_CTX_PASS_EXT(ctx, reason_idx, "", ##args)
+
 /**
  * Avoid returning TX codes directly without using this function, as it is
  * easy to forget updating the forwarded packet statistics.
  * We don't need TX code for tc program, only for xdp.
- *
- * TODO: should it be decision?
- * TODO #514: this macro is used only by tcp_syncookies_syn_filter() for
- *      accounting of generated syncookies - this should be in prometheus
- *      statistics, but not in incidents.
  */
 #define MAKE_XDP_TX(ctx, reason_idx, args...)				\
 ({									\
-	REGISTER_INCIDENT(ctx, reason_idx);				\
-	XFW_MAKE_CTX_DECISION_CODE(ctx, XDP_TX, reason_idx, "[TRANSMIT]",\
-				   "", ##args);				\
+	count_tx_stat(ctx, reason_idx);				\
+	XFW_CTX_DBG("[TRANSMIT] %s",					\
+		    xfw_tx_stats[reason_idx].desc, ##args);		\
+	XDP_TX;								\
 })
 
 /**
