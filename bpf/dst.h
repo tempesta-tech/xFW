@@ -24,7 +24,11 @@ xfw_dst_default_by_key(const XfwDstKey *dst_key)
 {
 	uint8_t dst_default;
 
-	if (dst_key->ipver == bpf_ntohs(ETH_P_IP)) {
+	/*
+	 * XfwDstKey::ipver uses XFW_IP_VER_4/6. This differs from
+	 * XfwGlobalCtx::ipver, which stores ETH_P_IP/ETH_P_IPV6.
+	 */
+	if (dst_key->ipver == XFW_IP_VER_4) {
 		if (dst_key->proto == XFW_L4_PROTO_TCP) {
 			dst_default = XFW_DEFAULT_DST_TCP_IP4;
 		} else {
