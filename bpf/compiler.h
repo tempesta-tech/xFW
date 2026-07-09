@@ -51,7 +51,7 @@ extern unsigned long CONFIG_HZ __kconfig;
 #endif
 
 #ifndef memcmp
-#define memcmp(s1, s2, n)	__builtin_memcpy((s1), (s2), (n))
+#define memcmp(s1, s2, n)	__builtin_memcmp((s1), (s2), (n))
 #endif
 
 #ifndef memmove
