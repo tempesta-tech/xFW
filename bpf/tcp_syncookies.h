@@ -207,16 +207,16 @@ tcp_parse_opts(XfwGlobalCtx *ctx, XfwTCPOpts *opts)
 	const uint8_t *const o_end = (uint8_t *)ctx->th + ctx->th->doff * 4;
 	const uint8_t *const d_end = (uint8_t *)ctx->hdr_cur.end;
 
-	/* The maximum lenght of options is 40 bytes (RFC 9293 3.1). */
+	/* The maximum length of options is 40 bytes (RFC 9293 3.1). */
 	VERIFY_TRUE_OR_RETURN(o + 40 >= o_end, -E2BIG);
 
-	uint8_t i;
+	uint8_t i, off = 0;
 	bpf_for (i, 0, 40) {
-		if (o + i >= o_end || unlikely(o + i >= d_end))
+		if (o + off >= o_end || unlikely(o + off >= d_end))
 			return 0;
 
 		/* First byte is kind of the option. */
-		switch (o[i]) {
+		switch (o[off]) {
 		case TCPOPT_EOL:
 			/*
 			 * If non zero values are present after EOL, then the
@@ -228,27 +228,27 @@ tcp_parse_opts(XfwGlobalCtx *ctx, XfwTCPOpts *opts)
 			return 0;
 
 		case TCPOPT_NOP:
-			++i;
+			++off;
 			continue;
 
 		case TCPOPT_WSCALE:
 			/* RFC 7323 2.2: kind, len=3, 1 byte val */
-			e = o + i + TCPOPT_WSCALE_SZ;
+			e = o + off + TCPOPT_WSCALE_SZ;
 			VERIFY_TRUE_OR_RETURN(e <= o_end && e <= d_end, -EINVAL);
-			VERIFY_TRUE_OR_RETURN(o[i + 1] == TCPOPT_WSCALE_SZ, -EINVAL);
-			opts->wscale = o[i + 2];
-			VERIFY_TRUE_OR_RETURN(o[i] <= TCPOPT_WSCALE_MAX, -EINVAL);
-			i += TCPOPT_WSCALE_SZ;
+			VERIFY_TRUE_OR_RETURN(o[off + 1] == TCPOPT_WSCALE_SZ, -EINVAL);
+			opts->wscale = o[off + 2];
+			VERIFY_TRUE_OR_RETURN(o[off + 2] <= TCPOPT_WSCALE_MAX, -EINVAL);
+			off += TCPOPT_WSCALE_SZ;
 			continue;
 
 		case TCPOPT_SACK_PERM:
 			/* RFC 2018 2: kind, len=2 */
-			e = o + i + TCPOPT_SACK_PERM_SZ;
+			e = o + off + TCPOPT_SACK_PERM_SZ;
 			VERIFY_TRUE_OR_RETURN(e <= o_end && e <= d_end, -EINVAL);
-			VERIFY_TRUE_OR_RETURN(o[i + 1] == TCPOPT_SACK_PERM_SZ,
+			VERIFY_TRUE_OR_RETURN(o[off + 1] == TCPOPT_SACK_PERM_SZ,
 					      -EINVAL);
 			opts->sack_perm = 1;
-			i += TCPOPT_SACK_PERM_SZ;
+			off += TCPOPT_SACK_PERM_SZ;
 			continue;
 
 		case TCPOPT_TIMESTAMP:
@@ -256,13 +256,13 @@ tcp_parse_opts(XfwGlobalCtx *ctx, XfwTCPOpts *opts)
 			 * RFC 7323 3.2:
 			 * kind, len=10, TS val 4 bytes, TS echo (tsecr) 4 bytes
 			 */
-			e = o + i + TCPOPT_TIMESTAMP_SZ;
+			e = o + off + TCPOPT_TIMESTAMP_SZ;
 			VERIFY_TRUE_OR_RETURN(e <= o_end && e <= d_end, -EINVAL);
-			VERIFY_TRUE_OR_RETURN(o[i + 1] == TCPOPT_TIMESTAMP_SZ, -EINVAL);
+			VERIFY_TRUE_OR_RETURN(o[off + 1] == TCPOPT_TIMESTAMP_SZ, -EINVAL);
 			/* RFC 7323 4.3: ignore duplicate timestamp options. */
 			if (likely(!opts->ts))
-				opts->ts = get_unaligned((__be32 *)(o + i + 2));
-			i += TCPOPT_TIMESTAMP_SZ;
+				opts->ts = get_unaligned((__be32 *)(o + off + 2));
+			off += TCPOPT_TIMESTAMP_SZ;
 			continue;
 
 		default:
@@ -271,13 +271,13 @@ tcp_parse_opts(XfwGlobalCtx *ctx, XfwTCPOpts *opts)
 			 * Only NOP and EOL have 1 byte lengh, all others must
 			 * have length field (RFC 9293 3.1).
 			 */
-			e = o + i + 2;
+			e = o + off + 2;
 			VERIFY_TRUE_OR_RETURN(e <= o_end && e <= d_end, -EINVAL);
-			uint8_t olen = o[i + 1];
+			uint8_t olen = o[off + 1];
 			VERIFY_TRUE_OR_RETURN(olen >= 2, -EINVAL);
-			e = o + i + olen;
+			e = o + off + olen;
 			VERIFY_TRUE_OR_RETURN(e <= o_end && e <= d_end, -EINVAL);
-			i += olen;
+			off += olen;
 			continue;
 		}
 	}
