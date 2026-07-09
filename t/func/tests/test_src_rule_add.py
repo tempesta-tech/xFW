@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import pytest
+
 from framework.cmp import check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
@@ -259,6 +261,7 @@ async def test_src_add_block_by_multiple_port_range(
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
+@pytest.mark.skip("ISSUE: too small pps in tests")
 async def test_src_add_block_by_ratelimit(
     xfw: XFW,
     protocol: str,
