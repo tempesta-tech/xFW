@@ -24,7 +24,7 @@ In the project we use [![Code style: black](https://img.shields.io/badge/code%20
 sudo su
 
 # enter into the tests dir
-cd xfw/t/func
+cd t/func
 
 # create env and install the requirements
 ./setup.sh
@@ -49,7 +49,7 @@ Next time after setup, you might run
 sudo su
 
 # enter into the tests dir
-cd xfw/t/func
+cd t/func
 
 # activate python env
 source .venv/bin/activate

@@ -3,7 +3,7 @@ cached/
 *.d
 *.o
 *.swp
-xfw/t/func/.env
-xfw/t/func/.venv
+t/func/.env
+t/func/.venv
 __pycache__/
 *.py[cod]
