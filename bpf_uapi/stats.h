@@ -14,8 +14,9 @@
 #include "vmlinux.h"
 #endif
 
-#include "statistics.h"
-#include "statistics_diagnostic.h"
+#include "pass_stats.h"
+#include "traffic_stats.h"
+#include "tx_stats.h"
 
 typedef struct XfwPacketStats {
 	uint64_t	packets;
@@ -33,18 +34,28 @@ typedef struct XfwPacketStats {
 #endif
 } XfwPacketStats;
 
+/*
+ * Per-CPU counters for PASS, TX and traffic statistics.
+ *
+ * DROP statistics are maintained separately by the incident logging
+ * subsystem to avoid duplicating accounting. Incident statistics are
+ * exported to ClickHouse.
+ */
 typedef struct XfwPerCpuStats {
-	XfwPacketStats		decision[XFW_DECISION_STAT_MAX];
-	XfwPacketStats		diagnostic[XFW_DIAGNOSTIC_STAT_MAX];
+	XfwPacketStats		pass[XFW_PASS_STAT_MAX];
+	XfwPacketStats		transmitted[XFW_TX_STAT_MAX];
+	XfwPacketStats		traffic[XFW_TRAFFIC_STAT_MAX];
 
 #ifdef __cplusplus
 	XfwPerCpuStats &
 	operator+=(const XfwPerCpuStats &other) noexcept
 	{
-		for (size_t i = 0; i < XFW_DECISION_STAT_MAX; ++i)
-			decision[i] += other.decision[i];
-		for (size_t i = 0; i < XFW_DIAGNOSTIC_STAT_MAX; ++i)
-			diagnostic[i] += other.diagnostic[i];
+		for (size_t i = 0; i < XFW_PASS_STAT_MAX; ++i)
+			pass[i] += other.pass[i];
+		for (size_t i = 0; i < XFW_TX_STAT_MAX; ++i)
+			transmitted[i] += other.transmitted[i];
+		for (size_t i = 0; i < XFW_TRAFFIC_STAT_MAX; ++i)
+			traffic[i] += other.traffic[i];
 		return *this;
 	}
 #endif

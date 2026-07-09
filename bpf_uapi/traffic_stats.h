@@ -1,5 +1,5 @@
-/*
- *	Tempesta Bpf extended statistic.
+/**
+ *	Tempesta Bpf trafic statistic.
  *
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -8,7 +8,7 @@
 
 #include "statistics_types.h"
 
-enum XfwDiagnosticStatistic {
+enum XfwTrafficStat {
 	XFW_SYN,
 	XFW_ACK,
 	XFW_SYNACK,
@@ -29,7 +29,8 @@ enum XfwDiagnosticStatistic {
 	XFW_TOTAL_UPSTREAM_EGRESS,
 	XFW_PASSED_DOWNSTREAM_EGRESS,
 	XFW_PASSED_UPSTREAM_EGRESS,
-	XFW_DIAGNOSTIC_STAT_MAX
+
+	XFW_TRAFFIC_STAT_MAX
 };
 
 #if defined(__clang__)
@@ -44,7 +45,7 @@ enum XfwDiagnosticStatistic {
 // supported by both compilers. We suppress the warning to keep the
 // initialization concise and consistent between C and C++ builds.
 #endif
-static const struct XfwStatInfo xfw_diagnostic_stat[] = {
+static const struct XfwStatInfo xfw_traffic_stats[] = {
 	[XFW_SYN]				= {"xfw_syn",
 						   "Packets with SYN"},
 	[XFW_ACK]				= {"xfw_ack",
@@ -84,14 +85,9 @@ static const struct XfwStatInfo xfw_diagnostic_stat[] = {
 	[XFW_PASSED_DOWNSTREAM_EGRESS]		= {"xfw_passed_downstream_egress",
 						   "Passed trafic from xFW to upstream"},
 	[XFW_PASSED_UPSTREAM_EGRESS]		= {"xfw_passed_upstream_egress",
-						   "Passed trafic from xFW to downstream"},
+						   "Passed trafic from xFW to downstream"}
 };
-
-#if defined(__TARGET_ARCH_BPF__) || defined(__BPF__)
-STATIC_ASSERT(
-	sizeof(xfw_diagnostic_stat) / sizeof(struct XfwStatInfo) == XFW_DIAGNOSTIC_STAT_MAX,
-	"You forgot description for stat");
-#endif
+XFW_STAT_ARRAY_ASSERT(xfw_traffic_stats, XFW_TRAFFIC_STAT_MAX);
 
 #if defined(__clang__)
 #pragma clang diagnostic pop

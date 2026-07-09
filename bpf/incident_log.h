@@ -25,20 +25,6 @@
 #include "compiler.h"
 #include "incident_log_maps.h"
 
-static __always_inline void
-register_packet_percpu(XfwPacketStats *s, uint32_t pkt_sz)
-{
-	s->packets++;
-	s->bytes += pkt_sz;
-}
-
-#define REG_PACKET_GLOBAL(ctx, reason_idx)				\
-	register_packet_percpu(&(ctx)->g_stats->diagnostic[reason_idx],	\
-			       (ctx)->pkt_sz)
-
-#define REG_PACKET_REASON(ctx, reason_idx)				\
-	register_packet_percpu(&ctx->g_stats->decision[reason_idx], (ctx)->pkt_sz)
-
 /*
  * Emit a swap notification for the currently active per-CPU map.
  * 
@@ -143,11 +129,8 @@ update_map_info(uint64_t active_map_hint)
 }
 
 static __always_inline void
-register_incident(const XfwIp* ilog_addr, XfwPerCpuStats *global_stats,
-		  uint32_t pkt_sz, enum XfwStatistic reason)
+register_incident(const XfwIp* ilog_addr, uint32_t pkt_sz, enum XfwDropStat reason)
 {
-	register_packet_percpu(&global_stats->decision[reason], pkt_sz);
-
 	if (!ilog_addr_presented(ilog_addr)) {
 		XFW_CTX_DBG("Source address for the problematic packet "
 			    "is not yet known");
@@ -200,4 +183,4 @@ register_incident(const XfwIp* ilog_addr, XfwPerCpuStats *global_stats,
 }
 
 #define REGISTER_INCIDENT(ctx, reason)					\
-	register_incident(&(ctx)->ilog_addr, (ctx)->g_stats, (ctx)->pkt_sz, reason)
+	register_incident(&(ctx)->ilog_addr, (ctx)->pkt_sz, reason)

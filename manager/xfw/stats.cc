@@ -34,11 +34,14 @@ BpfStats::load_global_stats_prometheus()
 	std::stringstream ss;
 	XfwPerCpuStats stats = load_global_stats();
 	
-	for (size_t i = 0; i < XFW_DECISION_STAT_MAX; ++i)
-		format_stat(ss, xfw_decision_stat[i], stats.decision[i]);
+	for (size_t i = 0; i < XFW_PASS_STAT_MAX; ++i)
+		format_stat(ss, xfw_pass_stats[i], stats.pass[i]);
 
-	for (size_t i = 0; i < XFW_DIAGNOSTIC_STAT_MAX; ++i)
-		format_stat(ss, xfw_diagnostic_stat[i], stats.diagnostic[i]);
+	for (size_t i = 0; i < XFW_TRAFFIC_STAT_MAX; ++i)
+		format_stat(ss, xfw_traffic_stats[i], stats.traffic[i]);
+
+	for (size_t i = 0; i < XFW_TX_STAT_MAX; ++i)
+		format_stat(ss, xfw_tx_stats[i], stats.transmitted[i]);
 
 	return ss.str();
 }

@@ -119,7 +119,7 @@ async def test_log_data_counter_correctness(
 
     packet_size = 52 if ip_version == "ip4" else 72  # packet size for UDP
     for record in db_records:
-        assert record.reason == 128
+        assert record.reason == 64
         assert record.bytes == record.packets * packet_size
         assert record.dropped_events == 0
 

@@ -43,7 +43,7 @@ out_process_l3(XfwGlobalCtx *ctx, XfwDstKey *dst_key, XfwIpLpmKey* prot_net_key,
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
-		REG_PACKET_GLOBAL(ctx, XFW_IP4_TOTAL_EGRESS);
+		count_traffic_stat(ctx, XFW_IP4_TOTAL_EGRESS);
 		int proto = parse_iphdr(&ctx->hdr_cur, &ctx->iph4);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP4_BADHDR_EGRESS);
@@ -58,7 +58,7 @@ out_process_l3(XfwGlobalCtx *ctx, XfwDstKey *dst_key, XfwIpLpmKey* prot_net_key,
 		return XFW_CTX_CONTINUE;
 	}
 	case bpf_ntohs(ETH_P_IPV6): {
-		REG_PACKET_GLOBAL(ctx, XFW_IP6_TOTAL_EGRESS);
+		count_traffic_stat(ctx, XFW_IP6_TOTAL_EGRESS);
 		int proto = parse_ip6hdr(&ctx->hdr_cur, &ctx->iph6);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP6_BADHDR_EGRESS);
@@ -87,7 +87,7 @@ out_process_l4(XfwGlobalCtx *ctx, XfwDstKey *dst_key)
 {
 	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
-		REG_PACKET_GLOBAL(ctx, XFW_TCP_TOTAL_EGRESS);
+		count_traffic_stat(ctx, XFW_TCP_TOTAL_EGRESS);
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_TCP_BADHDR_EGRESS);
 
@@ -96,7 +96,7 @@ out_process_l4(XfwGlobalCtx *ctx, XfwDstKey *dst_key)
 		return XFW_CTX_CONTINUE;
 	}
 	case XFW_L4_PROTO_UDP: {
-		REG_PACKET_GLOBAL(ctx, XFW_UDP_TOTAL_EGRESS);
+		count_traffic_stat(ctx, XFW_UDP_TOTAL_EGRESS);
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_UDP_BADHDR_EGRESS);
 
@@ -224,13 +224,13 @@ xfw_tc(struct __sk_buff *skb)
 		 * All this trafic were passed before we even know is it upstream
 		 * or downstream trafic.
 		 */
-		REG_PACKET_GLOBAL(&ctx, XFW_TOTAL_UPSTREAM_EGRESS);
+		count_traffic_stat(&ctx, XFW_TOTAL_UPSTREAM_EGRESS);
 		if (res == XFW_CTX_PASS)
-			REG_PACKET_GLOBAL(&ctx, XFW_PASSED_UPSTREAM_EGRESS);
+			count_traffic_stat(&ctx, XFW_PASSED_UPSTREAM_EGRESS);
 	} else {
-		REG_PACKET_GLOBAL(&ctx, XFW_TOTAL_DOWNSTREAM_EGRESS);
+		count_traffic_stat(&ctx, XFW_TOTAL_DOWNSTREAM_EGRESS);
 		if (res == XFW_CTX_PASS)
-			REG_PACKET_GLOBAL(&ctx, XFW_PASSED_DOWNSTREAM_EGRESS);
+			count_traffic_stat(&ctx, XFW_PASSED_DOWNSTREAM_EGRESS);
 	}
 
 	return finalize_result(&ctx, res);

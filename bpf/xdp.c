@@ -392,7 +392,7 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
-		REG_PACKET_GLOBAL(ctx, XFW_IP4_TOTAL_INGRESS);
+		count_traffic_stat(ctx, XFW_IP4_TOTAL_INGRESS);
 		int proto = parse_iphdr(&ctx->hdr_cur, &ctx->iph4);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_IP4_BADHDR_INGRESS);
@@ -408,7 +408,7 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 		return XFW_CTX_CONTINUE;
 	}
 	case bpf_ntohs(ETH_P_IPV6): {
-		REG_PACKET_GLOBAL(ctx, XFW_IP6_TOTAL_INGRESS);
+		count_traffic_stat(ctx, XFW_IP6_TOTAL_INGRESS);
 		int proto = parse_ip6hdr(&ctx->hdr_cur, &ctx->iph6);
 		if (unlikely(proto < 0)) {
 			if (proto == -EFBIG)
@@ -539,14 +539,14 @@ tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 
 	/* FIN: track connection for closing. */
 	if (th->fin) {
-		REG_PACKET_GLOBAL(ctx, XFW_FIN);
+		count_traffic_stat(ctx, XFW_FIN);
 		return tcp_auth_conn_ingress_filter(ctx, addr,
 						    TCP_AUTH_EVENT_FIN);
 	}
 
 	/* RST: clear connection state and apply rate-limiting. */
 	if (th->rst) {
-		REG_PACKET_GLOBAL(ctx, XFW_RST);
+		count_traffic_stat(ctx, XFW_RST);
 		CHAIN(tcp_auth_conn_ingress_filter, ctx, addr,
 		      TCP_AUTH_EVENT_RST);
 		return rst_rlimit(ctx);
@@ -559,20 +559,20 @@ tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 	 * to the trusted set. Here we only verify that this state exists.
 	 */
 	if (th->syn && th->ack) {
-		REG_PACKET_GLOBAL(ctx, XFW_SYNACK);
+		count_traffic_stat(ctx, XFW_SYNACK);
 		return tcp_auth_conn_ingress_filter(ctx, addr,
 						    TCP_AUTH_EVENT_NORMAL);
 	}
 
 	/* SYN-only. Authenticate the connection if all checks pass. */
 	if (th->syn) {
-		REG_PACKET_GLOBAL(ctx, XFW_SYN);
+		count_traffic_stat(ctx, XFW_SYN);
 		return tcp_rcv_syn_filter(ctx);
 	}
 
 	/* ACK-only: validate SYN-ACK cookies or authenticate normally.*/
 	if (th->ack) {
-		REG_PACKET_GLOBAL(ctx, XFW_ACK);
+		count_traffic_stat(ctx, XFW_ACK);
 		return tcp_rcv_ack_filter(ctx, addr);
 	}
 
@@ -592,7 +592,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 
 	switch (dst_key->proto) {
 	case XFW_L4_PROTO_TCP: {
-		REG_PACKET_GLOBAL(ctx, XFW_TCP_TOTAL_INGRESS);
+		count_traffic_stat(ctx, XFW_TCP_TOTAL_INGRESS);
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_BADHDR_INGRESS);
 
@@ -608,7 +608,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 		return tcp_flags_filter(ctx, &addr);
 	}
 	case XFW_L4_PROTO_UDP: {
-		REG_PACKET_GLOBAL(ctx, XFW_UDP_TOTAL_INGRESS);
+		count_traffic_stat(ctx, XFW_UDP_TOTAL_INGRESS);
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_BADHDR_INGRESS);
 
@@ -624,7 +624,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 	case XFW_L4_PROTO_ICMPV6: {
 		XfwICMPCommon *ih;
 		XfwIcmpKey key;
-		REG_PACKET_GLOBAL(ctx, XFW_ICMP_TOTAL_INGRESS);
+		count_traffic_stat(ctx, XFW_ICMP_TOTAL_INGRESS);
 
 		if (unlikely(parse_icmphdr_common(&ctx->hdr_cur, &ih) < 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_BADHDR_INGRESS);
@@ -664,12 +664,12 @@ xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 	XfwIpLpmKey src_ip_key = {};
 	XfwDstKey dst_key = {};
 
-	REG_PACKET_GLOBAL(ctx, XFW_TOTAL_DOWNSTREAM_INGRESS);
+	count_traffic_stat(ctx, XFW_TOTAL_DOWNSTREAM_INGRESS);
 
 	XFW_DBG_INIT();
 
 	if (unlikely(!ctx->cfg->rules_active)) {
-		REG_PACKET_GLOBAL(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
+		count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
 		return XFW_MAKE_CTX_PASS(ctx, XFW_PRELOAD_INGRESS);
 	}
 
@@ -682,7 +682,7 @@ xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 	CHAIN_PASS_ALL(xfw_dst_filter, ctx, &dst_key);
 
 pass:
-	REG_PACKET_GLOBAL(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
+	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
 	return XFW_CTX_PASS;
 }
 

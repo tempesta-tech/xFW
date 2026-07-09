@@ -1,5 +1,5 @@
-/*
- *	Tempesta Bpf drop/pass all statistic.
+/**
+ *	Tempesta BPF DROP packet statistics.
  *
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -8,8 +8,7 @@
 
 #include "statistics_types.h"
 
-enum XfwStatistic {
-	XFW_METADATA_CREATION_FAILED,
+enum XfwDropStat {
 	XFW_ICMP_BLOCKED,
 	XFW_SYN_RATE_LIMITED,
 	XFW_RST_RATE_LIMITED,
@@ -18,12 +17,10 @@ enum XfwStatistic {
 	XFW_ICMP_DEFAULT_RATE_LIMITED,
 	XFW_DST_BLOCKED,
 	XFW_DST_RATE_LIMITED,
-	XFW_SRC_PORT_ALLOWED,
 	XFW_SRC_PORT_BLOCKED,
 	XFW_SRC_PORT_RATE_LIMITED,
 	XFW_SRC_PORT_DEFAULT_BLOCKED,
 	XFW_SRC_PORT_DEFAULT_RATE_LIMITED,
-	XFW_SRC_IP_ALLOWED,
 	XFW_SRC_IP_BLOCKED,
 	XFW_SRC_IP_RATE_LIMITED,
 	XFW_SRC_IP_DEFAULT_BLOCKED,
@@ -43,21 +40,10 @@ enum XfwStatistic {
 	XFW_TCP_BADHDR_INGRESS,
 	XFW_UDP_BADHDR_INGRESS,
 	XFW_ICMP_BADHDR_INGRESS,
-	XFW_ARP_INGRESS,
 	XFW_L4_UNSUPPORTED_INGRESS,
 	XFW_TCP_AUTH_FAILED,
 	XFW_TCP_AUTH_TIMEOUT,
 	XFW_SYNCOOKIE_FAILED,
-	XFW_SYNCOOKIE_GENERATED,
-	XFW_PRELOAD_INGRESS,
-	XFW_L2_UNKNOWN_EGRESS,
-	XFW_ETH_BADHDR_EGRESS,
-	XFW_L4_UNSUPPORTED_EGRESS,
-	XFW_IP4_BADHDR_EGRESS,
-	XFW_IP6_BADHDR_EGRESS,
-	XFW_TCP_BADHDR_EGRESS,
-	XFW_UDP_BADHDR_EGRESS,
-	XFW_PRELOAD_EGRESS,
 	XFW_DNS_BADHDR_INGRESS,
 	XFW_DNS_QRY_RCODE_NOT_OK,
 	XFW_DNS_BAD_QUESTION,
@@ -70,9 +56,8 @@ enum XfwStatistic {
 	XFW_DNS_RESP_ANS_OVERLIMIT,
 	XFW_DNS_BAD_RR,
 	XFW_DNS_ANSWER_ANOMALY,
-	XFW_GRE_INGRESS,
 
-	XFW_DECISION_STAT_MAX
+	XFW_DROP_STAT_MAX
 };
 
 #if defined(__clang__)
@@ -87,9 +72,7 @@ enum XfwStatistic {
 // supported by both compilers. We suppress the warning to keep the
 // initialization concise and consistent between C and C++ builds.
 #endif
-static const struct XfwStatInfo xfw_decision_stat[] = {
-	[XFW_METADATA_CREATION_FAILED]		= {"xfw_metadata_creation_failed",
-						   "Internal error: metadata creation failed"},
+static const struct XfwStatInfo xfw_drop_stats[] = {
 	[XFW_ICMP_BLOCKED]			= {"xfw_icmp_blocked",
 						   "Blocked by 'icmp: block' rule"},
 	[XFW_SYN_RATE_LIMITED]			= {"xfw_syn_rate_limited",
@@ -110,8 +93,6 @@ static const struct XfwStatInfo xfw_decision_stat[] = {
 						   "Blocked by 'dst: block' rule"},
 	[XFW_DST_RATE_LIMITED]			= {"xfw_dst_rate_limited",
 						   "Blocked by 'dst: ratelimit' rule"},
-	[XFW_SRC_PORT_ALLOWED]			= {"xfw_src_port_allowed",
-						   "Whitelisted by 'src_port: allow' rule"},
 	[XFW_SRC_PORT_BLOCKED]			= {"xfw_src_port_blocked",
 						   "Blocked by 'src_port: block' rule"},
 	[XFW_SRC_PORT_RATE_LIMITED]		= {"xfw_src_port_rate_limited",
@@ -122,8 +103,6 @@ static const struct XfwStatInfo xfw_decision_stat[] = {
 	[XFW_SRC_PORT_DEFAULT_RATE_LIMITED]	= {"xfw_src_port_default_rate_limited",
 						   "Blocked by 'defaults/src_port: "
 						   "ratelimit' rule"},
-	[XFW_SRC_IP_ALLOWED]			= {"xfw_src_ip_allowed",
-						   "Whitelisted by 'src_ip: allow' rule"},
 	[XFW_SRC_IP_BLOCKED]			= {"xfw_src_ip_blocked",
 						   "Blocked by 'src_ip: block' rule"},
 	[XFW_SRC_IP_RATE_LIMITED]		= {"xfw_src_ip_rate_limited",
@@ -177,8 +156,6 @@ static const struct XfwStatInfo xfw_decision_stat[] = {
 	[XFW_ICMP_BADHDR_INGRESS]		= {"xfw_icmp_badhdr_ingress",
 						   "Blocked on parsing: ICMP bad"
 						   " header"},
-	[XFW_ARP_INGRESS]			= { "xfw_arp_ingress",
-						    "Allowed on parsing: ARP packet"},
 	[XFW_L4_UNSUPPORTED_INGRESS]		= {"xfw_l4_unsupported_ingress",
 						   "Blocked on parsing: unsupported"
 						   " IP proto"},
@@ -191,34 +168,6 @@ static const struct XfwStatInfo xfw_decision_stat[] = {
 	[XFW_SYNCOOKIE_FAILED]			= {"xfw_syncookie_failed",
 						   "Blocked by 'tcp_syncookies' "
 						   "rule: invalid syncookie"},
-	[XFW_SYNCOOKIE_GENERATED]		= {"xfw_syncookie_generated",
-						   "Transmit packet back to "
-						   "client with syncookie"},
-	[XFW_PRELOAD_INGRESS]			= {"xfw_preload_ingress",
-						   "Allowed: xFW rules are not loaded"},
-	[XFW_L2_UNKNOWN_EGRESS]			= {"xfw_l2_unknown_egress",
-						   "Allowed on parsing: unknown "
-						   "EtherType"},
-	[XFW_ETH_BADHDR_EGRESS]			= {"xfw_eth_badhdr_egress",
-						   "Allowed on parsing: bad "
-						   "ethernet header"},
-	[XFW_L4_UNSUPPORTED_EGRESS]		= {"xfw_l4_unsupported_egress",
-						   "Allowed on parsing: unsupported"
-						   " IP proto"},
-	[XFW_IP4_BADHDR_EGRESS]			= {"xfw_ip4_badhdr_egress",
-						   "Allowed on parsing: IPv4 bad"
-						   " header"},
-	[XFW_IP6_BADHDR_EGRESS]			= {"xfw_ip6_badhdr_egress",
-						   "Allowed on parsing: IPv6 bad"
-						   " header"},
-	[XFW_TCP_BADHDR_EGRESS]			= {"xfw_tcp_badhdr_egress",
-						   "Allowed on parsing: TCP bad "
-						   "header"},
-	[XFW_UDP_BADHDR_EGRESS]			= {"xfw_udp_badhdr_egress",
-						   "Allowed on parsing: UDP bad "
-						   "header"},
-	[XFW_PRELOAD_EGRESS]			= {"xfw_preload_egress",
-						   "Allowed: xFW rules are not loaded"},
 	[XFW_DNS_BADHDR_INGRESS]		= {"xfw_dns_badhdr_ingress",
 						   "Blocked on parsing: DNS bad "
 						   "header"},
@@ -261,16 +210,9 @@ static const struct XfwStatInfo xfw_decision_stat[] = {
 	[XFW_DNS_ANSWER_ANOMALY]		= {"xfw_dns_answer_anomaly",
 						   "Blocked by DNS anomaly: "
 						   "DNS answer has "
-						   "anomaly ttl"},
-	[XFW_GRE_INGRESS]			= { "xfw_gre_ingress",
-						    "Allowed on parsing: GRE packet"},
+						   "anomaly ttl"}
 };
-
-#if defined(__TARGET_ARCH_BPF__) || defined(__BPF__)
-STATIC_ASSERT(
-	sizeof(xfw_decision_stat) / sizeof(struct XfwStatInfo) == XFW_DECISION_STAT_MAX,
-	"You forgot description for stat");
-#endif
+XFW_STAT_ARRAY_ASSERT(xfw_drop_stats, XFW_DROP_STAT_MAX);
 
 #if defined(__clang__)
 #pragma clang diagnostic pop
