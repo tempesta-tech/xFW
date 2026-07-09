@@ -304,6 +304,41 @@ load_xdp()
 	echo "$pinned_path" >> "$pin_dispatchers_log"
 }
 
+load_tc()
+{
+	local dev="$1"
+
+	mkdir -p /tmp/tempesta/xfw
+	local tmp_log=$(mktemp /tmp/tempesta/xfw/tc-loader.XXXXXX)
+
+	# Create a TC hook to attach by xFW TC program.
+	# The hook might be configured by somebody else, so check it first.
+	#
+	# TODO #10: replace the legacy tc calls with a
+	# bpf_program__attach_tcx() program.
+	if ! tc qdisc show dev "$dev" | grep -q clsact; then
+		tc qdisc add dev "$dev" clsact || {
+			unload_bpf
+			error "Failed to add clsact qdisc on $dev"
+		}
+	fi
+
+	[ $v -eq 1 ] && echo tc filter add dev "$dev" egress bpf da obj "$project_path/lib/bpf/tc.o" sec tc
+
+	tc filter add dev "$dev" egress bpf da obj "$project_path/lib/bpf/tc.o" sec tc > "$tmp_log" 2>&1
+	local rc=$?
+	if [ $rc -ne 0 ]; then
+		echo "Error while loading TC program. See $tmp_log for details."
+		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
+		unload_bpf
+		[ $v -eq 1 ] && echo ""
+		error "Failed to load TC program on device $dev (exit code $rc)"
+	fi
+
+	[ $v -eq 1 ] && echo -n "tc result: "
+	[ $v -eq 1 ] && tail -n 1 "$tmp_log"
+}
+
 load_bpf()
 {
 	mkdir -p "$xfw_bpf_path"
@@ -341,26 +376,7 @@ load_bpf()
 			error "Some eBPF programs are still loaded(TC on $dev). Please run 'xfwctl --stop'. If the problem persists, reboot the system or reload the network interface."
 		fi
 
-		# Create a TC hook to attach by xFW TC program.
-		# The hook might be configured by somebody else, so check it first.
-		#
-		# TODO #10: replace the legacy tc calls with a
-		# bpf_program__attach_tcx() program.
-		if ! tc qdisc show dev "$dev" | grep -q clsact; then
-			tc qdisc add dev $dev clsact || {
-				unload_bpf
-				error "Failed to add clsact qdisc on $dev"
-			}
-		fi
-		tc filter add dev $dev egress bpf da obj "$project_path/lib/bpf/tc.o" sec tc
-		local rc=$?
-		if [ $rc -ne 0 ]; then
-			echo "Error while loading TC program"
-			[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
-			unload_bpf
-			[ $v -eq 1 ] && echo ""
-			error "Failed to load TC program on device $dev (exit code $rc)"
-		fi
+		load_tc $dev
 	done
 
 	bpf_maps_check error
