@@ -696,7 +696,8 @@ xfw_xdp(struct xdp_md *xdp)
 
 	XfwGlobalCtx ctx;
 	xfw_ctx_init(&ctx, xdp);
-	XFW_ASSERT(ctx.cfg && ctx.g_stats);
+	/* We can't use XFW_ASSERT here because ctx.g_stats is not available. */
+	VERIFY_TRUE_OR_RETURN(ctx.cfg && ctx.g_stats, XFW_CTX_PASS);
 
 	CHAIN_PASS_ALL(create_metadata, &ctx, xdp);
 
