@@ -9,10 +9,18 @@
 #include "statistics_types.h"
 
 enum XfwPassStat {
+	/* Rule-based pass. */
 	XFW_SRC_PORT_ALLOWED,
 	XFW_SRC_IP_ALLOWED,
 	XFW_ARP_INGRESS,
+	XFW_GRE_INGRESS,
+	XFW_SUPPORTED_PROTOCOL_INGRESS,
+
+	/* Pass when rules are not loaded. */
 	XFW_PRELOAD_INGRESS,
+	XFW_PRELOAD_EGRESS,
+
+	/* Pass from TC on packet parsing failures. */
 	XFW_L2_UNKNOWN_EGRESS,
 	XFW_ETH_BADHDR_EGRESS,
 	XFW_L4_UNSUPPORTED_EGRESS,
@@ -20,9 +28,9 @@ enum XfwPassStat {
 	XFW_IP6_BADHDR_EGRESS,
 	XFW_TCP_BADHDR_EGRESS,
 	XFW_UDP_BADHDR_EGRESS,
-	XFW_PRELOAD_EGRESS,
-	XFW_GRE_INGRESS,
-	XFW_METADATA_CREATION_FAILED,
+
+	/* Pass on internal errors. */
+	XFW_METADATA_CREATION_FAILED
 
 	XFW_PASS_STAT_MAX
 };
@@ -46,7 +54,14 @@ static const struct XfwStatInfo xfw_pass_stats[] = {
 						   "Whitelisted by 'src_ip: allow' rule"},
 	[XFW_ARP_INGRESS]			= { "xfw_arp_ingress",
 						    "Allowed on parsing: ARP packet"},
+	[XFW_GRE_INGRESS]			= { "xfw_gre_ingress",
+						    "Allowed on parsing: GRE packet"},
+	[XFW_SUPPORTED_PROTOCOL_INGRESS]	= { "xfw_supported_protocol_ingress",
+						    "Allowed on parsing: packet "
+						    "with supported protocol"},
 	[XFW_PRELOAD_INGRESS]			= {"xfw_preload_ingress",
+						   "Allowed: xFW rules are not loaded"},
+	[XFW_PRELOAD_EGRESS]			= {"xfw_preload_egress",
 						   "Allowed: xFW rules are not loaded"},
 	[XFW_L2_UNKNOWN_EGRESS]			= {"xfw_l2_unknown_egress",
 						   "Allowed on parsing: unknown "
@@ -69,10 +84,6 @@ static const struct XfwStatInfo xfw_pass_stats[] = {
 	[XFW_UDP_BADHDR_EGRESS]			= {"xfw_udp_badhdr_egress",
 						   "Allowed on parsing: UDP bad "
 						   "header"},
-	[XFW_PRELOAD_EGRESS]			= {"xfw_preload_egress",
-						   "Allowed: xFW rules are not loaded"},
-	[XFW_GRE_INGRESS]			= { "xfw_gre_ingress",
-						    "Allowed on parsing: GRE packet"},
 	[XFW_METADATA_CREATION_FAILED]		= {"xfw_metadata_creation_failed",
 						   "Internal error: metadata creation failed"}
 };
