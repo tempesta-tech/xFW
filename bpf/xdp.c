@@ -641,8 +641,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 	case XFW_L4_PROTO_GRE:
 		return XFW_MAKE_CTX_PASS(ctx, XFW_GRE_INGRESS);
 	default:
-		/* should we calculate it in special statistic? */
-		return XFW_CTX_PASS;
+		return XFW_MAKE_CTX_PASS(ctx, XFW_SUPPORTED_PROTOCOL_INGRESS);
 	}
 }
 
