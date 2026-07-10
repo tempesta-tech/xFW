@@ -30,7 +30,8 @@ enum XfwPassStat {
 	XFW_UDP_BADHDR_EGRESS,
 
 	/* Pass on internal errors. */
-	XFW_METADATA_CREATION_FAILED
+	XFW_METADATA_CREATION_FAILED,
+	XFW_ASSERT_FAILED,
 
 	XFW_PASS_STAT_MAX
 };
@@ -85,7 +86,9 @@ static const struct XfwStatInfo xfw_pass_stats[] = {
 						   "Allowed on parsing: UDP bad "
 						   "header"},
 	[XFW_METADATA_CREATION_FAILED]		= {"xfw_metadata_creation_failed",
-						   "Internal error: metadata creation failed"}
+						   "Internal error: metadata creation failed"},
+	[XFW_ASSERT_FAILED]			= {"xfw_assert_failed",
+						   "Internal error: internal assert failed"}
 };
 XFW_STAT_ARRAY_ASSERT(xfw_pass_stats, XFW_PASS_STAT_MAX);
 

@@ -201,7 +201,8 @@ xfw_tc(struct __sk_buff *skb)
 {
 	XfwGlobalCtx ctx;
 	xfw_ctx_init(&ctx, skb);
-	XFW_ASSERT(ctx.cfg && ctx.g_stats);
+	/* We can't use XFW_ASSERT here because ctx.g_stats is not available. */
+	VERIFY_TRUE_OR_RETURN(ctx.cfg && ctx.g_stats, XFW_CTX_PASS);
 
 	/*
 	 * All parsing errors correspond to packets coming from the upstream server.

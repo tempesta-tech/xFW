@@ -51,4 +51,5 @@ do {									\
  * In case of failed assertion pass traffic - it's better to pass some DDoS
  * traffic than to have a false positive.
  */
-#define XFW_ASSERT(v)			VERIFY_TRUE_OR_RETURN(v, XFW_CTX_PASS)
+#define XFW_ASSERT(v)							\
+	VERIFY_TRUE_OR_RETURN((v), XFW_MAKE_CTX_PASS(ctx, XFW_ASSERT_FAILED))
