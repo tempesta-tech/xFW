@@ -127,11 +127,11 @@ int process_label(const XfwHdrCursor *c, uint32_t *offset)
 
 	if ((o & DNS_NAME_COMPRESSION_LABEL) == DNS_NAME_COMPRESSION_LABEL) {
 		/* Compression label is last label of dname. */
-		// c->pos += 2;
 		*offset += 2;
 		return DNS_LABEL_FOUND;
-
-	} else if (o > 63 || pos + o + 1 > c->end) /* Unknown label type */
+	}
+	if (o > 63 || pos + o + 1 > c->end)
+		/* Unknown label type */
 		return DNS_LABEL_NOTFOUND;
 
 	*offset += o + 1;
@@ -167,7 +167,7 @@ process_dname_global(XfwMd *ctx)
 			md->cur_pos = md->cur_pos + offset;
 			return 0;
 		}
-		else if (r == DNS_LABEL_NOTFOUND)
+		if (r == DNS_LABEL_NOTFOUND)
 			return -1;
 	}
 	return -1;
@@ -186,7 +186,7 @@ process_dname(XfwMd *ctx, XfwHdrCursor* hdr_cur)
 
 	/* Limiting is important for verifier */
 	if (unlikely((void *)(md + 1) > (void *)(long)ctx->data
-		|| md->cur_pos > MAX_DNS_UDP_PACKET))
+		     || md->cur_pos > MAX_DNS_UDP_PACKET))
 		return -1; /* internal error */
 	hdr_cur->pos = (void *)(long)ctx->data + md->cur_pos;
 
@@ -232,8 +232,10 @@ process_ingress_dns_query(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
 		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_QRY_RCODE_NOT_OK,
 					     ": %u", rcode);
 
-	/* Assume EDNS-only message.
-	 * XXX: better validation (check opt type etc.)? */
+	/*
+	 * Assume EDNS-only message.
+	 * XXX: better validation (check opt type etc.)?
+	 */
 	if (dh->qdcount == 0 && dh->ancount == 0 && dh->nscount == 0 &&
 	    bpf_ntohs(dh->arcount) == 1)
 		return XFW_CTX_CONTINUE;
@@ -265,8 +267,10 @@ process_ingress_dns_query(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
 					     ": ancount = %u",
 					     bpf_ntohs(dh->ancount));
 
-	/* Maximum two records allowed (exactly in this order):
-	 * EDNS OPT RR, TSIG RR. */
+	/*
+	 * Maximum two records allowed (exactly in this order):
+	 * EDNS OPT RR, TSIG RR.
+	 */
 	if (bpf_ntohs(dh->arcount) > 2)
 		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_QRY_BAD_ARCOUNT,
 					     ": %u", bpf_ntohs(dh->arcount));
