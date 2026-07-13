@@ -19,8 +19,13 @@ SBINDIR ?= $(DESTDIR)${PREFIX}/sbin
 LIBDIR ?= $(DESTDIR)${PREFIX}/lib
 INCLUDEDIR ?= $(DESTDIR)${PREFIX}/include
 
+# Clang can select a newer GCC runtime installation for which the corresponding
+# libstdc++ development headers are not installed. Use the complete toolchain
+# selected by the system C++ compiler instead.
+GCC_INSTALL_DIR := $(dir $(shell g++ -print-libgcc-file-name))
+
 CC	:= clang-19
-CXX	:= clang++-19
+CXX	:= clang++-19 --gcc-install-dir=$(GCC_INSTALL_DIR)
 CFLAGS	:= -Wall
 LDFLAGS	:= -lfmt -lboost_program_options
 
