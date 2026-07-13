@@ -71,14 +71,14 @@ CC=gcc-10 CXX=g++-10 ./b build
 
 0. Install xFW by a custom path:
 ```
-PREFIX=/root/ak/escudo_install/ make install
+PREFIX=/root/ak/xfw_install/ make install
 ```
 
 1. [Start xFW](/Basic-Administration/#run-amp-stop) and load configuration. It's
    useful to run xFW from a local (`main`) build:
 ```
-ESCUDO_PATH=~/ak/escudo_install/ TFW_CFG_FILE=~/ak/xfw.json ~/ak/escudo_install/bin/xfwctl --start
-ESCUDO_PATH=~/ak/escudo_install/ TFW_CFG_FILE=~/ak/xfw.json ~/ak/escudo_install/bin/xfwctl --status
+XFW_PATH=~/ak/xfw_install/ TFW_CFG_FILE=~/ak/xfw.json ~/ak/xfw_install/bin/xfwctl --start
+XFW_PATH=~/ak/xfw_install/ TFW_CFG_FILE=~/ak/xfw.json ~/ak/xfw_install/bin/xfwctl --status
 ```
 
 2. Load rules, e.g.
@@ -101,7 +101,17 @@ ESCUDO_PATH=~/ak/escudo_install/ TFW_CFG_FILE=~/ak/xfw.json ~/ak/escudo_install/
 
 ## Configure Generator
 
-1. (Optional) change MTU. TRex optimizes throughput via big frames, but we need normal traffic to
+1. Make the kernel to allocate gigantic pages in `/etc/default/grub`
+```
+GRUB_CMDLINE_LINUX="spectre_v2=off ibrs=off hugepage_size=1g hugepages=16"
+```
+and enable 8 huge pages on each of the nodes:
+```
+echo 8 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
+echo 8 > /sys/devices/system/node/node1/hugepages/hugepages-1048576kB/nr_hugepages
+```
+
+2. (Optional) change MTU. TRex optimizes throughput via big frames, but we need normal traffic to
 emulate real workloads:
 ```
 git diff
@@ -121,21 +131,21 @@ index bc7003de2..646c15909 100755
              self.set_mtu_mlx(dev_id,mtu);
 ```
 
-2. Determine NIC ports' PCI IDs:
+3. Determine NIC ports' PCI IDs:
 ```
 lspci |grep 'ConnectX-6 Dx'
 98:00.0 Ethernet controller: Mellanox Technologies MT2892 Family [ConnectX-6 Dx]
 98:00.1 Ethernet controller: Mellanox Technologies MT2892 Family [ConnectX-6 Dx]
 ```
 
-3. Copy TRex config amd adjust NIC ports in it if necessary:
+4. Copy TRex config amd adjust NIC ports in it if necessary:
 ```
 cp ~/xFW/t/trex/trex_cfg.yaml /etc
 ```
 
 > Dummy interfaces allow to use both ports for sending packets, and non of them for receiving.
 
-4. If you have Python > 3.11 (Ubuntu 24):
+5. If you have Python > 3.11 (Ubuntu 24):
 
 Ubuntu 24 is shipped with Python 3.12, so TRex doesn't work out of the box due to legacy Scapy
 module and you need to install Python 3.11:
@@ -165,17 +175,14 @@ You can remove `venv` just removing the directory:
 rm -rf venv
 ```
 
-5. Prepare TRex:
+6. Prepare TRex:
 ```
 cd /trex/trex-core/scripts
 sudo -i
 source ./venv/bin/activate
 ./trex-cfg
 apt install -y dpdk
-dpdk-hugepages.py --setup 2G
 ```
-
-TODO: address 2G hugepages - it seems boot setup is more efficient
 
 > Reboot the server if you see error message like:
 ```
@@ -206,7 +213,7 @@ For traffic performance statistics use `bmon` or `dstat`, e.g.
 bmon -p 'enp202s0f*'
 ```
 ```
-dstat --cpu-adv --net -N enp202s0f1np1 -N enp202s0f0np0 --net-packets --sys --bits --time --int -I RES
+dstat --cpu-adv --net -N enp202s0f1np1,enp202s0f0np0 --net-packets --sys --time --int -I RES
 ```
 
 Also `htop` is good to observe CPU utilization.
