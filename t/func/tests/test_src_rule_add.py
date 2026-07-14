@@ -261,7 +261,7 @@ async def test_src_add_block_by_multiple_port_range(
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
-@pytest.mark.skip("ISSUE: too small pps in tests")
+@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_src_add_block_by_ratelimit(
     xfw: XFW,
     protocol: str,

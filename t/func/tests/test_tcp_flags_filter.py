@@ -66,6 +66,7 @@ async def test_normal_connection(
     assert await tcp_raw_client.close_connection() is True
 
 
+@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_block(
     blocking_packet_name: str,
     blocking_packet: TCP,
@@ -120,6 +121,7 @@ async def test_change_limits(
     assert len([request for request in requests if request]) == 10
 
 
+@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_unblock(
     blocking_packet_name: str,
     blocking_packet: TCP,

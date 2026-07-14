@@ -672,6 +672,15 @@ BpfMapsManager::upload_config_changes(
 		tx->get().commit();
 }
 
+uint64_t
+BpfMapsManager::scale_rl_to_window(uint64_t rlps) const noexcept
+{
+	if (rlps == 0)
+		return 0;
+
+	return std::max<uint64_t>(1, (rlps << rl_window_shift_) / hz_);
+}
+
 void
 BpfMapsManager::set_ratelimits(const XfwConfig::Ratelimits &ratelimits)
 {
@@ -683,8 +692,9 @@ BpfMapsManager::set_ratelimits(const XfwConfig::Ratelimits &ratelimits)
 				throw Except("Too big rl pps value {}", src[i].pps_);
 			if (src[i].bps_ > rl_max_rate_)
 				throw Except("Too big rl bps value {}", src[i].bps_);
-			cfg.named_rates[i].packets = src[i].pps_;
-			cfg.named_rates[i].bytes = src[i].bps_;
+
+			cfg.named_rates[i].packets = scale_rl_to_window(src[i].pps_);
+			cfg.named_rates[i].bytes   = scale_rl_to_window(src[i].bps_);
 		}
 	}
 	upload_config_changes(cfg, no_ratelimit_buckets);

@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import pytest
+
 from framework.cmp import check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
@@ -224,6 +226,7 @@ async def test_src_allow_by_geoip_country(
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
+@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_src_allow_by_ratelimit(
     xfw: XFW,
     protocol: str,

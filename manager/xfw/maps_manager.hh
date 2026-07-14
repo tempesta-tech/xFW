@@ -238,6 +238,14 @@ private:
 	{
 		(*map)[bucket_idx].reset();
 	}
+	
+	/*
+	 * Converts a rate limit specified per second to the equivalent limit
+	 * for the current sliding window. The result is rounded down, with any
+	 * non-zero input guaranteed to produce a minimum value of 1.
+	 */
+	uint64_t
+	scale_rl_to_window(uint64_t rlps) const noexcept;
 
 private:
 	using FilterCfgMap = BpfSingleElementMap<XfwFilterCfg>;
