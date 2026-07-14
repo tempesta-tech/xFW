@@ -19,48 +19,73 @@
 SHADOW_MAP(MAP_DST_BASENAME, BPF_MAP_TYPE_HASH, XFW_MAX_DST_RULES, XfwDstKey,
 	    XfwActionRule, 0);
 
-static __always_inline uint8_t
-xfw_dst_default_by_key(const XfwDstKey *dst_key)
+static __always_inline void
+ipv4_populate_dst_key(const struct iphdr *ip4_hdr, int l4_proto,
+	XfwDstKey *dst_key)
 {
-	uint8_t dst_default;
+	dst_key->ipver = XFW_IP_VER_4;
+	dst_key->proto = (uint8_t)l4_proto;
+	xfw_ipv4_to_ipv6_mapped(ip4_hdr->daddr, dst_key->addr.addr32);
+}
 
-	/*
-	 * XfwDstKey::ipver uses XFW_IP_VER_4/6. This differs from
-	 * XfwGlobalCtx::ipver, which stores ETH_P_IP/ETH_P_IPV6.
-	 */
-	if (dst_key->ipver == XFW_IP_VER_4) {
-		if (dst_key->proto == XFW_L4_PROTO_TCP) {
-			dst_default = XFW_DEFAULT_DST_TCP_IP4;
-		} else {
-			/* XFW_L4_PROTO_UDP */
-			dst_default = XFW_DEFAULT_DST_UDP_IP4;
+static __always_inline void
+ipv6_populate_dst_key(const struct ipv6hdr *ip6_hdr, int l4_proto,
+	XfwDstKey *dst_key)
+{
+	dst_key->ipver = XFW_IP_VER_6;
+	dst_key->proto = (uint8_t)l4_proto;
+	dst_key->addr.in6 = ip6_hdr->daddr;
+}
+
+static __always_inline bool
+populate_dst_info(const XfwGlobalCtx *ctx, XfwDstKey *key, __u8 *default_idx)
+{
+	if (ctx->th) {
+		key->port = ctx->th->dest;
+		if (ctx->iph4) {
+			ipv4_populate_dst_key(ctx->iph4, ctx->l4_proto, key);
+			*default_idx = XFW_DEFAULT_DST_TCP_IP4;
+			return true;
 		}
-	} else {
-		/* ETH_P_IPV6 */
-		if (dst_key->proto == XFW_L4_PROTO_TCP) {
-			dst_default = XFW_DEFAULT_DST_TCP_IP6;
-		} else {
-			/* XFW_L4_PROTO_UDP */
-			dst_default = XFW_DEFAULT_DST_UDP_IP6;
+		if (ctx->iph6) {
+			ipv6_populate_dst_key(ctx->iph6, ctx->l4_proto, key);
+			*default_idx = XFW_DEFAULT_DST_TCP_IP6;
+			return true;
 		}
+		return false;
 	}
-
-	return dst_default;
+	if (ctx->uh) {
+		key->port = ctx->uh->dest;
+		if (ctx->iph4) {
+			ipv4_populate_dst_key(ctx->iph4, ctx->l4_proto, key);
+			*default_idx = XFW_DEFAULT_DST_UDP_IP4;
+			return true;
+		}
+		if (ctx->iph6) {
+			ipv6_populate_dst_key(ctx->iph6, ctx->l4_proto, key);
+			*default_idx = XFW_DEFAULT_DST_UDP_IP6;
+			return true;
+		}
+		return false;
+	}
+	return false;
 }
 
 static __always_inline int
-xfw_dst_filter(const XfwGlobalCtx *ctx, const XfwDstKey *dst_key)
+xfw_dst_filter(const XfwGlobalCtx *ctx)
 {
+	XfwDstKey dst_key;
+	uint8_t dst_default;
+	XFW_ASSERT(populate_dst_info(ctx, &dst_key, &dst_default));
+
 	XfwActionRule *rule = bpf_map_lookup_elem(
-		SELECT_SHADOW_MAP(MAP_DST_BASENAME, ctx->cfg->amap_dst),
-				   dst_key);
+		SELECT_SHADOW_MAP(MAP_DST_BASENAME, ctx->cfg->amap_dst), &dst_key);
 
 	if (!rule) {
-		uint8_t dst_default = xfw_dst_default_by_key(dst_key);
 		XfwActionRule *default_rule = &ctx->cfg->rules.defaults[dst_default];
 		if (default_rule->action == XFW_ACTION_BLOCK)
 			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DST_BLOCKED, ": %pI6",
-						     &dst_key->addr.in6,
+						     &dst_key.addr.in6,
 						     "(by default action)");
 		if (default_rule->action == XFW_ACTION_ALLOW)
 			return XFW_CTX_CONTINUE;
@@ -70,13 +95,13 @@ xfw_dst_filter(const XfwGlobalCtx *ctx, const XfwDstKey *dst_key)
 			return XFW_CTX_CONTINUE;
 
 		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DST_RATE_LIMITED,
-					     ": %pI6", &dst_key->addr.in6,
+					     ": %pI6", &dst_key.addr.in6,
 					     "(by default action)");
 	}
 
 	if (rule->action == XFW_ACTION_BLOCK)
 		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DST_BLOCKED, ": %pI6",
-					     &dst_key->addr.in6);
+					     &dst_key.addr.in6);
 
 	if (rule->action == XFW_ACTION_ALLOW)
 		return XFW_CTX_CONTINUE;
@@ -86,7 +111,7 @@ xfw_dst_filter(const XfwGlobalCtx *ctx, const XfwDstKey *dst_key)
 		return XFW_CTX_CONTINUE;
 
 	return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DST_RATE_LIMITED, ": %pI6",
-				     &dst_key->addr.in6);
+				     &dst_key.addr.in6);
 }
 
 #undef BANNER
