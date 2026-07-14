@@ -611,14 +611,16 @@ tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx)
 		return XFW_CTX_CONTINUE;
 
 	/*
-	 * Raw SYN cookie verification (IPv4/IPv6).
+	 * Use raw SYN cookie verification API.
 	 *
-	 * We need to reimplement bpf_tcp_check_syncookie due to inconsistencies
-	 * in kernel error codes (see rejected patch and discussion:
-	 * https://lore.kernel.org/bpf/20211019144655.34831975maximmi@nvidia.com/).
-	 * Most of the original checks can be reproduced, but
-	 * tcp_synq_no_recent_overflow() cannot, so it is intentionally skipped
-	 * here.
+	 * bpf_tcp_check_syncookie() return -EINVAL for disables tcp_syncookies
+	 * or bad TCP or IP header lengths, -ENOENT for no recent overflow or
+	 * unexpected TCP flags. This makes hard to process the function return
+	 * code.
+	 *
+	 * There was a patch to fix this, it was rejected, it seems because of
+	 * API backward compatibility. Reference:
+	 * https://groups.google.com/g/clang-built-linux/c/Ehb-mZnip-E/m/nRWGW24PBAAJ
 	 */
 	if (ctx->iph4) {
 		int r = bpf_tcp_raw_check_syncookie_ipv4(ctx->iph4, ctx->th);
