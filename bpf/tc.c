@@ -38,8 +38,7 @@ SHADOW_MAP(MAP_NET_IP6_BASENAME, BPF_MAP_TYPE_LPM_TRIE, XFW_MAX_PROTECTED_NET_RU
  * Parsing function, should not drop packets!
  */
 static __always_inline int
-out_process_l3(XfwGlobalCtx *ctx, XfwDstKey *dst_key, XfwIpLpmKey* prot_net_key,
-	       void **prot_net_map)
+out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map)
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
@@ -51,7 +50,6 @@ out_process_l3(XfwGlobalCtx *ctx, XfwDstKey *dst_key, XfwIpLpmKey* prot_net_key,
 		ctx->l4_proto = (u8)proto;
 		xfw_ipv4_to_ipv6_mapped(ctx->iph4->daddr, ctx->ilog_addr.addr32);
 		ipv4_populate_lpm_key(ctx->iph4->daddr, &prot_net_key->addr4);
-		ipv4_populate_dst_key(ctx->iph4, ctx->l4_proto, dst_key);
 		*prot_net_map = SELECT_SHADOW_MAP(MAP_NET_IP4_BASENAME,
 						   ctx->cfg->amap_prot_net);
 		/* It is a regular case, don't need to add any statistic */
@@ -66,7 +64,6 @@ out_process_l3(XfwGlobalCtx *ctx, XfwDstKey *dst_key, XfwIpLpmKey* prot_net_key,
 		ctx->l4_proto = (u8)proto;
 		ctx->ilog_addr.in6 = ctx->iph6->daddr;
 		ipv6_populate_lpm_key(&ctx->iph6->daddr, &prot_net_key->addr6);
-		ipv6_populate_dst_key(ctx->iph6, ctx->l4_proto, dst_key);
 		*prot_net_map = SELECT_SHADOW_MAP(MAP_NET_IP6_BASENAME,
 						   ctx->cfg->amap_prot_net);
 		/* It is a regular case, don't need to add any statistic */
@@ -83,7 +80,7 @@ out_process_l3(XfwGlobalCtx *ctx, XfwDstKey *dst_key, XfwIpLpmKey* prot_net_key,
  * Parsing function, should not drop packets!
  */
 static __always_inline int
-out_process_l4(XfwGlobalCtx *ctx, XfwDstKey *dst_key)
+out_process_l4(XfwGlobalCtx *ctx)
 {
 	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
@@ -91,7 +88,6 @@ out_process_l4(XfwGlobalCtx *ctx, XfwDstKey *dst_key)
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_TCP_BADHDR_EGRESS);
 
-		dst_key->port = ctx->th->dest;
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
 	}
@@ -99,8 +95,6 @@ out_process_l4(XfwGlobalCtx *ctx, XfwDstKey *dst_key)
 		count_traffic_stat(ctx, XFW_UDP_TOTAL_EGRESS);
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_UDP_BADHDR_EGRESS);
-
-		dst_key->port = ctx->uh->dest;
 
 		egress_dns_filter(ctx);
 
@@ -115,10 +109,10 @@ out_process_l4(XfwGlobalCtx *ctx, XfwDstKey *dst_key)
 }
 
 static __always_inline int
-process_downstream_egress(const XfwGlobalCtx *ctx, const XfwDstKey *dst_key)
+process_downstream_egress(const XfwGlobalCtx *ctx)
 {
 	/* Traffic still heading toward protected services must pass dst policy. */
-	CHAIN(xfw_dst_filter, ctx, dst_key);
+	CHAIN(xfw_dst_filter, ctx);
 
 	return XFW_CTX_CONTINUE;
 }
@@ -128,9 +122,6 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 {
 	void *prot_net_map;
 	XfwIpLpmKey prot_net_key;
-
-	/* Filled by the parsing path that needs it. */
-	XfwDstKey dst_key = {};
 
 	XFW_DBG_INIT();
 
@@ -163,24 +154,19 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 		return XFW_MAKE_CTX_PASS(ctx, XFW_ETH_BADHDR_EGRESS);
 
 	/* Build map lookup keys before policy evaluation. */
-	CHAIN(out_process_l3, ctx, &dst_key, &prot_net_key, &prot_net_map);
-	CHAIN(out_process_l4, ctx, &dst_key);
+	CHAIN(out_process_l3, ctx, &prot_net_key, &prot_net_map);
+	CHAIN(out_process_l4, ctx);
 	/* Parsing is complete; start policy checks. */
 
 	*is_upstream_egress = (bpf_map_lookup_elem(prot_net_map, &prot_net_key) == NULL);
 	if (!*is_upstream_egress) /* Packets going to upstream. */
-		CHAIN(process_downstream_egress, ctx, &dst_key);
+		CHAIN(process_downstream_egress, ctx);
 	
 	/* 
 	 * Still needs to be called when rules are not loaded. TCP AUTH filter is
 	 * atomatically inactive at that time.
 	 */
-	
-	const XfwSockAddr sock_addr = {
-		.addr = dst_key.addr,
-		.port = dst_key.port
-	};
-	tcp_auth_conn_egress_learning(ctx, &sock_addr);
+	tcp_auth_conn_egress_learning(ctx);
 
 	return XFW_CTX_PASS;
 }
