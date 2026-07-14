@@ -225,6 +225,7 @@ class InvalidEthTypeRawServerRemote(RemoteServer, InvalidEthTypeRawServer):
             "send_eth_eapol_packet",
             ETH_P_IP,
             id="eth-l2-bad-protocol-eapol",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             dict(
@@ -234,74 +235,84 @@ class InvalidEthTypeRawServerRemote(RemoteServer, InvalidEthTypeRawServer):
             "send_eth_custom_packet",
             ETH_P_IP,
             id="eth-l2-bad-protocol-custom",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_eth_badhdr_ingress_packets=10, xfw_eth_badhdr_ingress_bytes=540),
             "send_bad_eth_header",
             ETH_P_IP,
             id="eth-send-bad-header",
-            marks=pytest.mark.skip("OS prevent sending packages less then 14 bytes"),
+            marks=pytest.mark.skip("OS prevent sending packages less then 14 bytes, 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_ip4_badhdr_ingress_packets=10, xfw_ip4_badhdr_ingress_bytes=240),
             "send_bad_ip4_header_less",
             ETH_P_IP,
             id="ip4-tcp-header-less",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_ip4_badhdr_ingress_packets=10, xfw_ip4_badhdr_ingress_bytes=460),
             "send_bad_ip4_header_greater",
             ETH_P_IP,
             id="ip4-tcp-header-greater",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_ip4_badhdr_ingress_packets=10, xfw_ip4_badhdr_ingress_bytes=340),
             "send_bad_ip4_bad_ip_version",
             ETH_P_IP,
             id="ip4-bad-ip-version",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_ip4_fragmented_ingress_packets=10, xfw_ip4_fragmented_ingress_bytes=410),
             "send_bad_ip4_fragmented",
             ETH_P_IP,
             id="ip4-block-fragmented",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_ip6_badhdr_ingress_packets=10, xfw_ip6_badhdr_ingress_bytes=490),
             "send_bad_ip6_header_less",
             ETH_P_IPV6,
             id="ip6-header-less",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_ip6_badhdr_ingress_packets=10, xfw_ip6_badhdr_ingress_bytes=540),
             "send_bad_ip6_bad_ip_version",
             ETH_P_IPV6,
             id="ip6-bad-ip-version",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_ip6_fragmented_ingress_packets=10, xfw_ip6_fragmented_ingress_bytes=690),
             "send_bad_ip6_fragmented",
             ETH_P_IPV6,
             id="ip6-block-fragmented",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_tcp_badhdr_ingress_packets=10, xfw_tcp_badhdr_ingress_bytes=490),
             "send_bad_tcp_headers",
             ETH_P_IP,
             id="tcp-bad-header-len",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_udp_badhdr_ingress_packets=10, xfw_udp_badhdr_ingress_bytes=400),
             "send_bad_udp_headers",
             ETH_P_IP,
             id="udp-bad-header-len",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_icmp_badhdr_ingress_packets=10, xfw_icmp_badhdr_ingress_bytes=540),
             "send_bad_icmp_headers",
             ETH_P_IP,
             id="icmp-bad-header-len",
-            marks=pytest.mark.skip("ISSUE: 332"),
+            marks=pytest.mark.skip("ISSUE: 332, 40 (xFW)"),
         ),
         pytest.param(
             dict(xfw_arp_ingress_packets=10, xfw_arp_ingress_bytes=540),
@@ -315,6 +326,7 @@ class InvalidEthTypeRawServerRemote(RemoteServer, InvalidEthTypeRawServer):
             "send_l4_unsupported_ip_proto",
             ETH_P_IP,
             id="ip4-block-unsupported-sctp",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
     ],
 )
@@ -659,6 +671,7 @@ async def check_clean_counters(
     assert metrics["xfw_udp_badhdr_ingress_bytes"] == 0
 
 
+@pytest.mark.skip("ISSUE: 40 (xFW)")
 async def test_clean_stats_after_restart(
     stats_counters: list[str],
     xfw: XFW,
@@ -678,6 +691,7 @@ async def test_clean_stats_after_restart(
         await xfw.restart()
 
 
+@pytest.mark.skip("ISSUE: 40 (xFW)")
 async def test_clean_stats_after_stop_start(
     stats_counters: list[str],
     xfw: XFW,

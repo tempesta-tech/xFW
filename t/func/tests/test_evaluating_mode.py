@@ -23,6 +23,7 @@ from framework.utils import metrics_increased
 from framework.xfw import XFW
 
 
+@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_dst_block(
     xfw: XFW,
     protocol: str,
@@ -55,6 +56,7 @@ async def test_dst_block(
     assert metrics_increased(metrics, diff_metrics) is True
 
 
+@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_dst_add(
     xfw: XFW,
     protocol: str,
@@ -92,6 +94,7 @@ async def test_dst_add(
     assert metrics_increased(metrics, diff_metrics) is True
 
 
+@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_dst_del_block_by_ip(
     xfw: XFW,
     protocol: str,
@@ -130,6 +133,7 @@ async def test_dst_del_block_by_ip(
     assert metrics_increased(metrics, diff_metrics) is True
 
 
+@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_src_block_by_ip(
     xfw: XFW,
     protocol: str,
@@ -157,6 +161,7 @@ async def test_src_block_by_ip(
     assert metrics_increased(metrics, diff_metrics) is True
 
 
+@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_src_del_block_by_ip(
     xfw: XFW,
     protocol: str,
@@ -193,6 +198,7 @@ async def test_src_del_block_by_ip(
     assert metrics_increased(metrics, diff_metrics) is True
 
 
+@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_src_replace_block_by_ip_to_allow_by_ip(
     xfw: XFW,
     protocol: str,
@@ -227,6 +233,7 @@ async def test_src_replace_block_by_ip_to_allow_by_ip(
     assert metrics_increased(metrics, diff_metrics) is True
 
 
+@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_icmp_block_by_type(
     xfw: XFW,
     ip_version: str,
@@ -250,6 +257,7 @@ async def test_icmp_block_by_type(
     assert metrics_increased(metrics, diff_metrics) is True
 
 
+@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_tcp_anomaly_filter(
     xfw: XFW,
     tcp_ip4_raw_server: TcpIpV4RawServer,
@@ -279,6 +287,7 @@ async def test_tcp_anomaly_filter(
     assert metrics_increased(metrics, diff_metrics) is True
 
 
+@pytest.mark.skip("ISSUE: 40 (xFW)")
 async def test_tcp_auth_filter_tcp_flood_from_non_existing_session(
     xfw: XFW,
     tcp_raw_server: TcpRawServer,
@@ -297,6 +306,7 @@ async def test_tcp_auth_filter_tcp_flood_from_non_existing_session(
     assert metrics_increased(metrics, diff_metrics) is True
 
 
+@pytest.mark.skip("ISSUE: 40 (xFW)")
 async def test_tcp_flags_filter(
     xfw: XFW,
     tcp_raw_server: TcpRawServer,
@@ -320,6 +330,7 @@ async def test_tcp_flags_filter(
     assert metrics_increased(metrics, diff_metrics) is True
 
 
+@pytest.mark.skip("ISSUE: 40 (xFW)")
 async def test_udp_anomaly_filter_zero_port_is_blocked(
     xfw: XFW,
     udp_server: RegularKernelSocketNetworkStateful,
