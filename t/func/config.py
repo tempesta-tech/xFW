@@ -100,7 +100,7 @@ class ConfigSettings(BaseSettings):
     client_ipv6_mask: int = 64
     client_port: int = 50000
 
-    timeout_sec: float = 0.5
+    timeout_sec: float = 0.1
 
     tcpreplay_exec_file: str = "tcpreplay"
     tcprewrite_exec_file: str = "tcprewrite"
