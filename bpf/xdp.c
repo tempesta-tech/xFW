@@ -392,7 +392,7 @@ syn_rlimit(XfwGlobalCtx *ctx)
 }
 
 static __always_inline int
-in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
+in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
@@ -408,7 +408,6 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 		ctx->l4_proto = (u8)proto;
 		xfw_ipv4_to_ipv6_mapped(ctx->iph4->saddr, ctx->ilog_addr.addr32);
 		ipv4_populate_lpm_key(ctx->iph4->saddr, &src_ip_key->addr4);
-		ipv4_populate_dst_key(ctx->iph4, ctx->l4_proto, dst_key);
 		return XFW_CTX_CONTINUE;
 	}
 	case bpf_ntohs(ETH_P_IPV6): {
@@ -423,7 +422,6 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 		ctx->l4_proto = (u8)proto;
 		ctx->ilog_addr.in6 = ctx->iph6->saddr;
 		ipv6_populate_lpm_key(&ctx->iph6->saddr, &src_ip_key->addr6);
-		ipv6_populate_dst_key(ctx->iph6, ctx->l4_proto, dst_key);
 
 		return XFW_CTX_CONTINUE;
 	}
@@ -585,16 +583,16 @@ tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 }
 
 static __always_inline int
-in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
+in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 {
 	if (!bpf_bitset64_test(ctx->cfg->rules.ip_proto.protocols.data,
-			       dst_key->proto))
+			       ctx->l4_proto))
 	{
 		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_L4_UNSUPPORTED_INGRESS,
-					     ": %u", dst_key->proto);
+					     ": %u", ctx->l4_proto);
 	}
 
-	switch (dst_key->proto) {
+	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
 		count_traffic_stat(ctx, XFW_TCP_TOTAL_INGRESS);
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
@@ -602,7 +600,6 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 
 		CHAIN(tcp_anomaly_filter, ctx);
 
-		dst_key->port = ctx->th->dest;
 		CHAIN(src_filter, ctx, ctx->th->source, src_ip_key);
 		
 		const XfwSockAddr addr = {
@@ -619,24 +616,23 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwDstKey *dst_key)
 		if (ctx->uh->source == 0 || ctx->uh->dest == 0)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_ANOM_ZERO_PORT);
 
-		dst_key->port = ctx->uh->dest;
-
 		CHAIN(ingress_dns_filter, ctx);
 		return src_filter(ctx, ctx->uh->source, src_ip_key);
 	};
 	case XFW_L4_PROTO_ICMP:
 	case XFW_L4_PROTO_ICMPV6: {
-		XfwICMPCommon *ih;
-		XfwIcmpKey key;
 		count_traffic_stat(ctx, XFW_ICMP_TOTAL_INGRESS);
 
+		XfwICMPCommon *ih;
 		if (unlikely(parse_icmphdr_common(&ctx->hdr_cur, &ih) < 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_BADHDR_INGRESS);
 
 		XFW_CTX_DBG("ICMP header parsed, type=%u", ih->type);
 
-		key.proto = dst_key->proto;
-		key.type = ih->type;
+		const XfwIcmpKey key = {
+			.proto = ctx->l4_proto,
+			.type = ih->type
+		};
 		CHAIN(icmp_filter, ctx, &key);
 		CHAIN(src_filter_ip, ctx, src_ip_key);
 		/* ICMP has no destination port, so dst rules cannot refine this path. */
@@ -662,11 +658,6 @@ do {									\
 static __always_inline int
 xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 {
-	int r;
-	/* Helper structure for src filter, filled on L3, used on L4. */
-	XfwIpLpmKey src_ip_key = {};
-	XfwDstKey dst_key = {};
-
 	count_traffic_stat(ctx, XFW_TOTAL_DOWNSTREAM_INGRESS);
 
 	XFW_DBG_INIT();
@@ -680,9 +671,12 @@ xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 	if (unlikely(ctx->ipver < 0))
 		return XFW_MAKE_CTX_DROP(ctx, XFW_ETH_BADHDR_INGRESS);
 
-	CHAIN_PASS_ALL(in_process_l3, ctx, &src_ip_key, &dst_key);
-	CHAIN_PASS_ALL(in_process_l4, ctx, &src_ip_key, &dst_key);
-	CHAIN_PASS_ALL(xfw_dst_filter, ctx, &dst_key);
+	int r;
+	/* Helper structure for src filter, filled on L3, used on L4. */
+	XfwIpLpmKey src_ip_key = {};
+	CHAIN_PASS_ALL(in_process_l3, ctx, &src_ip_key);
+	CHAIN_PASS_ALL(in_process_l4, ctx, &src_ip_key);
+	CHAIN_PASS_ALL(xfw_dst_filter, ctx);
 
 pass:
 	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);

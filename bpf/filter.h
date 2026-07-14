@@ -261,26 +261,8 @@ ipv4_populate_lpm_key(__be32 addr, XfwIpv4LpmKey *key)
 }
 
 static __always_inline void
-ipv4_populate_dst_key(const struct iphdr *ip4_hdr, int l4_proto,
-	XfwDstKey *dst_key)
-{
-	dst_key->ipver = XFW_IP_VER_4;
-	dst_key->proto = (uint8_t)l4_proto;
-	xfw_ipv4_to_ipv6_mapped(ip4_hdr->daddr, dst_key->addr.addr32);
-}
-
-static __always_inline void
 ipv6_populate_lpm_key(const struct in6_addr *addr, XfwIpv6LpmKey *key)
 {
 	key->prefixlen = 128;
 	xfw_ipv6_addr_cpy(key->addr, addr);
-}
-
-static __always_inline void
-ipv6_populate_dst_key(const struct ipv6hdr *ip6_hdr, int l4_proto,
-	XfwDstKey *dst_key)
-{
-	dst_key->ipver = XFW_IP_VER_6;
-	dst_key->proto = (uint8_t)l4_proto;
-	dst_key->addr.in6 = ip6_hdr->daddr;
 }

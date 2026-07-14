@@ -195,19 +195,24 @@ tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr,
 }
 
 static __always_inline void
-tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
+tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx)
 {
-	if (!ctx->th)
+	struct tcphdr *th = ctx->th;
+	if (!th)
 		return;
 
-	struct tcphdr *th = ctx->th;
+	const XfwSockAddr addr = {
+		.addr = ctx->ilog_addr,
+		.port = th->dest
+	};
+	
 	if (unlikely(th->rst)) {
 		/* An early RST can safely remove a learned tuple. */
-		tcp_auth_conn_delete(addr);
+		tcp_auth_conn_delete(&addr);
 		return;
 	}
 
-	XfwTcpConnState *conn = tcp_auth_conn_lookup(addr);
+	XfwTcpConnState *conn = tcp_auth_conn_lookup(&addr);
 
 	/*
 	 * Trusted connection tracking in tc.c has two modes:
@@ -233,7 +238,7 @@ tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 	 */
 	if (!conn) {
 		if (unlikely(!ctx->cfg->rules.tcp_auth.enabled || th->syn))
-			tcp_auth_conn_add(addr);
+			tcp_auth_conn_add(&addr);
 		return;
 	}
 
