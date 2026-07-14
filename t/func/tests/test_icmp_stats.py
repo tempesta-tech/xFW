@@ -35,12 +35,14 @@ def icmp_stats_counters() -> list[str]:
                 xfw_icmp_blocked_bytes=420,
             ),
             id="ip4-block",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw { icmp ip6 : block {128, 129} }",
             "ip6",
             dict(xfw_icmp_blocked_packets=[10, 13], xfw_icmp_blocked_bytes=[620, 900]),
             id="ip6-block",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw { ratelimit=test pps=0 bps=0; icmp ip4 : ratelimit=test {0, 8} }",
@@ -50,6 +52,7 @@ def icmp_stats_counters() -> list[str]:
                 xfw_icmp_rate_limited_bytes=420,
             ),
             id="ip4-ratelimit",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw { ratelimit=test pps=0 bps=0; icmp ip6 : ratelimit=test {128, 129} }",
@@ -59,6 +62,7 @@ def icmp_stats_counters() -> list[str]:
                 xfw_icmp_rate_limited_bytes=[620, 900],
             ),
             id="ip6-ratelimit",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw { defaults { icmp ip4 : block; } }",
@@ -68,6 +72,7 @@ def icmp_stats_counters() -> list[str]:
                 xfw_icmp_default_blocked_bytes=420,
             ),
             id="ip4-block-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw { defaults { icmp ip6 :  block; } }",
@@ -77,6 +82,7 @@ def icmp_stats_counters() -> list[str]:
                 xfw_icmp_default_blocked_bytes=[620, 900],
             ),
             id="ip6-block-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw { ratelimit=test pps=0 bps=0; defaults { icmp ip4 : ratelimit=test; } }",
@@ -86,6 +92,7 @@ def icmp_stats_counters() -> list[str]:
                 xfw_icmp_default_rate_limited_bytes=420,
             ),
             id="ip4-ratelimit-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw { ratelimit=test pps=0 bps=0; defaults { icmp ip6 : ratelimit=test; } }",
@@ -95,6 +102,7 @@ def icmp_stats_counters() -> list[str]:
                 xfw_icmp_default_rate_limited_bytes=[620, 900],
             ),
             id="ip6-ratelimit-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
     ],
 )

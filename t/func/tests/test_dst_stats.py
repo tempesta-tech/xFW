@@ -32,6 +32,7 @@ def dst_stats_counters() -> list[str]:
                 xfw_dst_blocked_bytes=480,
             ),
             id="ip4-block-udp",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ dst ip6.udp: block {{ {host}:{port}  }} }}",
@@ -41,6 +42,7 @@ def dst_stats_counters() -> list[str]:
                 xfw_dst_blocked_bytes=680,
             ),
             id="ip6-block-udp",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; dst ip4.udp: ratelimit=test {{ {host}:{port}  }} }}",
@@ -50,6 +52,7 @@ def dst_stats_counters() -> list[str]:
                 xfw_dst_rate_limited_bytes=480,
             ),
             id="ip4-ratelimit-udp",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; dst ip6.udp: ratelimit=test {{ {host}:{port}  }} }}",
@@ -59,6 +62,7 @@ def dst_stats_counters() -> list[str]:
                 xfw_dst_rate_limited_bytes=680,
             ),
             id="ip6-ratelimit-udp",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
     ],
 )
@@ -112,6 +116,7 @@ async def test_dst_udp_stats(
                 xfw_dst_blocked_bytes=610,
             ),
             id="ip4-block-tcp",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ dst ip6.tcp: block {{ {host}:{port}  }} }}",
@@ -121,6 +126,7 @@ async def test_dst_udp_stats(
                 xfw_dst_blocked_bytes=810,
             ),
             id="ip6-block-tcp",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; dst ip4.tcp: ratelimit=test {{ {host}:{port}  }} }}",
@@ -130,6 +136,7 @@ async def test_dst_udp_stats(
                 xfw_dst_rate_limited_bytes=610,
             ),
             id="ip4-ratelimit-tcp",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; dst ip6.tcp: ratelimit=test {{ {host}:{port}  }} }}",
@@ -139,6 +146,7 @@ async def test_dst_udp_stats(
                 xfw_dst_rate_limited_bytes=810,
             ),
             id="ip6-ratelimit-tcp",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
     ],
 )

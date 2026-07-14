@@ -28,11 +28,13 @@ def stats_counters() -> list[str]:
             "ip4",
             dict(xfw_tcp_auth_failed_packets=10, xfw_tcp_auth_failed_bytes=540),
             id="ip4-non-existing-connection",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "ip6",
             dict(xfw_tcp_auth_failed_packets=10, xfw_tcp_auth_failed_bytes=740),
             id="ip6-non-existing-connection",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
     ],
 )

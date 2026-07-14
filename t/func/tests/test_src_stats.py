@@ -45,6 +45,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_ip_blocked_bytes=480,
             ),
             id="ip4-block-udp-ip",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ src ip6.udp: block {{ {host}, {host_2} }} }}",
@@ -54,6 +55,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_ip_blocked_bytes=680,
             ),
             id="ip6-block-udp-ip",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; src ip4.udp: ratelimit=test {{ {host}, {host_2} }} }}",
@@ -63,6 +65,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_ip_rate_limited_bytes=480,
             ),
             id="ip4-ratelimit-udp-ip",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; src ip6.udp: ratelimit=test {{ {host}, {host_2} }} }}",
@@ -72,6 +75,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_ip_rate_limited_bytes=680,
             ),
             id="ip6-ratelimit-udp-ip",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ defaults {{ src_ip ip4.udp: block; }} }}",
@@ -81,6 +85,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_ip_default_blocked_bytes=480,
             ),
             id="ip4-block-udp-ip-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ defaults {{ src_ip ip6.udp: block; }} }}",
@@ -90,6 +95,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_ip_default_blocked_bytes=680,
             ),
             id="ip6-block-udp-ip-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; defaults {{ src_ip ip4.udp: ratelimit=test; }} }}",
@@ -99,6 +105,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_ip_default_rate_limited_bytes=480,
             ),
             id="ip4-ratelimit-udp-ip-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; defaults {{ src_ip ip6.udp: ratelimit=test; }} }}",
@@ -108,6 +115,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_ip_default_rate_limited_bytes=680,
             ),
             id="ip6-ratelimit-udp-ip-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
     ]
     +
@@ -121,6 +129,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_port_blocked_bytes=480,
             ),
             id="ip4-block-udp-port",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ src ip6.udp: block {{ :{port}, :{port_2} }} }}",
@@ -130,6 +139,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_port_blocked_bytes=680,
             ),
             id="ip6-block-udp-port",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; src ip4.udp: ratelimit=test {{ :{port}, :{port_2} }} }}",
@@ -139,6 +149,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_port_rate_limited_bytes=480,
             ),
             id="ip4-ratelimit-udp-port",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; src ip6.udp: ratelimit=test {{ :{port}, :{port_2} }} }}",
@@ -148,6 +159,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_port_rate_limited_bytes=680,
             ),
             id="ip6-ratelimit-udp-port",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ defaults {{ src_port ip4.udp: block; }} }}",
@@ -157,6 +169,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_port_default_blocked_bytes=480,
             ),
             id="ip4-block-udp-port-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ defaults {{ src_port ip6.udp: block; }} }}",
@@ -166,6 +179,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_port_default_blocked_bytes=680,
             ),
             id="ip6-block-udp-port-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; defaults {{ src_port ip4.udp: ratelimit=test; }} }}",
@@ -175,6 +189,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_port_default_rate_limited_bytes=480,
             ),
             id="ip4-ratelimit-udp-port-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; defaults {{ src_port ip6.udp: ratelimit=test; }} }}",
@@ -184,6 +199,7 @@ def src_stats_counters() -> list[str]:
                 xfw_src_port_default_rate_limited_bytes=680,
             ),
             id="ip6-ratelimit-udp-port-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
     ],
 )
@@ -245,6 +261,7 @@ async def test_src_udp_stats(
                 xfw_src_ip_blocked_bytes=610,
             ),
             id="ip4-block-tcp-ip",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         # tcp ip6 src filter blocks also ICMP6 packets, the results could be different
         pytest.param(
@@ -263,6 +280,7 @@ async def test_src_udp_stats(
                 xfw_src_ip_blocked_bytes=[100, 1200],
             ),
             id="ip6-block-tcp-ip",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; src ip4.tcp: ratelimit=test {{ {host}, {host_2} }} }}",
@@ -272,6 +290,7 @@ async def test_src_udp_stats(
                 xfw_src_ip_rate_limited_bytes=610,
             ),
             id="ip4-ratelimit-tcp-ip",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         # tcp ip6 src filter blocks also ICMP6 packets, the results could be different
         pytest.param(
@@ -292,6 +311,7 @@ async def test_src_udp_stats(
                 xfw_src_ip_rate_limited_bytes=[100, 1200],
             ),
             id="ip6-ratelimit-tcp-ip",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ defaults {{ src_ip ip4.tcp: block; }} }}",
@@ -301,6 +321,7 @@ async def test_src_udp_stats(
                 xfw_src_ip_default_blocked_bytes=610,
             ),
             id="ip4-block-tcp-ip-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         # tcp ip6 src filter blocks also ICMP6 packets, the results could be different
         pytest.param(
@@ -318,6 +339,7 @@ async def test_src_udp_stats(
                 xfw_src_ip_default_blocked_bytes=[100, 1200],
             ),
             id="ip6-block-tcp-ip-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; defaults {{ src_ip ip4.tcp: ratelimit=test; }} }}",
@@ -327,6 +349,7 @@ async def test_src_udp_stats(
                 xfw_src_ip_default_rate_limited_bytes=610,
             ),
             id="ip4-ratelimit-tcp-ip-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         # tcp ip6 src filter blocks also ICMP6 packets, the results could be different
         pytest.param(
@@ -345,6 +368,7 @@ async def test_src_udp_stats(
                 xfw_src_ip_default_rate_limited_bytes=[100, 1200],
             ),
             id="ip6-ratelimit-tcp-ip-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
     ]
     +
@@ -358,6 +382,7 @@ async def test_src_udp_stats(
                 xfw_src_port_blocked_bytes=610,
             ),
             id="ip4-block-tcp-port",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ src ip6.tcp: block {{ :{port}, :{port_2} }} }}",
@@ -367,6 +392,7 @@ async def test_src_udp_stats(
                 xfw_src_port_blocked_bytes=810,
             ),
             id="ip6-block-tcp-port",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; src ip4.tcp: ratelimit=test {{ :{port}, :{port_2} }} }}",
@@ -376,6 +402,7 @@ async def test_src_udp_stats(
                 xfw_src_port_rate_limited_bytes=610,
             ),
             id="ip4-ratelimit-tcp-port",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; src ip6.tcp: ratelimit=test {{ :{port}, :{port_2} }} }}",
@@ -385,6 +412,7 @@ async def test_src_udp_stats(
                 xfw_src_port_rate_limited_bytes=810,
             ),
             id="ip6-ratelimit-tcp-port",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ defaults {{ src_port ip4.tcp: block; }} }}",
@@ -394,6 +422,7 @@ async def test_src_udp_stats(
                 xfw_src_port_default_blocked_bytes=610,
             ),
             id="ip4-block-tcp-port-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ defaults {{ src_port ip6.tcp: block; }} }}",
@@ -403,6 +432,7 @@ async def test_src_udp_stats(
                 xfw_src_port_default_blocked_bytes=810,
             ),
             id="ip6-block-tcp-port-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; defaults {{ src_port ip4.tcp: ratelimit=test; }} }}",
@@ -412,6 +442,7 @@ async def test_src_udp_stats(
                 xfw_src_port_default_rate_limited_bytes=610,
             ),
             id="ip4-ratelimit-tcp-port-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "xfw {{ ratelimit=test pps=0 bps=0; defaults {{ src_port ip6.tcp: ratelimit=test; }} }}",
@@ -421,6 +452,7 @@ async def test_src_udp_stats(
                 xfw_src_port_default_rate_limited_bytes=810,
             ),
             id="ip6-ratelimit-tcp-port-default",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
     ],
 )

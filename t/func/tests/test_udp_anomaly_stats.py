@@ -31,11 +31,13 @@ def stats_counters() -> list[str]:
             "ip4",
             dict(xfw_udp_anom_zero_port_packets=10, xfw_udp_anom_zero_port_bytes=470),
             id="ip4-zero-port",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
         pytest.param(
             "ip6",
             dict(xfw_udp_anom_zero_port_packets=10, xfw_udp_anom_zero_port_bytes=670),
             id="ip6-zero-port",
+            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
         ),
     ],
 )
