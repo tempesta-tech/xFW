@@ -260,7 +260,7 @@ async def test_src_block_by_geoip_country(
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
-@pytest.mark.skip("ISSUE: too small pps in tests")
+@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_src_block_by_ratelimit_ip(
     xfw: XFW,
     protocol: str,
@@ -289,7 +289,7 @@ async def test_src_block_by_ratelimit_ip(
     ), f"Client {client.ip_testing}:{client.port} is not blocked"
 
 
-@pytest.mark.skip("ISSUE: too small pps in tests")
+@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_src_block_by_ratelimit_port(
     xfw: XFW,
     protocol: str,

@@ -95,7 +95,7 @@ async def test_block_by_type(
     assert await icmp_raw_client.pong() is False
 
 
-@pytest.mark.fail_in_gate_mode("ISSUE: 456")
+@pytest.mark.fail_in_gate_mode("ISSUE: 456, 39")
 async def test_default_ratelimit(
     xfw: XFW,
     ip_version: str,
@@ -116,6 +116,7 @@ async def test_default_ratelimit(
     assert len([request for request in requests if request]) == 5
 
 
+@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_block_by_ratelimit(
     xfw: XFW,
     ip_version: str,

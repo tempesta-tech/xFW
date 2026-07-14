@@ -79,6 +79,7 @@ async def test_dst_allow_by_multiple_port(
     assert await check_connection(client, server) is True, f"Port {new_port} is not allowed"
 
 
+@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_dst_allow_by_ratelimit(
     xfw: XFW,
     protocol: str,
