@@ -53,7 +53,8 @@ typedef struct XfwGlobalCtx {
 	XfwPerCpuStats	*g_stats;
 	XfwHdrCursor	hdr_cur;
 	uint32_t	pkt_sz;
-	int		ipver;
+	uint16_t	ipver;
+	uint8_t		l4_proto;
 	XfwMd		*ctx;
 	struct ethhdr	*eth;
 	struct iphdr	*iph4;
@@ -61,7 +62,6 @@ typedef struct XfwGlobalCtx {
 	struct tcphdr	*th;
 	struct udphdr	*uh;
 	uint64_t	ts_jiff;
-	uint8_t		l4_proto;
 	XfwIp		ilog_addr;
 } XfwGlobalCtx;
 

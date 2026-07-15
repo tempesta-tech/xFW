@@ -147,7 +147,15 @@ private:
 	};
 
 	using IcmpRules = BpfShadowHashMap<XfwIcmpKey, XfwActionRule, XfwIcmpKeyHash>;
-	using DstRules = BpfShadowHashMap<XfwDstKey, XfwActionRule, XfwDstKeyHash>;
+	
+	struct DstRules
+	{
+		using Ipv4ShadowMap = BpfShadowHashMap<XfwDstKey, XfwActionRule, XfwDstKeyHash>;
+		using Ipv6ShadowMap = BpfShadowHashMap<XfwDstKey, XfwActionRule, XfwDstKeyHash>;
+
+		Ipv4ShadowMap v4_udp, v4_tcp;
+		Ipv6ShadowMap v6_udp, v6_tcp;
+	};
 
 private:
 	XfwFilterCfg get_config();

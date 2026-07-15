@@ -62,39 +62,28 @@ typedef struct XfwIcmpKey {
 } XfwIcmpKey;
 
 /**
- * @ipver		- IP protocol version
- * @proto		- L4 proto field from an IP header
  * @addr		- IP address, zero-prefixed for IPv4
  */
 typedef struct XfwDstKey {
-	uint8_t		ipver;
-	uint8_t		proto;
 	XfwPort		port;
 	XfwIp		addr;
 
 #ifdef __cplusplus
 	XfwDstKey() noexcept
-		: ipver{ 0 }
-		, proto{ 0 }
-		, port{ 0 }
+		: port{ 0 }
 		, addr{}
 	{}
 
-	explicit XfwDstKey(uint8_t ipver, uint8_t l4_proto, __be16 port,
-			   __be32 ip) noexcept
-		: ipver(ipver)
-		, proto(l4_proto)
-		, port(port)
+	explicit XfwDstKey(__be16 port, __be32 ip) noexcept
+		: port(port)
 	{
 		xfw_ipv4_to_ipv6_mapped(ip, addr.addr32);
 	}
 
-	explicit XfwDstKey(uint8_t ipver, uint8_t l4_proto, __be16 port,
+	explicit XfwDstKey(__be16 port,
 			   __be32 ip6_0, __be32 ip6_1, __be32 ip6_2,
 			   __be32 ip6_3) noexcept
-		: ipver(ipver)
-		, proto(l4_proto)
-		, port(port)
+		: port(port)
 		, addr{ .addr32 = { ip6_0, ip6_1, ip6_2, ip6_3 } }
 	{}
 

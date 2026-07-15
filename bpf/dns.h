@@ -94,10 +94,10 @@ STATIC_ASSERT(sizeof(XfwPacketMetadata) <= 32,
 
 typedef struct XfwDnsCtx {
 	XfwMd		*ctx;
+	XfwPerCpuStats	*g_stats;
 	XfwHdrCursor	hdr_cur;
 	XfwIp		ilog_addr;
 	uint32_t	pkt_sz;
-	XfwPerCpuStats	*g_stats;
 } XfwDnsCtx;
 
 SIMPLE_PARSE_FUNC_DECL(parse_dnshdr, XfwDnsHdr);
