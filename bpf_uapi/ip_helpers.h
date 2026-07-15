@@ -27,11 +27,27 @@ xfw_ipv4_to_ipv6_mapped(__be32 ipv4, __be32 addr[4])
 	addr[3] = ipv4;
 }
 
-static __always_inline int
-xfw_is_ipv6_mapped_to_ipv4(const __be32 addr[4])
+/*
+ * Return true if @addr is an IPv4-embedded IPv6 address.
+ *
+ * Matches both deprecated IPv4-compatible (::a.b.c.d) and IPv4-mapped
+ * (::ffff:a.b.c.d) IPv6 address formats.
+ *
+ * RFC 6890 marks these prefixes as invalid IPv6 packet source and
+ * destination addresses (Source=False, Destination=False).
+ */
+static __always_inline bool
+xfw_is_ipv4_embedded_ipv6(const __be32 addr[4])
 {
-	return (addr[0] == 0 && addr[1] == 0 &&
-	       (addr[2] == 0 || addr[2] == HTONL(0xffff)));
+	if (addr[0] || addr[1])
+		return false;
+	
+	if (addr[2] == 0) {
+		/* Exclude :: and ::1. */
+		return addr[3] != 0 && addr[3] != HTONL(1);
+	}
+
+	return addr[2] == HTONL(0xffff);
 }
 
 static __always_inline void

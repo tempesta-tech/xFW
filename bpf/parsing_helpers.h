@@ -200,6 +200,14 @@ parse_ip6hdr(XfwHdrCursor *cur, struct ipv6hdr **ip6hdr)
 	cur->pos = ip6h + 1;
 	*ip6hdr = ip6h;
 
+	/*
+	 * RFC 6890 marks these prefixes as invalid IPv6 packet source and
+	 * destination addresses (Source=False, Destination=False).
+	 */
+	if (xfw_is_ipv4_embedded_ipv6(ip6h->saddr.in6_u.u6_addr32)
+	    || xfw_is_ipv4_embedded_ipv6(ip6h->daddr.in6_u.u6_addr32))
+		return -EINVAL;
+
 	XFW_CTX_DBG("IPv6 packet: %pI6 -> %pI6", &ip6h->saddr, &ip6h->daddr);
 
 	return skip_ip6hdrext(cur, ip6h->nexthdr);

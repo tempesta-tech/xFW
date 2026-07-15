@@ -465,7 +465,6 @@ async def test_restart(xfw: XFW):
     await xfw.rules_push_config(" xfw { defaults { dst: allow; } } ")
 
 
-@pytest.mark.skip("ISSUE: 336 (escudo)")
 @pytest.mark.parametrize(
     "rules",
     [

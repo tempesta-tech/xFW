@@ -345,6 +345,17 @@ import_ipv4_tree(MMDB_s &mmdb, Ip4PrefixBuckets &prefixes)
 		add_country_prefix(prefixes, result.entry, Ip4Addr{}, 0);
 }
 
+static bool
+xfw_is_ipv4_embedded_ipv6(const Ip6Addr &addr) noexcept
+{
+	if (!std::ranges::all_of(addr.begin(), addr.begin() + 10,
+				 [](std::uint8_t b) { return b == 0; }))
+		return false;
+
+	return (addr[10] == 0 && addr[11] == 0)
+		|| (addr[10] == 0xff && addr[11] == 0xff);
+}
+
 void
 import_ipv6_tree(MMDB_s &mmdb, Ip6PrefixBuckets &prefixes)
 {
@@ -359,6 +370,10 @@ import_ipv6_tree(MMDB_s &mmdb, Ip6PrefixBuckets &prefixes)
 	auto add_data = [&prefixes](MMDB_entry_s entry, const Ip6Addr &addr,
 				    unsigned prefixlen)
 	{
+		if (xfw_is_ipv4_embedded_ipv6(addr))
+			throw Except("Unexpected IPv4-embedded prefix in IPv6 "
+				     "search tree");
+
 		add_country_prefix(prefixes, entry, addr, prefixlen);
 	};
 

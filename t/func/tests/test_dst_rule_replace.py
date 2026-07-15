@@ -162,27 +162,30 @@ async def test_dst_replace_only_one_protocol_subtype(
         ), f"Server {new_server.ip_testing}:{new_server.port} is not blocked"
 
 
-@pytest.mark.skip("ISSUE: 336 (escudo)")
-async def test_dst_replace_block_by_ip_to_allow_by_ip_mapped(
+async def test_dst_reject_on_replace_block_by_ip_by_allow_by_ip_mapped(
     xfw: XFW,
     udp_ip4_client: RegularKernelSocketNetworkStateful,
     udp_ip4_mapped_ip6_server: RegularKernelSocketNetworkStateful,
 ):
+    """
+    The mapped ip4 address should be rejected by the app
+    and error has to appear on rules applying
+    """
+
     await xfw.rules_set(f"""
         xfw {{
             defaults {{ dst: block; }}
             dst=extended_group ip6.udp : block {{
-                {udp_ip4_mapped_ip6_server.ip_testing}:{udp_ip4_mapped_ip6_server.port}
+                [fd00:20::2]:10000
             }}
         }}
         """)
-    await xfw.rules_patch(f"""
-        xfw {{
-            dst=extended_group/replace ip6.udp : allow {{
-                {udp_ip4_mapped_ip6_server.ip_testing}:{udp_ip4_mapped_ip6_server.port}
+
+    with pytest.raises(ValueError):
+        await xfw.rules_patch(f"""
+            xfw {{
+                dst=extended_group/replace ip6.udp : allow {{
+                    {udp_ip4_mapped_ip6_server.ip_testing}:{udp_ip4_mapped_ip6_server.port}
+                }}
             }}
-        }}
-        """)
-    assert await check_connection(
-        udp_ip4_client, udp_ip4_mapped_ip6_server
-    ), f"Server ({udp_ip4_mapped_ip6_server.ip_testing}:{udp_ip4_mapped_ip6_server.port}) is not allowed"
+            """)

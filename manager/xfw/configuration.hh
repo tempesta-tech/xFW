@@ -101,10 +101,10 @@ public:
 	{
 		//we never use prefix and port in the same time
 		union {
-			uint16_t		prefixlen_ = 0;	//for src
+			uint16_t	prefixlen_ = 0;	//for src
 			NetPort		port_;		//for dst
 		};
-		__be32		addr_ = 0;
+		__be32			addr_ = 0;
 
 		bool operator<(const Net4Key &o) const
 		{
@@ -118,10 +118,10 @@ public:
 	{
 		//we never use prefix and port in the same time
 		union {
-			uint16_t		prefixlen_ = 0;	//for src
+			uint16_t	prefixlen_ = 0;	//for src
 			NetPort		port_;		//for dst
 		};
-		__be32		addr_[4] {0, 0, 0, 0};
+		__be32			addr_[4] {0, 0, 0, 0};
 
 		bool operator<(const Net6Key &o) const
 		{
