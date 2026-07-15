@@ -691,6 +691,9 @@ XfwConfigUpdater::add_matchers_to<ProtoNetRule, XfwConfig::NetIp>(
 	if (proto.net6s()) {
 		for (size_t j = 0; j < proto.net6s()->size(); ++j) {
 			auto key = get_net6key(proto.net6s()->Get(j), to.flags_);
+			if (xfw_is_ipv4_embedded_ipv6(key.addr_))
+				throw Except("Unexpected IPv4-compatible prefix "
+					     "in IPv6 address");
 			auto [it, inserted] = to.net6s_.insert(key);
 			if (!inserted) {
 				throw UpdateError("Error on add: Net6 "

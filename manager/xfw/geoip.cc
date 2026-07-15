@@ -303,6 +303,10 @@ import_ipv4_tree(MMDB_s &mmdb, Ip4PrefixBuckets &prefixes)
 	auto add_data = [&prefixes](MMDB_entry_s entry, const Ip4Addr &addr,
 				    unsigned prefixlen)
 	{
+		if (xfw_is_ipv4_embedded_ipv6(addr))
+			throw Except("Unexpected IPv4-embedded prefix in IPv6 "
+				     "search tree");
+
 		add_country_prefix(prefixes, entry, addr, prefixlen);
 	};
 
