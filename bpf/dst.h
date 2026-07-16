@@ -19,50 +19,35 @@
 SHADOW_MAP(MAP_DST_BASENAME, BPF_MAP_TYPE_HASH, XFW_MAX_DST_RULES, XfwDstKey,
 	    XfwActionRule, 0);
 
-static __always_inline void
-ipv4_populate_dst_key(const struct iphdr *ip4_hdr, int l4_proto,
-	XfwDstKey *dst_key)
-{
-	dst_key->ipver = XFW_IP_VER_4;
-	dst_key->proto = (uint8_t)l4_proto;
-	xfw_ipv4_to_ipv6_mapped(ip4_hdr->daddr, dst_key->addr.addr32);
-}
-
-static __always_inline void
-ipv6_populate_dst_key(const struct ipv6hdr *ip6_hdr, int l4_proto,
-	XfwDstKey *dst_key)
-{
-	dst_key->ipver = XFW_IP_VER_6;
-	dst_key->proto = (uint8_t)l4_proto;
-	dst_key->addr.in6 = ip6_hdr->daddr;
-}
-
 static __always_inline bool
 populate_dst_info(const XfwGlobalCtx *ctx, XfwDstKey *key, __u8 *default_idx)
 {
-	if (ctx->th) {
-		key->port = ctx->th->dest;
-		if (ctx->iph4) {
-			ipv4_populate_dst_key(ctx->iph4, ctx->l4_proto, key);
+	key->proto = (uint8_t)ctx->l4_proto;
+	if (ctx->iph4) {
+		key->ipver = XFW_IP_VER_4;
+		xfw_ipv4_to_ipv6_mapped(ctx->iph4->daddr, key->addr.addr32);
+		if (ctx->th) {
+			key->port = ctx->th->dest;
 			*default_idx = XFW_DEFAULT_DST_TCP_IP4;
 			return true;
 		}
-		if (ctx->iph6) {
-			ipv6_populate_dst_key(ctx->iph6, ctx->l4_proto, key);
-			*default_idx = XFW_DEFAULT_DST_TCP_IP6;
+		if (ctx->uh) {
+			key->port = ctx->uh->dest;
+			*default_idx = XFW_DEFAULT_DST_UDP_IP4;
 			return true;
 		}
 		return false;
 	}
-	if (ctx->uh) {
-		key->port = ctx->uh->dest;
-		if (ctx->iph4) {
-			ipv4_populate_dst_key(ctx->iph4, ctx->l4_proto, key);
-			*default_idx = XFW_DEFAULT_DST_UDP_IP4;
+	if (ctx->iph6) {
+		key->ipver = XFW_IP_VER_6;
+		key->addr.in6 = ctx->iph6->daddr;
+		if (ctx->th) {
+			key->port = ctx->th->dest;
+			*default_idx = XFW_DEFAULT_DST_TCP_IP6;
 			return true;
 		}
-		if (ctx->iph6) {
-			ipv6_populate_dst_key(ctx->iph6, ctx->l4_proto, key);
+		if (ctx->uh) {
+			key->port = ctx->uh->dest;
 			*default_idx = XFW_DEFAULT_DST_UDP_IP6;
 			return true;
 		}
