@@ -19,6 +19,18 @@
 SHADOW_MAP(MAP_DST_BASENAME, BPF_MAP_TYPE_HASH, XFW_MAX_DST_RULES, XfwDstKey,
 	    XfwActionRule, 0);
 
+/*
+ * #VerifierOptimization:
+ *
+ * A previous implementation populated key->ipver, key->proto and
+ * key->addr after selecting ctx->th/ctx->uh. Although slower at runtime,
+ * that version resulted in faster verification (smaller verifier state
+ * space). The current ordering favors runtime performance.
+ *
+ * Revisit this ordering if a better verifier/runtime trade-off is found,
+ * or if verifier complexity or XDP program load time becomes a more
+ * important concern than runtime performance.
+ */
 static __always_inline bool
 populate_dst_info(const XfwGlobalCtx *ctx, XfwDstKey *key, __u8 *default_idx)
 {
