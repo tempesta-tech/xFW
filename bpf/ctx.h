@@ -83,6 +83,14 @@ struct {
 	__uint(max_entries, 1);
 } MAP_GLBL_STAT_REF SEC(".maps");
 
+struct {
+        __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+        __type(key, __u32);
+        __type(value, __u8);
+        __uint(pinning, LIBBPF_PIN_BY_NAME);
+        __uint(max_entries, 1);
+} MAP_L2_HDR_MISS_REF SEC(".maps");
+
 #define INIT_CURSOR_FROM_BPF_CONTEXT(pkt_ctx, cur)			\
 do {									\
 	(cur)->pos = XFW_CTX_DATA_BGN(pkt_ctx);				\

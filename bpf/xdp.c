@@ -691,6 +691,8 @@ int
 xfw_xdp(struct xdp_md *xdp)
 {
 	int r;
+	__u32 key = 0;
+	__u8 *l2_hdr_miss;
 
 	XfwGlobalCtx ctx;
 	xfw_ctx_init(&ctx, xdp);
@@ -698,6 +700,14 @@ xfw_xdp(struct xdp_md *xdp)
 	VERIFY_TRUE_OR_RETURN(ctx.cfg && ctx.g_stats, XFW_CTX_PASS);
 
 	CHAIN_PASS_ALL(create_metadata, &ctx, xdp);
+
+	l2_hdr_miss = bpf_map_lookup_elem(&MAP_L2_HDR_MISS_REF, &key);
+	if (l2_hdr_miss && *l2_hdr_miss) {
+		*l2_hdr_miss = 0;
+		XFW_CTX_DBG("l2 header is missed in current packet\n");
+		/* TODO: process such packets. */
+		return XFW_CTX_PASS;
+	}
 
 	r = xfw_xdp_filter(&ctx);
 
