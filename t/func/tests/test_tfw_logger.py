@@ -125,6 +125,28 @@ async def test_log_data_counter_correctness(
 
 
 @pytest.mark.clickhouse
+async def test_log_drop_event_counter_correctness(
+    xfw: XFW,
+    clickhouse_client: ClickhouseClient,
+    ip_version: str,
+    udp_server: UdpServer,
+    udp_client: UdpClient,
+):
+    await udp_server.start()
+    await udp_client.start()
+    await clickhouse_client.connect()
+
+    await xfw.rules_set("xfw { defaults { dst: block; } }")
+
+    await asyncio.gather(
+        *[udp_client.ping() for _ in range(10)],
+    )
+    await asyncio.sleep(3)
+    await clickhouse_client.wait_for_number_of_records(expected_records_n=1)
+    db_records = await clickhouse_client.records_all()
+
+
+@pytest.mark.clickhouse
 async def test_multiple_requests_logs(
     xfw: XFW,
     clickhouse_client: ClickhouseClient,

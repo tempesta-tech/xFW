@@ -590,46 +590,6 @@ async def test_egress_preload_stats(
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
 
 
-@pytest.mark.parametrize(
-    "counters",
-    [
-        pytest.param(
-            dict(
-                xfw_not_reported_incident_packets=[10, 20],
-                xfw_not_reported_incident_bytes=[300, 3000],
-            ),
-            id="not-reported-clickhouse-records",
-            marks=pytest.mark.skip("ISSUE: 332"),
-        ),
-    ],
-)
-async def test_clickhouse_reports_stats(
-    counters: dict[str, int],
-    xfw: XFW,
-    udp_ip4_client,
-    udp_ip4_server,
-):
-    stats_counters = ["xfw_not_reported_incident_packets", "xfw_not_reported_incident_bytes"]
-    await udp_ip4_server.start()
-    await udp_ip4_client.start()
-
-    await xfw.rules_set("xfw { defaults { dst: block; } }")
-
-    async with xfw.metrics_diff(stats_counters) as diff:
-        await asyncio.gather(
-            *[udp_ip4_client.ping() for _ in range(10)],
-        )
-        await asyncio.sleep(3)
-
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=stats_counters,
-        all_metrics=diff,
-        diff_metrics=counters,
-    )
-
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
-
-
 @asynccontextmanager
 async def check_clean_counters(
     stats_counters: list[str],
