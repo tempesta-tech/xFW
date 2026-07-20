@@ -13,6 +13,13 @@ from framework.cmp import check_connection
 from framework.xfw import XFW
 
 
+def __check_records(db_records, packet_size):
+    for record in db_records:
+        assert record.reason == 64
+        assert record.bytes == record.packets * packet_size
+        assert record.dropped_events == 0
+
+
 @pytest.mark.clickhouse
 async def test_table_created_after_xfw_startup(xfw: XFW, clickhouse_client: ClickhouseClient):
     await xfw.stop()
@@ -116,12 +123,9 @@ async def test_log_data_counter_correctness(
 
     await clickhouse_client.wait_for_number_of_records(expected_records_n=1)
     db_records = await clickhouse_client.records_all()
-
-    packet_size = 52 if ip_version == "ip4" else 72  # packet size for UDP
-    for record in db_records:
-        assert record.reason == 64
-        assert record.bytes == record.packets * packet_size
-        assert record.dropped_events == 0
+    # 42/62 bytes of Ethernet+IP+UDP headers and 10 bytes of UDP payload
+    packet_size = 52 if ip_version == "ip4" else 72
+    __check_records(db_records, packet_size)
 
 
 @pytest.mark.clickhouse
@@ -144,6 +148,25 @@ async def test_log_drop_event_counter_correctness(
     await asyncio.sleep(3)
     await clickhouse_client.wait_for_number_of_records(expected_records_n=1)
     db_records = await clickhouse_client.records_all()
+    """
+    42/62 bytes of Ethernet+IP+UDP headers and 5 bytes of UDP payload
+    (UdpClient sends 'ping\n' as a payload).
+    """
+    packet_size = 47 if ip_version == "ip4" else 67  # packet size for UDP
+    __check_records(db_records, packet_size)
+
+    """
+    'drop_events' that occur after a record is written to ClickHouse
+    are reported in the next record. Repeat the test to verify the
+    'drop_events' count.
+    """
+    await asyncio.gather(
+        *[udp_client.ping() for _ in range(10)],
+    )
+    await asyncio.sleep(3)
+    await clickhouse_client.wait_for_number_of_records(expected_records_n=2)
+    db_records = await clickhouse_client.records_all()
+    __check_records(db_records, packet_size)
 
 
 @pytest.mark.clickhouse
