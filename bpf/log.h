@@ -13,9 +13,9 @@
  * the debug messages.
  * The header should be included first to not to confuse the variable definition.
  */
-#ifndef BANNER
+#pragma push_macro("BANNER")
+#undef BANNER
 #define BANNER "main"
-#endif
 
 #ifdef XFW_DEBUG
 
@@ -53,3 +53,6 @@ do {									\
  */
 #define XFW_ASSERT(v)							\
 	VERIFY_TRUE_OR_RETURN((v), XFW_MAKE_CTX_PASS(ctx, XFW_ASSERT_FAILED))
+
+#undef BANNER
+#pragma pop_macro("BANNER")
