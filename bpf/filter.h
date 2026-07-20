@@ -13,9 +13,9 @@
 #include "../bpf_uapi/ip_helpers.h"
 
 /* Print debug messages of the context of a subsustem using the routines. */
-#ifndef BANNER
+#pragma push_macro("BANNER")
+#undef BANNER
 #define BANNER "filter"
-#endif
 #include "../bpf_uapi/proto_keys.h"
 
 #include "log.h"
@@ -266,3 +266,6 @@ ipv6_populate_lpm_key(const struct in6_addr *addr, XfwIpv6LpmKey *key)
 	key->prefixlen = 128;
 	xfw_ipv6_addr_cpy(key->addr, addr);
 }
+
+#undef BANNER
+#pragma pop_macro("BANNER")
