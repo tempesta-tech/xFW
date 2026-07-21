@@ -14,15 +14,23 @@ struct {
     __uint(max_entries, 1 << 24);
 } events SEC(".maps");
 
-
+struct {
+        __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+        __type(key, __u32);
+        __type(value, __u8);
+        __uint(pinning, LIBBPF_PIN_BY_NAME);
+        __uint(max_entries, 1);
+} xdp_should_skip SEC(".maps");
 
 SEC("kprobe/bpf_prog_run_generic_xdp")
 int BPF_KPROBE(trace_xdp, struct sk_buff *skb)
 {
     struct event *e;
     struct net_device *dev;
-    void *data;
-
+    void *head;
+    u16 mac_header;
+    __u32 key = 0;
+    __u8 *skip;
 
     if (!skb)
         return 0;
@@ -90,6 +98,13 @@ int BPF_KPROBE(trace_xdp, struct sk_buff *skb)
         BPF_CORE_READ(skb, mac_len);
 
 
+    skip = bpf_map_lookup_elem(&xdp_should_skip, &key);
+    if (skip && e->mac_len == 0) {
+        bpf_printk("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC\n");
+        *skip = 1;
+    }
+
+    
     e->mac_header =
         BPF_CORE_READ(skb, mac_header);
 
@@ -111,16 +126,16 @@ int BPF_KPROBE(trace_xdp, struct sk_buff *skb)
 
 
 
-    data = BPF_CORE_READ(skb, data);
+    head = BPF_CORE_READ(skb, head);
+    mac_header = BPF_CORE_READ(skb, mac_header);
 
-    if (data) {
+    if (head) {
         bpf_probe_read_kernel(
             e->bytes,
             sizeof(e->bytes),
-            data
+            (char *)head + mac_header
         );
     }
-
 
 
     bpf_ringbuf_submit(e, 0);

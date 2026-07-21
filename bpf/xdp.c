@@ -683,6 +683,14 @@ pass:
 	return XFW_CTX_PASS;
 }
 
+struct {
+        __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+        __type(key, __u32);
+        __type(value, __u8);
+        __uint(pinning, LIBBPF_PIN_BY_NAME);
+        __uint(max_entries, 1);
+} xdp_should_skip SEC(".maps");
+
 /**
  * Program is attached to XDP hook on NIC facing external network.
  */
@@ -691,6 +699,8 @@ int
 xfw_xdp(struct xdp_md *xdp)
 {
 	int r;
+	__u32 key = 0;
+	__u8 *skip;
 
 	XfwGlobalCtx ctx;
 	xfw_ctx_init(&ctx, xdp);
@@ -698,6 +708,15 @@ xfw_xdp(struct xdp_md *xdp)
 	VERIFY_TRUE_OR_RETURN(ctx.cfg && ctx.g_stats, XFW_CTX_PASS);
 
 	CHAIN_PASS_ALL(create_metadata, &ctx, xdp);
+
+#if 0
+	skip = bpf_map_lookup_elem(&xdp_should_skip, &key);
+	if (skip && *skip) {
+	    bpf_printk("Packet skipped QQQQQQQQQQQQQQQQQQQQQQQ\n");
+	    *skip = 0;
+	    return XFW_CTX_PASS;
+	}
+#endif
 
 	r = xfw_xdp_filter(&ctx);
 
