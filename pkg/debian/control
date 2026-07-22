@@ -1,0 +1,23 @@
+Source: tempesta-xfw
+Section: utils
+Priority: optional
+Maintainer: Tempesta Technologies <info@tempesta-tech.com>
+Build-Depends: debhelper-compat (= 13)
+
+Package: tempesta-xfw
+Architecture: amd64
+Depends:
+    linux-image-generic (>= 6.8~),
+    libboost-program-options-dev,
+    flatbuffers-compiler,
+    libflatbuffers-dev,
+    libprotobuf-dev,
+    libgrpc++-dev,
+    linux-tools-common ,
+    libspdlog-dev,
+    libmaxminddb-dev,
+    libbpf-dev,
+    libbpf-tools,
+    libgtest-dev,
+    xdp-tools
+Description: eBPF based comprehensive DDoS and bot protection network filter.

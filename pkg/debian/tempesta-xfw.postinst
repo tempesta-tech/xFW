@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -e
+
+if [ "$1" = "configure" ]; then
+	mkdir -p /usr/bin
+	ln -sf /opt/tempesta/bin/xfwctl       /usr/bin/xfwctl
+	ln -sf /opt/tempesta/bin/tfw          /usr/bin/tfw
+	ln -sf /opt/tempesta/sbin/tfw_mgr     /usr/sbin/tfw_mgr
+	ln -sf /opt/tempesta/sbin/tfw_logger  /usr/sbin/tfw_logger
+fi
+
+exit 0

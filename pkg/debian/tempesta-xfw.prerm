@@ -1,0 +1,9 @@
+#!/bin/sh
+
+if [ "$1" = "remove" ] || [ "$1" = "upgrade" ]; then
+	rm -f /usr/bin/xfwctl
+	rm -f /usr/bin/tfw
+	rm -f /usr/sbin/tfw_mgr
+	rm -f /usr/sbin/tfw_logger
+fi
+

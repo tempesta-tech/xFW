@@ -1,0 +1,21 @@
+#!/usr/bin/make -f
+
+PROJECT_ROOT := $(CURDIR)/..
+BUILD_DIR := $(PROJECT_ROOT)/BUILD
+
+DEBIAN_ROOT := $(CURDIR)
+PACKAGE_DIR := $(DEBIAN_ROOT)/debian/tempesta-xfw
+PACKAGE_OPT_DIR := $(PACKAGE_DIR)/opt/tempesta
+PACKAGE_BIN_DIR := $(PACKAGE_OPT_DIR)/bin
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(MAKE) -C $(PROJECT_ROOT) clean
+	$(MAKE) -C $(PROJECT_ROOT) -j$(nproc)
+
+override_dh_auto_install:
+	$(MAKE) -C $(PROJECT_ROOT) install DESTDIR=$(PACKAGE_DIR)
+	cp $(PROJECT_ROOT)/xfwctl $(PACKAGE_BIN_DIR)/xfwctl
+	cp -R $(PROJECT_ROOT)/examples $(PACKAGE_OPT_DIR)/
