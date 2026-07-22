@@ -29,7 +29,7 @@ build: $(OBJ_DIR)/utest
 
 # Build the test binary and link with GoogleTest
 $(OBJ_DIR)/utest: $(OBJECTS) $(GTEST_OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) -lgrpc++ -ltfwcli -lproto $(GTEST_LIBS) -Wl,-rpath,'$$ORIGIN/../../../BUILD/lib'
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) -lgrpc++ -ltfwcli -lxxhash -lproto $(GTEST_LIBS) -Wl,-rpath,'$$ORIGIN/../../../BUILD/lib'
 
 # Build object files from source files
 $(OBJ_DIR)/%.o: %.cc
