@@ -1,0 +1,6 @@
+{
+    "devices": "lo",
+    "devices-mode": "skb",
+    "verbose": false,
+    "daemon-args": "--listen 127.0.0.1"
+}

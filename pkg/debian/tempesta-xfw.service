@@ -1,0 +1,16 @@
+[Unit]
+Description=Intelligent and Extremely Fast Network Filter
+DefaultDependencies=false
+After=network.target
+
+[Service]
+User=root
+Group=root
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/xfwctl --start
+ExecStopPost=/usr/bin/xfwctl --stop
+ExecReload=/usr/bin/xfwctl --restart
+
+[Install]
+WantedBy=multi-user.target

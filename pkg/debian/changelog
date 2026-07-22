@@ -1,0 +1,26 @@
+tempesta-xfw (1.1.0~pre1) stable; urgency=medium
+
+  * Start the xFW if the logger was not started
+  * Fixed IPv4 to IPv6 mapping
+  * Allow tcp_auth_filter for gate mode
+  * Reworked TCP options parsing
+  * Fixed duplicated BPF maps
+  * Added ip_proto filter support with GRE protocol
+  * Updated xFW stats
+  * Numerous technical improvements, cleanups and speedups
+
+ -- Tempesta Technologies, Inc. <info@tempesta-tech.com>  Wed, 22 Jul 2026 13:00:00 +0000
+
+tempesta-xfw (1.0.0) stable; urgency=medium
+
+  * Filter anomalous L2 IP4/IP6/ARP traffic
+  * Filter anomalous L3 TCP/UDP/ICMP/ICMPv6 traffic
+  * Intelligent protection for ingress/egress DNS traffic
+  * Syncookie filter to protect against TCP attacks
+  * tcp_auth_filter for unknown/unauthenticated traffic
+  * tcp_flags filter to rate-limit packets with special flags
+  * Rate limiting for incoming packets and bytes
+  * Evaluating mode for testing purposes
+  * Support for ClickHouse as a data logging backend
+
+ -- Tempesta Technologies, Inc. <info@tempesta-tech.com>  Tue, 13 Jan 2026 15:00:00 +0000
