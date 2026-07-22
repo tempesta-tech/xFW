@@ -43,10 +43,18 @@ typedef struct XfwHdrCursor {
  * Global processing context.
  * This is required as eBPF has a limit to 5 function arguments.
  *
- * @ipver	- ETH_P_IP or ETH_P_IPV6
- * @ctx		- xdp_md or __sk_buff, depending on hook
- * @ts_jiff	- current jiffies timestamp shared by all filters
- * @l4_proto	- XFW_L4_PROTO_UDP or XFW_L4_PROTO_TCP if != 0
+ * The context is intentionally kept on the stack and passed through the call
+ * chain to avoid unnecessary accesses to BPF maps. In some cases, verifier
+ * limitations (for example, stack depth restrictions, tail calls, or program
+ * splitting) may require moving part of the processing state (scalar values)
+ * into a shared BPF map. This approach should be considered as a possible
+ * optimization and compatibility strategy if verifier constraints become a
+ * limiting factor (see doc/ebpf_verifier.md for more detailes).
+ *
+ * @ipver      - ETH_P_IP or ETH_P_IPV6
+ * @ctx        - xdp_md or __sk_buff, depending on hook
+ * @ts_jiff    - current jiffies timestamp shared by all filters
+ * @l4_proto   - XFW_L4_PROTO_UDP or XFW_L4_PROTO_TCP if != 0
  */
 typedef struct XfwGlobalCtx {
 	XfwFilterCfg	*cfg;
