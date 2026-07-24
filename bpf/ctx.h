@@ -62,13 +62,9 @@ typedef struct XfwGlobalCtx {
 	XfwHdrCursor	hdr_cur;
 	uint32_t	pkt_sz;
 	uint16_t	ipver;
+	uint8_t		ip_off;
 	uint8_t		l4_proto;
 	XfwMd		*ctx;
-	union {
-		void		*iph;
-		struct iphdr	*iph4;
-		struct ipv6hdr	*iph6;
-	};
 	union {
 		struct tcphdr	*th;
 		struct udphdr	*uh;

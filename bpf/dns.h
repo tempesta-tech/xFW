@@ -78,13 +78,13 @@ typedef struct XfwDnsRR {
  * We fill it to pass some info to global functions or tail calls.
  *
  * @cur_pos	- Current position of cursor (offset)
- * @ip_pos	- Offset of ip hdr in packet
+ * @ip_off	- Offset of ip hdr in packet
  * @is_ipv4	- 1 if L3 proto is IPv4, else 0 (in dns filter only IPv6)
  * @unused	- Currently unused field to match size of metadata
  */
 typedef struct {
 	uint16_t	cur_pos;
-	uint16_t	ip_pos;
+	uint16_t	ip_off;
 	uint16_t	is_ipv4;
 	uint16_t	unused;
 } __attribute__((packed)) XfwPacketMetadata;
@@ -358,9 +358,9 @@ init_dns_ctx(XfwDnsCtx *dns_ctx, XfwMd *ctx, XfwPerCpuStats *global_stats)
 		return -1; /* internal error */
 	dns_ctx->hdr_cur.pos += md->cur_pos;
 
-	if (unlikely(md->ip_pos > L3_L4_HDRS_MAXLEN))
+	if (unlikely(md->ip_off > L3_L4_HDRS_MAXLEN))
 		return -1;
-	void *ip_hdr = (void *)(long)ctx->data + md->ip_pos;
+	void *ip_hdr = (void *)(long)ctx->data + md->ip_off;
 	if (md->is_ipv4) {
 		struct iphdr *ipv4 = ip_hdr;
 		if (unlikely((void*)(ipv4 + 1) > dns_ctx->hdr_cur.end))
@@ -420,18 +420,17 @@ ingress_dns_filter(XfwGlobalCtx *ctx)
 		return XFW_CTX_CONTINUE;
 
 	XfwMd* xdp_ctx = ctx->ctx;
-
 	uint16_t cur_pos = ctx->hdr_cur.pos - XFW_CTX_DATA_BGN(ctx->ctx);
-	uint16_t is_ipv4, ip_pos;
-	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
+	uint16_t is_ipv4;
+
+	switch (ctx->ipver) {
+	case bpf_htons(ETH_P_IP):
 		is_ipv4 = 1;
-		ip_pos = (void*)ctx->iph4 - XFW_CTX_DATA_BGN(ctx->ctx);
-	}
-	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
+		break;
+	case bpf_htons(ETH_P_IPV6):
 		is_ipv4 = 0;
-		ip_pos = (void*)ctx->iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
-	}
-	else {
+		break;
+	default:
 		return XFW_CTX_CONTINUE;
 	}
 
@@ -442,7 +441,7 @@ ingress_dns_filter(XfwGlobalCtx *ctx)
 	}
 
 	md->cur_pos = cur_pos;
-	md->ip_pos = ip_pos;
+	md->ip_off = ctx->ip_off;
 	md->is_ipv4 = is_ipv4;
 
 	if (unlikely(!ctx->g_stats)) {

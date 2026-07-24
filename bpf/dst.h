@@ -36,8 +36,12 @@ populate_dst_info(const XfwGlobalCtx *ctx, XfwDstKey *key, __u8 *default_idx)
 {
 	key->proto = (uint8_t)ctx->l4_proto;
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
+		struct iphdr *iph4 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr);
+		VERIFY_TRUE_OR_RETURN((void *)(iph4 + 1) <= ctx->hdr_cur.end,
+				      false);
 		key->ipver = XFW_IP_VER_4;
-		xfw_assign_ip4_addr(ctx->iph4->daddr, key->addr.addr32);
+		xfw_assign_ip4_addr(iph4->daddr, key->addr.addr32);
 		if (ctx->l4_proto == XFW_L4_PROTO_TCP) {
 			key->port = ctx->th->dest;
 			*default_idx = XFW_DEFAULT_DST_TCP_IP4;
@@ -51,10 +55,12 @@ populate_dst_info(const XfwGlobalCtx *ctx, XfwDstKey *key, __u8 *default_idx)
 		return false;
 	}
 	if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
-		VERIFY_TRUE_OR_RETURN((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end,
+		struct ipv6hdr *iph6 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
+		VERIFY_TRUE_OR_RETURN((void *)(iph6 + 1) <= ctx->hdr_cur.end,
 				      false);
 		key->ipver = XFW_IP_VER_6;
-		key->addr.in6 = ctx->iph6->daddr;
+		key->addr.in6 = iph6->daddr;
 		if (ctx->l4_proto == XFW_L4_PROTO_TCP) {
 			key->port = ctx->th->dest;
 			*default_idx = XFW_DEFAULT_DST_TCP_IP6;
