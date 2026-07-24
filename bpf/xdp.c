@@ -448,11 +448,11 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
  * connection trusted.
  */
 static __always_inline int
-tcp_rcv_syn_filter(XfwGlobalCtx *ctx)
+tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
 	/* If a SYN cookie was generated, processing stops immediately. */
 	if (ctx->cfg->rules.syncookie.enabled)
-		CHAIN(tcp_syncookies_syn_filter, ctx);
+		CHAIN(tcp_syncookies_syn_filter, ctx, th);
 
 	CHAIN(syn_rlimit, ctx);
 
@@ -473,7 +473,8 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx)
  * 4. If valid, trust the connection on ingress side.
  */
 static __always_inline int
-tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
+tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th,
+		   const XfwSockAddr *addr)
 {
 	/* Fast path - no SYN cookies. */
 	if (!ctx->cfg->rules.syncookie.enabled)
@@ -491,7 +492,7 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 		return XFW_CTX_CONTINUE;
 
 	/* Perform SYN-cookie-specific ACK validation */
-	CHAIN(tcp_syncookies_ack_filter, ctx);
+	CHAIN(tcp_syncookies_ack_filter, ctx, th);
 
 	/*
 	 * This is the scenario where a SYN cookie was issued and successfully
@@ -541,10 +542,9 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
  * xdp.c for upstream connections.
  */
 static __always_inline int
-tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
+tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
+		 const XfwSockAddr *addr)
 {
-	const struct tcphdr *th = ctx->th;
-
 	/* FIN: track connection for closing. */
 	if (th->fin) {
 		count_traffic_stat(ctx, XFW_FIN);
@@ -575,13 +575,13 @@ tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 	/* SYN-only. Authenticate the connection if all checks pass. */
 	if (th->syn) {
 		count_traffic_stat(ctx, XFW_SYN);
-		return tcp_rcv_syn_filter(ctx);
+		return tcp_rcv_syn_filter(ctx, th);
 	}
 
 	/* ACK-only: validate SYN-ACK cookies or authenticate normally.*/
 	if (th->ack) {
 		count_traffic_stat(ctx, XFW_ACK);
-		return tcp_rcv_ack_filter(ctx, addr);
+		return tcp_rcv_ack_filter(ctx, th, addr);
 	}
 
 	/* Default: authenticate any remaining TCP packets. */
@@ -600,30 +600,37 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 
 	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
+		struct tcphdr *th;
+
 		count_traffic_stat(ctx, XFW_TCP_TOTAL_INGRESS);
-		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
+		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &th) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_BADHDR_INGRESS);
+		ctx->l4_off = (uint16_t)((void *)th -
+			XFW_CTX_DATA_BGN(ctx->ctx));
 
-		CHAIN(tcp_anomaly_filter, ctx);
-
-		CHAIN(src_filter, ctx, ctx->th->source, src_ip_key);
+		CHAIN(tcp_anomaly_filter, ctx, th);
+		CHAIN(src_filter, ctx, th->source, src_ip_key);
 		
 		const XfwSockAddr addr = {
 			.addr = ctx->ilog_addr,
-			.port = ctx->th->source
+			.port = th->source
 		};
-		return tcp_flags_filter(ctx, &addr);
+		return tcp_flags_filter(ctx, th, &addr);
 	}
 	case XFW_L4_PROTO_UDP: {
-		count_traffic_stat(ctx, XFW_UDP_TOTAL_INGRESS);
-		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
-			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_BADHDR_INGRESS);
+		struct udphdr *uh;
 
-		if (ctx->uh->source == 0 || ctx->uh->dest == 0)
+		count_traffic_stat(ctx, XFW_UDP_TOTAL_INGRESS);
+		if (unlikely(parse_udphdr(&ctx->hdr_cur, &uh) <= 0))
+			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_BADHDR_INGRESS);
+		ctx->l4_off = (uint16_t)((void *)uh -
+			XFW_CTX_DATA_BGN(ctx->ctx));
+
+		if (uh->source == 0 || uh->dest == 0)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_ANOM_ZERO_PORT);
 
-		CHAIN(ingress_dns_filter, ctx);
-		return src_filter(ctx, ctx->uh->source, src_ip_key);
+		CHAIN(ingress_dns_filter, ctx, uh);
+		return src_filter(ctx, uh->source, src_ip_key);
 	};
 	case XFW_L4_PROTO_ICMP:
 	case XFW_L4_PROTO_ICMPV6: {

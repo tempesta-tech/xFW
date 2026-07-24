@@ -16,13 +16,14 @@
 #include "parsing_helpers.h"
 
 static __always_inline int
-tcp_anomaly_filter(const XfwGlobalCtx *ctx)
+tcp_anomaly_filter(const XfwGlobalCtx *ctx, struct tcphdr *th)
 {
 	if (!ctx->cfg->rules.tcp_anomaly.enabled)
 		return XFW_CTX_CONTINUE;
 
 	/* Take correct 8-bit TCP flags from words[3] */
-	const uint8_t tcp_flags = (uint8_t)((tcp_flag_word(ctx->th) >> 8) & 0xFF);
+	const uint8_t tcp_flags =
+		(uint8_t)((tcp_flag_word(th) >> 8) & 0xFF);
 	bool r = bpf_bitset64_test(ctx->cfg->rules.tcp_anomaly.bad_flags.data,
 				   tcp_flags);
 	if (unlikely(r))
@@ -39,22 +40,22 @@ tcp_anomaly_filter(const XfwGlobalCtx *ctx)
 	 *    numbers include values at the edges of each range, e.g., 0, 1023,
 	 *    1024, etc."
 	 */
-	if (unlikely(ctx->th->source == 0 || ctx->th->dest == 0))
+	if (unlikely(th->source == 0 || th->dest == 0))
 		return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_ANOM_ZERO_PORT);
 
-	if (!ctx->th->syn)
+	if (!th->syn)
 		return XFW_CTX_CONTINUE;
 
 	if (unlikely(ctx->cfg->rules.tcp_anomaly.syn_without_opt_enabled
-		     && ctx->th->doff <= 5))
+		     && th->doff <= 5))
 		return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_ANOM_SYN_NO_OPTIONS);
 
 	if (unlikely(ctx->cfg->rules.tcp_anomaly.syn_with_payload_enabled
-		     && (void *)ctx->th + ctx->th->doff * 4 < ctx->hdr_cur.end))
+		     && (void *)th + th->doff * 4 < ctx->hdr_cur.end))
 		return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_ANOM_SYN_HAS_DATA);
 
 	if (unlikely(ctx->cfg->rules.tcp_anomaly.syn_seqno_enabled
-		     && ctx->th->seq == ctx->cfg->rules.tcp_anomaly.syn_seqno_value))
+		     && th->seq == ctx->cfg->rules.tcp_anomaly.syn_seqno_value))
 		return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_ANOM_SYN_BAD_SEQ);
 
 	return XFW_CTX_CONTINUE;

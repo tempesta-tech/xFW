@@ -410,13 +410,13 @@ ingress_dns_filter_global(XfwMd *ctx, XfwPerCpuStats *global_stats)
 }
 
 static __always_inline int
-ingress_dns_filter(XfwGlobalCtx *ctx)
+ingress_dns_filter(XfwGlobalCtx *ctx, struct udphdr *uh)
 {
 	if (unlikely(!ctx->cfg->rules.dns.enabled))
 		return XFW_CTX_CONTINUE;
 
-	if (ctx->uh->dest != bpf_htons(DNS_PORT) &&
-	    ctx->uh->source != bpf_htons(DNS_PORT))
+	if (uh->dest != bpf_htons(DNS_PORT) &&
+	    uh->source != bpf_htons(DNS_PORT))
 		return XFW_CTX_CONTINUE;
 
 	XfwMd* xdp_ctx = ctx->ctx;
@@ -453,12 +453,13 @@ ingress_dns_filter(XfwGlobalCtx *ctx)
 }
 
 static __always_inline void
-egress_dns_filter(XfwGlobalCtx *ctx)
+egress_dns_filter(XfwGlobalCtx *ctx, struct udphdr *uh)
 {
 	if (unlikely(!ctx->cfg->rules.dns.enabled))
 		return;
 
-	if (ctx->uh->dest != bpf_htons(DNS_PORT) && ctx->uh->source != bpf_htons(DNS_PORT))
+	if (uh->dest != bpf_htons(DNS_PORT)
+	    && uh->source != bpf_htons(DNS_PORT))
 		return;
 
 	XfwDnsHdr *dh = parse_dnshdr(&ctx->hdr_cur);
@@ -470,7 +471,8 @@ egress_dns_filter(XfwGlobalCtx *ctx)
 
 	if (qr == DNS_QUERY) { /* Is query */
 		uint8_t zero = 0;
-		bpf_map_update_elem(&MAP_DNS_EGR_FD_REF, &dh->id, &zero, BPF_NOEXIST);
+		bpf_map_update_elem(&MAP_DNS_EGR_FD_REF, &dh->id,
+				    &zero, BPF_NOEXIST);
 		return;
 	}
 
