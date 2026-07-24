@@ -80,6 +80,29 @@ typedef struct {
 
 #define VLAN_VID_MASK 0x0fff /* VLAN Identifier */
 
+/*
+ * Maximum supported offset of an L4 header from the beginning of
+ * the Ethernet frame.
+ *
+ * VLAN tags add 4 bytes each. IPv6 extension headers with an 8-bit
+ * Hdr Ext Len field may occupy up to 2048 bytes:
+ *
+ *     (U8_MAX + 1) * 8
+ *
+ * See RFC 8200, Sections 4.3, 4.4 and 4.6.
+ *
+ * The bound is derived from the parser limits VLAN_MAX_DEPTH and
+ * IPV6_EXT_MAX_CHAIN and is also used to constrain packet pointer
+ * arithmetic for the BPF verifier.
+ */
+#define IPV6_EXT_HDR_MAXLEN	((UINT8_MAX + 1) * 8)
+
+#define L4_OFF_MAX						\
+	(sizeof(struct ethhdr)					\
+	 + VLAN_MAX_DEPTH * sizeof(struct vlan_hdr)		\
+	 + sizeof(struct ipv6hdr)				\
+	 + IPV6_EXT_MAX_CHAIN * IPV6_EXT_HDR_MAXLEN)
+
 #define CUR_CHECK(cur, len, bad_retval)					\
 do {									\
 	if (unlikely((cur)->pos + (len) > (cur)->end))			\

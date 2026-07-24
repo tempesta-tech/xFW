@@ -13,6 +13,10 @@
 
 #include "../bpf_uapi/static_assert.h"
 
+#ifndef UINT8_MAX
+#define	UINT8_MAX		255U
+#endif
+
 #ifndef UINT64_MAX
 #define UINT64_MAX		18446744073709551615ULL
 #endif

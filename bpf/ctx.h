@@ -25,6 +25,50 @@
 #define XFW_CTX_DATA_END(ctx)		((void *)(long)XFW_CTX_MD(ctx)->data_end)
 
 /*
+ * Read the packet data pointer directly from the BPF context.
+ *
+ * Normally this could be expressed as:
+ *
+ *     (void *)(long)XFW_CTX_MD(ctx)->data
+ *
+ * However, when the resulting packet pointer participates in further
+ * pointer arithmetic, Clang/LLVM may reassociate the expression and move
+ * that arithmetic to the context pointer before loading the `data` field.
+ * The generated BPF can then effectively look like:
+ *
+ *     ctx += offset;
+ *     data = ctx->data;
+ *
+ * instead of:
+ *
+ *     data = ctx->data;
+ *     data += offset;
+ *
+ * The BPF verifier does not allow dereferencing such a modified context
+ * pointer and rejects the program with:
+ *
+ *     dereference of modified ctx ptr ... disallowed
+ *
+ * Use inline assembly to force a direct load of `data` from the original
+ * context and prevent LLVM from reassociating the access.
+ */
+static __always_inline void *
+xfw_ctx_data_bgn(const XfwMd *ctx)
+{
+	void *data;
+
+	asm volatile(
+		"%[res] = *(u32 *)(%[base] + %[offset])"
+		: [res] "=r"(data)
+		: [base] "r"(ctx),
+		  [offset] "i"(offsetof(XfwMd, data)),
+		  "m"(*ctx)
+	);
+
+	return data;
+}
+
+/*
  * Return code meaning that we should continue the packet processing through
  * all following finters.
  * Should be big enough so as not to match the XDP_* or TC_ACT_* values.
@@ -62,13 +106,10 @@ typedef struct XfwGlobalCtx {
 	XfwHdrCursor	hdr_cur;
 	uint32_t	pkt_sz;
 	uint16_t	ipver;
+	uint16_t	l4_off;
 	uint8_t		ip_off;
 	uint8_t		l4_proto;
 	XfwMd		*ctx;
-	union {
-		struct tcphdr	*th;
-		struct udphdr	*uh;
-	};
 	uint64_t	ts_jiff;
 	XfwIp		ilog_addr;
 } XfwGlobalCtx;
