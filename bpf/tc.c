@@ -42,28 +42,34 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
+		struct iphdr *iph4;
+
 		count_traffic_stat(ctx, XFW_IP4_TOTAL_EGRESS);
-		int proto = parse_iphdr(&ctx->hdr_cur, &ctx->iph4);
+		int proto = parse_iphdr(&ctx->hdr_cur, &iph4);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP4_BADHDR_EGRESS);
-
+		ctx->ip_off = (uint8_t)((void *)iph4 -
+			XFW_CTX_DATA_BGN(ctx->ctx));
 		ctx->l4_proto = (u8)proto;
-		xfw_ipv4_to_ipv6_mapped(ctx->iph4->daddr, ctx->ilog_addr.addr32);
-		ipv4_populate_lpm_key(ctx->iph4->daddr, &prot_net_key->addr4);
+		xfw_ipv4_to_ipv6_mapped(iph4->daddr, ctx->ilog_addr.addr32);
+		ipv4_populate_lpm_key(iph4->daddr, &prot_net_key->addr4);
 		*prot_net_map = SELECT_SHADOW_MAP(MAP_NET_IP4_BASENAME,
 						   ctx->cfg->amap_prot_net);
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
 	}
 	case bpf_ntohs(ETH_P_IPV6): {
+		struct ipv6hdr	*iph6;
+
 		count_traffic_stat(ctx, XFW_IP6_TOTAL_EGRESS);
-		int proto = parse_ip6hdr(&ctx->hdr_cur, &ctx->iph6);
+		int proto = parse_ip6hdr(&ctx->hdr_cur, &iph6);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP6_BADHDR_EGRESS);
-
+		ctx->ip_off = (uint8_t)((void *)iph6 -
+			XFW_CTX_DATA_BGN(ctx->ctx));
 		ctx->l4_proto = (u8)proto;
-		ctx->ilog_addr.in6 = ctx->iph6->daddr;
-		ipv6_populate_lpm_key(&ctx->iph6->daddr, &prot_net_key->addr6);
+		ctx->ilog_addr.in6 = iph6->daddr;
+		ipv6_populate_lpm_key(&iph6->daddr, &prot_net_key->addr6);
 		*prot_net_map = SELECT_SHADOW_MAP(MAP_NET_IP6_BASENAME,
 						   ctx->cfg->amap_prot_net);
 		/* It is a regular case, don't need to add any statistic */
