@@ -90,19 +90,28 @@ out_process_l4(XfwGlobalCtx *ctx)
 {
 	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
+		struct tcphdr *th;
+
 		count_traffic_stat(ctx, XFW_TCP_TOTAL_EGRESS);
-		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
+		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &th) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_TCP_BADHDR_EGRESS);
+
+		ctx->l4_off = (uint16_t)((void *)th -
+			xfw_ctx_data_bgn(ctx->ctx));
 
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
 	}
 	case XFW_L4_PROTO_UDP: {
+		struct udphdr *uh;
+
 		count_traffic_stat(ctx, XFW_UDP_TOTAL_EGRESS);
-		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
+		if (unlikely(parse_udphdr(&ctx->hdr_cur, &uh) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_UDP_BADHDR_EGRESS);
 
-		egress_dns_filter(ctx);
+		ctx->l4_off = (uint16_t)((void *)uh -
+			xfw_ctx_data_bgn(ctx->ctx));
+		egress_dns_filter(ctx, uh);
 
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
