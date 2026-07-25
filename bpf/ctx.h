@@ -64,7 +64,6 @@ typedef struct XfwGlobalCtx {
 	uint16_t	ipver;
 	uint8_t		l4_proto;
 	XfwMd		*ctx;
-	struct ethhdr	*eth;
 	union {
 		void		*iph;
 		struct iphdr	*iph4;
@@ -77,6 +76,9 @@ typedef struct XfwGlobalCtx {
 	uint64_t	ts_jiff;
 	XfwIp		ilog_addr;
 } XfwGlobalCtx;
+
+#define XFW_PKT_PTR(ctx, off, type) \
+	((type *)((void *)XFW_CTX_DATA_BGN((ctx)->ctx) + (off)))
 
 /* Read-only for eBPF. */
 struct {

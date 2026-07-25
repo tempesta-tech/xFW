@@ -522,9 +522,12 @@ tcp_syncookies_make_synack(XfwGlobalCtx *ctx, uint32_t cookie, uint16_t mss,
 	 */
 	SWAP(ctx->th->source, ctx->th->dest);
 
-	struct ethhdr tmp_eth = *ctx->eth;
-	memcpy(ctx->eth->h_dest, tmp_eth.h_source, sizeof(tmp_eth.h_source));
-	memcpy(ctx->eth->h_source, tmp_eth.h_dest, sizeof(tmp_eth.h_dest));
+	struct ethhdr *eth = XFW_PKT_PTR(ctx, 0, struct ethhdr);
+	VERIFY_TRUE_OR_RETURN((void *)(eth + 1) <= d_end, -EFBIG);
+
+	struct ethhdr tmp_eth = *eth;
+	memcpy(eth->h_dest, tmp_eth.h_source, sizeof(tmp_eth.h_source));
+	memcpy(eth->h_source, tmp_eth.h_dest, sizeof(tmp_eth.h_dest));
 
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		uint64_t ip_csum = csum_unfold(ctx->iph4->check);

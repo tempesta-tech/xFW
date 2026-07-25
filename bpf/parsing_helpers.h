@@ -122,7 +122,7 @@ proto_is_vlan(uint16_t pn)
 
 /* Parse Ethernet and advance past supported VLAN tags; *ethhdr remains L2. */
 static __always_inline int
-parse_ethhdr(XfwHdrCursor *cur, struct ethhdr **ethhdr)
+parse_ethhdr(XfwHdrCursor *cur)
 {
 	struct ethhdr *eth = cur->pos;
 	int hdrsize = sizeof(*eth);
@@ -133,7 +133,6 @@ parse_ethhdr(XfwHdrCursor *cur, struct ethhdr **ethhdr)
 	/* Make sure the fixed Ethernet header is inside packet bounds. */
 	CUR_ADVANCE(cur, hdrsize, -EINVAL);
 
-	*ethhdr = eth;
 	vlh = cur->pos;
 	h_proto = eth->h_proto;
 

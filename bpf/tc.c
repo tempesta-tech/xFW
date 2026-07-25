@@ -149,7 +149,7 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 	 * dropped by the xdp.c filter.
 	 */
 
-	int ipver = parse_ethhdr(&ctx->hdr_cur, &ctx->eth);
+	int ipver = parse_ethhdr(&ctx->hdr_cur);
 	if (unlikely(ipver < 0))
 		return XFW_MAKE_CTX_PASS(ctx, XFW_ETH_BADHDR_EGRESS);
 	ctx->ipver = ipver;
