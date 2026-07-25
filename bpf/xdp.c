@@ -667,7 +667,7 @@ xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 		return XFW_MAKE_CTX_PASS(ctx, XFW_PRELOAD_INGRESS);
 	}
 
-	int ipver = parse_ethhdr(&ctx->hdr_cur, &ctx->eth);
+	int ipver = parse_ethhdr(&ctx->hdr_cur);
 	if (unlikely(ipver < 0))
 		return XFW_MAKE_CTX_DROP(ctx, XFW_ETH_BADHDR_INGRESS);
 	ctx->ipver = ipver;
