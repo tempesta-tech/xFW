@@ -44,7 +44,7 @@ async def test_send_data_after_filter_turned_on(
 
 async def test_block_tcp_flood_from_non_existing_session(
     tcp_flag: str,
-    xfw: XFW,
+    xfw_restarted: XFW,
     tcp_raw_server: TcpRawServer,
     tcp_raw_client: TcpRawClient,
     start_tcp_raw_server_and_raw_clients,
@@ -53,7 +53,7 @@ async def test_block_tcp_flood_from_non_existing_session(
     Any NON-SYN packets should be blocked if the
     connection was not established with the turned on filter
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw_restarted.rules_set("xfw { tcp_auth_filter; }")
     await tcp_raw_client.send_packet(TCP(flags=tcp_flag))
 
     assert (

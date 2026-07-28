@@ -107,4 +107,6 @@ class ConfigSettings(BaseSettings):
     tcpreplay_exec_file: str = "tcpreplay"
     tcprewrite_exec_file: str = "tcprewrite"
 
+    fast_mode_xfw_paused_timeout_sec: float = 0.5
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
