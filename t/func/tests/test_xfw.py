@@ -386,6 +386,8 @@ async def test_stop_xfw_while_geodb_loading(xfw_geoip: XFW):
             with pytest.raises((RetryException, RetryNotHelpedException)) as exc_info:
                 await xfw_geoip.start()
 
+            # exclude the error of BPF maps validation appearing
+            assert "BPF" not in str(exc_info.value)
             assert "daemon" in str(
                 exc_info.value
             ) or "wait_for_grpc_connection_ready failed" in str(exc_info.value)
@@ -549,3 +551,25 @@ async def test_ip4_mapped_rejected_in_conf(rules: str, xfw: XFW):
 
     with pytest.raises(ValueError):
         await xfw.rules_set(rules)
+
+
+async def test_bpf_map_validation_failed(xfw: XFW, conf_logger: logging.Logger):
+    """
+    Stop xfw while it is starting with GeoIP enabled.
+    """
+    await xfw.stop()
+    xfw.retry_daemon_start = False
+
+    async def run_apocalypse():
+        await asyncio.sleep(0.1)
+        await xfw.stop()
+
+    async def run_unsuccessful_start():
+        with pytest.raises((RetryException, RetryNotHelpedException)) as exc_info:
+            await xfw.start()
+
+        conf_logger.info(f"The received error is : {exc_info.value}")
+        return "BPF map validation failed" in str(exc_info.value)
+
+    _, error_exists = await asyncio.gather(run_unsuccessful_start(), run_apocalypse())
+    assert error_exists is False, "BPF map error exists"
