@@ -36,7 +36,6 @@ class ClickhouseClient:
     table: str
     logger: logging.Logger = None
     client: AsyncClient = None
-    was_connected: bool = False
 
     async def connect(self):
         try:
@@ -47,7 +46,6 @@ class ClickhouseClient:
                 password=self.password,
                 database=self.database,
             )
-            self.was_connected = True
             self.logger.debug(f"connected to clickhouse db. Using table {self.table}")
 
         except OperationalError as e:
