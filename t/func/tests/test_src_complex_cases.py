@@ -94,7 +94,7 @@ async def test_src_block_by_port_range_with_spaced_dash_between_ports(
 
 
 async def test_src_change_ratelimit(
-    xfw: XFW,
+    xfw_paused: XFW,
     protocol: str,
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
@@ -105,7 +105,7 @@ async def test_src_change_ratelimit(
     src_value: str,
 ):
 
-    await xfw.rules_set(f"""
+    await xfw_paused.rules_set(f"""
             xfw {{
                 ratelimit=a pps=0 bps=0;
                 ratelimit=b pps=10 bps=1000;
@@ -121,7 +121,7 @@ async def test_src_change_ratelimit(
     ), f"Server {server.ip_testing}:{server.port} is not blocked"
 
     await client.stop()
-    await xfw.rules_patch(f"""
+    await xfw_paused.rules_patch(f"""
         xfw {{
             src=extended_group {ip_version}.{protocol} : ratelimit=b {{
                 {src_value}
@@ -136,7 +136,7 @@ async def test_src_change_ratelimit(
 
 
 async def test_src_change_ratelimit_value(
-    xfw: XFW,
+    xfw_paused: XFW,
     protocol: str,
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
@@ -147,7 +147,7 @@ async def test_src_change_ratelimit_value(
     src_value: str,
 ):
 
-    await xfw.rules_set(f"""
+    await xfw_paused.rules_set(f"""
             xfw {{
                 ratelimit=a pps=0 bps=0;
                 defaults {{ {src_policy} {ip_version}: {src_defaults}; }}
@@ -162,7 +162,7 @@ async def test_src_change_ratelimit_value(
     ), f"Server {server.ip_testing}:{server.port} is not blocked"
     await client.stop()
 
-    await xfw.rules_patch(f"""
+    await xfw_paused.rules_patch(f"""
         xfw {{
             ratelimit=b pps=10 bps=1000;
             src=extended_group {ip_version}.{protocol} : ratelimit=b {{

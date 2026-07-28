@@ -191,6 +191,7 @@ async def group_of_clients(
     yield clients
 
 
+@pytest.mark.not_in_fast_mode
 @pytest.mark.parametrize(
     "tcp_syncookies_parameter",
     [
@@ -303,6 +304,7 @@ async def test_normal_connection(
         assert await tcp_raw_client.close_connection() is True
 
 
+@pytest.mark.not_in_fast_mode
 @pytest.mark.parametrize(
     "ip_version,send_options,expected_options",
     [
@@ -800,6 +802,7 @@ _FLOOD_GENERATED_MAX_VALUE = [
 _FLOOD_GENERATED_MIN_VALUE = [0, _FLOOD_GENERATED_DELTA]
 
 
+@pytest.mark.not_in_fast_mode
 @pytest.mark.parametrize(
     "option,packets_amount,duration,packet,expected_xfw,expected_kernel",
     [
@@ -1019,6 +1022,7 @@ _SYNCOOKIE_SMALL_FRACTION_VAL_RANGE = [0, _HANDSHAKE_FLOOD_GENERATED * 0.1]
 _SYNCOOKIE_WHOLE_VAL_RANGE = [0, _HANDSHAKE_FLOOD_GENERATED]
 
 
+@pytest.mark.not_in_fast_mode
 @pytest.mark.parametrize(
     "option,handshakes,duration,expected_xfw,expected_kernel",
     [
@@ -1117,6 +1121,7 @@ async def test_normal_connection_under_handshake_flood(
             ), "Normal client can not close tcp connection"
 
 
+@pytest.mark.not_in_fast_mode
 async def test_artificial_flood_timer(
     xfw_with_forced_syncookie: XFW,
     tcp_server: TcpServer,
@@ -1225,6 +1230,7 @@ async def test_artificial_flood_timer(
     )
 
 
+@pytest.mark.not_in_fast_mode
 async def test_flood_allowed_by_del_rule(
     xfw_with_forced_syncookie: XFW,
     tcp_server: TcpServer,
