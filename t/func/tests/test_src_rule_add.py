@@ -332,7 +332,7 @@ async def test_src_add_only_one_protocol_subtype(
 
 
 async def test_src_add_block_by_geoip_country(
-    xfw_geoip: XFW,
+    xfw: XFW,
     protocol: str,
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
@@ -340,14 +340,14 @@ async def test_src_add_block_by_geoip_country(
     establish_connection,
     src_defaults: str,
 ):
-    await xfw_geoip.rules_set(f"""
+    await xfw.rules_set(f"""
         xfw {{
             defaults {{ src_ip {ip_version}: {src_defaults }; }}
             src=extended_group {ip_version}.{protocol} : block {{ us }}
         }}
         """)
 
-    await xfw_geoip.rules_patch(f"""
+    await xfw.rules_patch(f"""
         xfw {{
             src=extended_group/add {ip_version}.{protocol} {{ rs }}
         }}

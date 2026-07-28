@@ -317,6 +317,12 @@ class NetworkStateful(Stateful, abc.ABC):
         interface used by the current object. Apply changes
         in the Network Namespace if required
         """
+        if self.state != State.stopped:
+            self.logger.info("already started")
+            return None
+
+        self.state = State.begin_start
+
         try:
             if self.testing_model == TestingModel.same_host:
                 async with Netns(name=self.namespace, logger=self.logger):
@@ -325,7 +331,7 @@ class NetworkStateful(Stateful, abc.ABC):
                         ipv6=self.ipv6,
                         port=self.port,
                     )
-                    await super().start()
+                    await self.run_start()
                     await self.additional_netns_configuration_on_start()
             else:
                 await self.set_host(
@@ -333,7 +339,7 @@ class NetworkStateful(Stateful, abc.ABC):
                     ipv6=self.ipv6,
                     port=self.port,
                 )
-                await super().start()
+                await self.run_start()
 
         except OSError as e:
             if "101" in str(e):
@@ -346,18 +352,19 @@ class NetworkStateful(Stateful, abc.ABC):
 
             raise ConnectionError(f"Can not start: {e}") from e
 
+        self.state = State.started
         self.logger.info(f"starting on {self.ip}:{self.port}")
 
     async def stop(self):
         """
         Close the client socket and call the callback function
         """
-        if self.testing_model == TestingModel.same_host:
-            async with Netns(name=self.namespace, logger=self.logger):
-                await super().stop()
-                await self.additional_netns_configuration_on_finish()
+        if self.testing_model != TestingModel.same_host:
+            return super().stop()
 
-        await super().stop()
+        async with Netns(name=self.namespace, logger=self.logger):
+            await super().stop()
+            await self.additional_netns_configuration_on_finish()
 
     async def set_host(
         self, ipv4: str = None, ipv6: str = None, port: int = None, iface: str = None
@@ -458,6 +465,7 @@ class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
         self.set_socket_options(self.socket)
         self.socket.bind(self.bind_params)
 
+        self.logger.debug(f"socket = {self.socket}")
         await self.on_socket_created()
 
     async def check_socket_closed(self, repeat=0, interval=0.1, retry=50):
