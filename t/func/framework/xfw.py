@@ -178,7 +178,7 @@ class XFW(NetworkStateful):
             )
             writer.close()
             await writer.wait_closed()
-            self.logger.debug(f"available on {ip}:{port}")
+            self.logger.debug(f"grpc available on {ip}:{port}")
             return True
 
         except Exception as e:
@@ -206,7 +206,6 @@ class XFW(NetworkStateful):
 
     async def run_stop(self):
         await self._stop_daemon()
-        self._state = State.stopped
 
     @staticmethod
     def write_config(file_path: str, content: str):
@@ -224,13 +223,9 @@ class XFW(NetworkStateful):
         await super().set_host(ipv4, ipv6, port, iface=self.server_iface)
 
     async def run_start(self):
-        self.logger.info(f"starting on {self.ip}:{self.port}")
-
         self.write_config(file_path=self.path_to_config, content=self.config)
         self.write_config(file_path=self.tfw_logger_config_file, content=self.xfw_logger_config)
         await self._start_daemon()
-
-        self._state = State.started
 
     async def restart_daemon(self):
         code, _, stderr = await run_cmd(

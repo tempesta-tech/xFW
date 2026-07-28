@@ -100,11 +100,14 @@ class Stateful(abc.ABC):
 
     async def stop(self):
         """Try to stop object."""
-        if self.state in {State.started, State.begin_start}:
-            self.logger.debug("stopping ...")
-            await self.run_stop()
-            self.state = State.stopped
 
+        if self.state == State.stopped:
+            self.logger.info("already stopped")
+            return None
+
+        self.logger.debug("stopping ...")
+        await self.run_stop()
+        self.state = State.stopped
         self.logger.info("stopped")
 
     async def restart(self):
@@ -345,7 +348,7 @@ class NetworkStateful(Stateful, abc.ABC):
 
             raise ConnectionError(f"Can not start: {e}") from e
 
-        self.logger.info(f"starting on {self.ip}:{self.port}")
+        self.logger.info(f"running on {self.ip}:{self.port}")
 
     async def stop(self):
         """
