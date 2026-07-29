@@ -38,6 +38,15 @@ uint32_t pkt_id = 0;
 #define XFW_CTX_DBG(fmt, args...)	XFW_DBG("[in] " fmt, ##args)
 #endif
 
+/*
+ * Prefer to use the macro for the verifier specific checks, not the logic
+ * necessary checks, e.g.
+ *
+ *   VERIFY_TRUE_OR_RETURN(foo, -EINVAL); // just to satisfy the verifier
+ *
+ *   if (unlikely(bar))			  // normal program logic
+ *   	return XFW_CTX_DROP;
+ */
 #define VERIFY_TRUE_OR_RETURN(v, r)					\
 do {									\
 	if (unlikely(!(v))) {						\

@@ -194,95 +194,185 @@ typedef struct {
 } XfwTCPOpts;
 
 /*
+ * The maximum length of options is 40 bytes (RFC 9293 3.1).
+ *
+ * A practical limit for TCP options would be 30: 10 x <NOP, NOP, 2 byte option>.
+ * However, there are options-stripping and TCP nomalizating middleboxes
+ * typically just rewrite options with NOPs instead of moving the options.
+ */
+#define TCP_OPTS_MAX		40
+/*
+ * The parsing buffer is a bit larger than the options area, so the verifier
+ * can prove in-bounds access for all option value reads knowing only that
+ * the option offset is less than TCP_OPTS_MAX: the largest access is a 4-byte
+ * timestamp value read at offset 39 (kind) + 2 (option header) = 45. Use 48
+ * as the smallest 8-byte alignment.
+ */
+#define TCP_OPTS_BUF_SZ		48
+
+typedef struct {
+	uint8_t			buf[TCP_OPTS_BUF_SZ];
+	XfwTCPOpts		*opts;
+	const uint64_t		opt_len;
+	uint64_t		off;
+	int			err;
+} XfwTCPOptCtx;
+
+/**
+ * Parse a single TCP option from the stack buffer @c->buf.
+ *
+ * All the offset arithmetic is 64-bit: with 32-bit types clang zero-extends
+ * values with the '<<= 32; >>= 32' shift pairs in separate registers, so the
+ * verifier refines the bounds of the zero-extended copy, but sees the
+ * original register, used in the buffer access, as unbounded.
+ *
+ * @return 0 to continue the loop, 1 to stop it (@c->err holds the result).
+ */
+static long
+tcp_parse_one_opt(uint64_t index, void *cb_data)
+{
+	XfwTCPOptCtx *c = cb_data;
+	const uint64_t off = c->off, opt_len = c->opt_len;
+
+	/*
+	 * The verifier widens the loop-carried state between the callback
+	 * invocations, so re-establish all the bounds from scratch on each
+	 * invocation. opt_len > TCP_OPTS_MAX is unreachable.
+	 */
+	if (unlikely(opt_len > TCP_OPTS_MAX)) {
+		c->err = -E2BIG;
+		return 1;
+	}
+	/*
+	 * This is the normal loop termination condition.
+	 * We use 1 extra step in bpf_loop() exactly to call the callback last
+	 * time and return with zero error code on reaching end of data.
+	 */
+	if (off >= opt_len) {
+		c->err = 0;
+		return 1;
+	}
+
+	/* The first byte is the kind of the option. */
+	const uint8_t kind = c->buf[off];
+
+	if (kind == TCPOPT_EOL) {
+		/*
+		 * If non zero values are present after EOL, then the
+		 * segment is anomalous (RFC 9293 3).
+		 * Do not read out all trailing zeros at the moment due
+		 * to performance reasons - maybe we should add this for
+		 * the TCP anomaly filter.
+		 */
+		c->err = 0;
+		return 1;
+	}
+	if (kind == TCPOPT_NOP) {
+		c->off = off + 1;
+		return 0;
+	}
+
+	/*
+	 * All other options carry the length in the second byte (RFC 9293 3.1)
+	 * and must fit into the options area.
+	 */
+	if (unlikely(off + 2 > opt_len))
+		goto bad_opt;
+
+	const uint64_t len = c->buf[off + 1];
+	if (unlikely(len < 2 || off + len > opt_len))
+		goto bad_opt;
+
+	switch (kind) {
+	case TCPOPT_WSCALE: {
+		/* RFC 7323 2.2: kind, len=3, 1 byte val. */
+		if (unlikely(len != TCPOPT_WSCALE_SZ))
+			goto bad_opt;
+		const uint8_t ws = c->buf[off + 2];
+		/* RFC 7323 2.3: values above 14 are capped to 14. */
+		c->opts->wscale = ws <= TCPOPT_WSCALE_MAX
+				  ? ws : TCPOPT_WSCALE_MAX;
+		break;
+	}
+	case TCPOPT_SACK_PERM:
+		/* RFC 2018 2: kind, len=2. */
+		if (unlikely(len != TCPOPT_SACK_PERM_SZ))
+			goto bad_opt;
+		c->opts->sack_perm = 1;
+		break;
+	case TCPOPT_TIMESTAMP:
+		/*
+		 * RFC 7323 3.2:
+		 * kind, len=10, TS val 4 bytes, TS echo 4 bytes.
+		 */
+		if (unlikely(len != TCPOPT_TIMESTAMP_SZ))
+			goto bad_opt;
+		/* RFC 7323 4.3: ignore duplicate timestamp options. */
+		if (likely(!c->opts->ts))
+			c->opts->ts = get_unaligned((__be32 *)&c->buf[off + 2]);
+		break;
+	}
+
+	c->off = off + len;
+	return 0;
+
+bad_opt:
+	c->err = -EINVAL;
+	return 1;
+}
+
+/*
  * Parse TCP Options, RFC 9293 chapter 3.
  *
  * RFC does not specify what to do with duplicate MSS, Window Scale and SACK
  * Permited options, so for now we just use the last one for simplicity.
  * This can be added to the TCP anomaly filter later.
+ *
+ * The options are copied to a zeroed stack buffer and parsed from the stack,
+ * one option per bpf_loop() iteration. This way the verifier proves the
+ * parsing loop in isolation, converging on the widened loop state, and
+ * continues after the loop with a single state, no matter how complex the
+ * surrounding program is.
  */
 static __noinline int
 tcp_parse_opts(XfwGlobalCtx *ctx, XfwTCPOpts *opts)
 {
-	const uint8_t *e, *const o = (uint8_t *)ctx->th + sizeof(struct tcphdr);
-	const uint8_t *const o_end = (uint8_t *)ctx->th + ctx->th->doff * 4;
-	const uint8_t *const d_end = (uint8_t *)ctx->hdr_cur.end;
+	const uint8_t *const o = (uint8_t *)ctx->th + sizeof(struct tcphdr);
+	const uint64_t th_len = ctx->th->doff * 4;
 
-	/* The maximum length of options is 40 bytes (RFC 9293 3.1). */
-	VERIFY_TRUE_OR_RETURN(o + 40 >= o_end, -E2BIG);
+	VERIFY_TRUE_OR_RETURN(th_len >= sizeof(struct tcphdr), -EINVAL);
+	const uint64_t opt_len = th_len - sizeof(struct tcphdr);
+	VERIFY_TRUE_OR_RETURN(opt_len <= TCP_OPTS_MAX, -E2BIG);
+	if (unlikely(opt_len == 0))
+		return 0;
 
-	uint8_t i, off = 0;
-	bpf_for (i, 0, 40) {
-		if (o + off >= o_end || unlikely(o + off >= d_end))
-			return 0;
+	XfwTCPOptCtx c = {
+		.buf		= {0},
+		.opts		= opts,
+		.opt_len	= opt_len,
+		.off		= 0,
+		/* Reaching the iterations limit isn't normal. */
+		.err		= -E2BIG,
+	};
 
-		/* First byte is kind of the option. */
-		switch (o[off]) {
-		case TCPOPT_EOL:
-			/*
-			 * If non zero values are present after EOL, then the
-			 * segment is anomalous (RFC 9293 3).
-			 * Do not read out all trailing zeros at the moment due
-			 * to performance reasons - maybe we should add this for
-			 * the TCP anomaly filter.
-			 */
-			return 0;
+	/*
+	 * Copy the options to the parsing buffer. The helper validates the
+	 * packet bounds, so a truncated packet ends up with -EINVAL.
+	 */
+	const uint64_t opt_off = (void *)o - XFW_CTX_DATA_BGN(ctx->ctx);
+	if (unlikely(bpf_xdp_load_bytes(ctx->ctx, opt_off, c.buf, opt_len)))
+		return -EINVAL;
 
-		case TCPOPT_NOP:
-			++off;
-			continue;
+	/*
+	 * One option per iteration: TCP_OPTS_MAX + 1 iterations guarantee
+	 * that the terminal check in the callback is reached even for
+	 * TCP_OPTS_MAX one-byte options.
+	 */
+	long r = bpf_loop(TCP_OPTS_MAX + 1, tcp_parse_one_opt, &c, 0);
+	if (unlikely(r < 0))
+		return r;
 
-		case TCPOPT_WSCALE:
-			/* RFC 7323 2.2: kind, len=3, 1 byte val */
-			e = o + off + TCPOPT_WSCALE_SZ;
-			VERIFY_TRUE_OR_RETURN(e <= o_end && e <= d_end, -EINVAL);
-			VERIFY_TRUE_OR_RETURN(o[off + 1] == TCPOPT_WSCALE_SZ, -EINVAL);
-			opts->wscale = o[off + 2];
-			VERIFY_TRUE_OR_RETURN(o[off + 2] <= TCPOPT_WSCALE_MAX, -EINVAL);
-			off += TCPOPT_WSCALE_SZ;
-			continue;
-
-		case TCPOPT_SACK_PERM:
-			/* RFC 2018 2: kind, len=2 */
-			e = o + off + TCPOPT_SACK_PERM_SZ;
-			VERIFY_TRUE_OR_RETURN(e <= o_end && e <= d_end, -EINVAL);
-			VERIFY_TRUE_OR_RETURN(o[off + 1] == TCPOPT_SACK_PERM_SZ,
-					      -EINVAL);
-			opts->sack_perm = 1;
-			off += TCPOPT_SACK_PERM_SZ;
-			continue;
-
-		case TCPOPT_TIMESTAMP:
-			/*
-			 * RFC 7323 3.2:
-			 * kind, len=10, TS val 4 bytes, TS echo (tsecr) 4 bytes
-			 */
-			e = o + off + TCPOPT_TIMESTAMP_SZ;
-			VERIFY_TRUE_OR_RETURN(e <= o_end && e <= d_end, -EINVAL);
-			VERIFY_TRUE_OR_RETURN(o[off + 1] == TCPOPT_TIMESTAMP_SZ, -EINVAL);
-			/* RFC 7323 4.3: ignore duplicate timestamp options. */
-			if (likely(!opts->ts))
-				opts->ts = get_unaligned((__be32 *)(o + off + 2));
-			off += TCPOPT_TIMESTAMP_SZ;
-			continue;
-
-		default:
-			/*
-			 * Generic processing of other options.
-			 * Only NOP and EOL have 1 byte lengh, all others must
-			 * have length field (RFC 9293 3.1).
-			 */
-			e = o + off + 2;
-			VERIFY_TRUE_OR_RETURN(e <= o_end && e <= d_end, -EINVAL);
-			uint8_t olen = o[off + 1];
-			VERIFY_TRUE_OR_RETURN(olen >= 2, -EINVAL);
-			e = o + off + olen;
-			VERIFY_TRUE_OR_RETURN(e <= o_end && e <= d_end, -EINVAL);
-			off += olen;
-			continue;
-		}
-	}
-
-	return 0;
+	return c.err;
 }
 
 /**
