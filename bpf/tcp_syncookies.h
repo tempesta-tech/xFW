@@ -197,7 +197,7 @@ typedef struct {
  * The maximum length of options is 40 bytes (RFC 9293 3.1).
  *
  * A practical limit for TCP options would be 30: 10 x <NOP, NOP, 2 byte option>.
- * However, there are options-stripping and TCP nomalizating middleboxes
+ * However, there are options-stripping and TCP normalizing middleboxes that
  * typically just rewrite options with NOPs instead of moving the options.
  */
 #define TCP_OPTS_MAX		40
@@ -234,15 +234,6 @@ tcp_parse_one_opt(uint64_t index, void *cb_data)
 	XfwTCPOptCtx *c = cb_data;
 	const uint64_t off = c->off, opt_len = c->opt_len;
 
-	/*
-	 * The verifier widens the loop-carried state between the callback
-	 * invocations, so re-establish all the bounds from scratch on each
-	 * invocation. opt_len > TCP_OPTS_MAX is unreachable.
-	 */
-	if (unlikely(opt_len > TCP_OPTS_MAX)) {
-		c->err = -E2BIG;
-		return 1;
-	}
 	/*
 	 * This is the normal loop termination condition.
 	 * We use 1 extra step in bpf_loop() exactly to call the callback last
@@ -334,7 +325,7 @@ bad_opt:
  * continues after the loop with a single state, no matter how complex the
  * surrounding program is.
  */
-static __noinline int
+static __always_inline int
 tcp_parse_opts(XfwGlobalCtx *ctx, XfwTCPOpts *opts)
 {
 	const uint8_t *const o = (uint8_t *)ctx->th + sizeof(struct tcphdr);
@@ -619,10 +610,10 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 	    && !tcp_syncookies_passive_mode(ctx, ts))
 		return XFW_CTX_CONTINUE;
 
-	const bool is_ip4 = (ctx->ipver == bpf_ntohs(ETH_P_IP));
-	void *iph = is_ip4 ? (void *)ctx->iph4 : (void *)ctx->iph6;
-	uint32_t iph_len = is_ip4 ? sizeof(struct iphdr) : sizeof(struct ipv6hdr);
-	XFW_ASSERT(iph && iph + iph_len <= ctx->hdr_cur.end);
+	uint32_t iph_len = ctx->ipver == bpf_ntohs(ETH_P_IP)
+			   ? sizeof(struct iphdr)
+			   : sizeof(struct ipv6hdr);
+	XFW_ASSERT(ctx->iph && ctx->iph + iph_len <= ctx->hdr_cur.end);
 
 	/*
 	 * The kernel syncookie helper expects a minimal SYN header. Temporarily
@@ -643,7 +634,7 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 					 "No listening socket");
 	}
 
-	int64_t seq_mss = bpf_tcp_gen_syncookie(sk, iph, iph_len, ctx->th,
+	int64_t seq_mss = bpf_tcp_gen_syncookie(sk, ctx->iph, iph_len, ctx->th,
 						sizeof(struct tcphdr));
 	bpf_sk_release(sk);
 	ctx->th->doff = old_doff & 0xF;
@@ -723,10 +714,8 @@ tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx)
 				"IPv4 ACK with invalid cookie, retcode=%d.", r);
 	}
 	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
-		VERIFY_TRUE_OR_RETURN((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end,
-				      XFW_CTX_DROP);
-		VERIFY_TRUE_OR_RETURN((void *)(ctx->th + 1) <= ctx->hdr_cur.end,
-				      XFW_CTX_DROP);
+		/* This check is just to satisfy the verifier. */
+		XFW_ASSERT((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end);
 
 		int r = bpf_tcp_raw_check_syncookie_ipv6(ctx->iph6, ctx->th);
 		if (r < 0)

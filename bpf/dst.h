@@ -35,30 +35,32 @@ static __always_inline bool
 populate_dst_info(const XfwGlobalCtx *ctx, XfwDstKey *key, __u8 *default_idx)
 {
 	key->proto = (uint8_t)ctx->l4_proto;
-	if (ctx->iph4) {
+	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		key->ipver = XFW_IP_VER_4;
 		xfw_ipv4_to_ipv6_mapped(ctx->iph4->daddr, key->addr.addr32);
-		if (ctx->th) {
+		if (ctx->l4_proto == XFW_L4_PROTO_TCP) {
 			key->port = ctx->th->dest;
 			*default_idx = XFW_DEFAULT_DST_TCP_IP4;
 			return true;
 		}
-		if (ctx->uh) {
+		if (ctx->l4_proto == XFW_L4_PROTO_UDP) {
 			key->port = ctx->uh->dest;
 			*default_idx = XFW_DEFAULT_DST_UDP_IP4;
 			return true;
 		}
 		return false;
 	}
-	if (ctx->iph6) {
+	if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
+		VERIFY_TRUE_OR_RETURN((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end,
+				      false);
 		key->ipver = XFW_IP_VER_6;
 		key->addr.in6 = ctx->iph6->daddr;
-		if (ctx->th) {
+		if (ctx->l4_proto == XFW_L4_PROTO_TCP) {
 			key->port = ctx->th->dest;
 			*default_idx = XFW_DEFAULT_DST_TCP_IP6;
 			return true;
 		}
-		if (ctx->uh) {
+		if (ctx->l4_proto == XFW_L4_PROTO_UDP) {
 			key->port = ctx->uh->dest;
 			*default_idx = XFW_DEFAULT_DST_UDP_IP6;
 			return true;
@@ -73,6 +75,7 @@ xfw_dst_filter(const XfwGlobalCtx *ctx)
 {
 	XfwDstKey dst_key;
 	uint8_t dst_default;
+
 	XFW_ASSERT(populate_dst_info(ctx, &dst_key, &dst_default));
 
 	XfwActionRule *rule = bpf_map_lookup_elem(

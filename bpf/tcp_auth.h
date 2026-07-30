@@ -195,12 +195,10 @@ tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr,
 }
 
 static __always_inline void
-tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx, struct tcphdr *th)
+tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx)
 {
-	if (!th)
-		return;
-	if (unlikely((void *)(th + 1) > ctx->hdr_cur.end))
-		return;
+	struct tcphdr *th = ctx->th;
+	VERIFY_TRUE_OR_RETURN((void *)(th + 1) <= ctx->hdr_cur.end, (void)0);
 
 	const XfwSockAddr addr = {
 		.addr = ctx->ilog_addr,

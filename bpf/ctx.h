@@ -66,6 +66,7 @@ typedef struct XfwGlobalCtx {
 	XfwMd		*ctx;
 	struct ethhdr	*eth;
 	union {
+		void		*iph;
 		struct iphdr	*iph4;
 		struct ipv6hdr	*iph6;
 	};
