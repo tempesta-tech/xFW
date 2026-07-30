@@ -45,7 +45,7 @@ uint32_t pkt_id = 0;
  *   VERIFY_TRUE_OR_RETURN(foo, -EINVAL); // just to satisfy the verifier
  *
  *   if (unlikely(bar))			  // normal program logic
- *   	return XFW_CTX_DROP;
+ *   	return XFW_MAKE_CTX_DROP(...);
  */
 #define VERIFY_TRUE_OR_RETURN(v, r)					\
 do {									\

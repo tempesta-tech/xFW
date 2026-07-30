@@ -80,7 +80,7 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
  * Parsing function, should not drop packets!
  */
 static __always_inline int
-out_process_l4(XfwGlobalCtx *ctx, struct tcphdr **tcp_hdr)
+out_process_l4(XfwGlobalCtx *ctx)
 {
 	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
@@ -88,7 +88,6 @@ out_process_l4(XfwGlobalCtx *ctx, struct tcphdr **tcp_hdr)
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_TCP_BADHDR_EGRESS);
 
-		*tcp_hdr = ctx->th;
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
 	}
@@ -156,9 +155,8 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 	ctx->ipver = ipver;
 
 	/* Build map lookup keys before policy evaluation. */
-	struct tcphdr *tcp_hdr = NULL;
 	CHAIN(out_process_l3, ctx, &prot_net_key, &prot_net_map);
-	CHAIN(out_process_l4, ctx, &tcp_hdr);
+	CHAIN(out_process_l4, ctx);
 	/* Parsing is complete; start policy checks. */
 
 	*is_upstream_egress = (bpf_map_lookup_elem(prot_net_map, &prot_net_key) == NULL);
@@ -169,7 +167,7 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 	 * Still needs to be called when rules are not loaded. TCP AUTH filter is
 	 * atomatically inactive at that time.
 	 */
-	tcp_auth_conn_egress_learning(ctx, tcp_hdr);
+	tcp_auth_conn_egress_learning(ctx);
 
 	return XFW_CTX_PASS;
 }

@@ -335,8 +335,10 @@ load_tc()
 		error "Failed to load TC program on device $dev (exit code $rc)"
 	fi
 
-	[ $v -eq 1 ] && echo -n "tc result: "
-	[ $v -eq 1 ] && tail -n 1 "$tmp_log"
+	# tc is silent on success, so the log is usually empty.
+	[ $v -eq 1 ] && [ -s "$tmp_log" ] \
+		&& echo "tc result: $(tail -n 1 "$tmp_log")"
+	rm -f "$tmp_log"
 }
 
 load_bpf()

@@ -77,8 +77,8 @@ PREFIX=/root/ak/xfw_install/ make install
 1. [Start xFW](/Basic-Administration/#run-amp-stop) and load configuration. It's
    useful to run xFW from a local (`main`) build:
 ```
-XFW_PATH=~/ak/xfw_install/ TFW_CFG_FILE=~/ak/xfw.json ~/ak/xfw_install/bin/xfwctl --start
-XFW_PATH=~/ak/xfw_install/ TFW_CFG_FILE=~/ak/xfw.json ~/ak/xfw_install/bin/xfwctl --status
+TEMPESTA_XFW_PATH=~/ak/xfw_install/ TFW_CFG_FILE=~/ak/xfw.json ~/ak/xfw_install/bin/xfwctl --start
+TEMPESTA_XFW_PATH=~/ak/xfw_install/ TFW_CFG_FILE=~/ak/xfw.json ~/ak/xfw_install/bin/xfwctl --status
 ```
 
 2. Load rules, e.g.
