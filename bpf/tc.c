@@ -167,7 +167,8 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 	 * Still needs to be called when rules are not loaded. TCP AUTH filter is
 	 * atomatically inactive at that time.
 	 */
-	tcp_auth_conn_egress_learning(ctx);
+	if (ctx->l4_proto == XFW_L4_PROTO_TCP)
+		tcp_auth_conn_egress_learning(ctx);
 
 	return XFW_CTX_PASS;
 }
