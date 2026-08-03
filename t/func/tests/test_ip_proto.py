@@ -65,10 +65,10 @@ async def test_allow(xfw, dynamic_client, dynamic_server, proto_config, flush_ar
     await xfw.rules_set(f"xfw {{ ip_proto {{ {proto_config} }} }}")
 
     await dynamic_client.ping()
-    await dynamic_server.pong()
+    assert await dynamic_server.pong()
 
     await dynamic_server.ping()
-    await dynamic_client.pong()
+    assert await dynamic_client.pong()
 
 
 @pytest.mark.parametrize(

@@ -70,7 +70,10 @@ class GreIP4Mixin(IP4Mixin, abc.ABC):
         return self.ip, 0
 
     def decode_data(self, data: bytes) -> GRE:
-        return self._ip_cls(data)[GRE]
+        return GRE(bytes(self._ip_cls(data).payload))
+
+    async def pong(self) -> bool:
+        return bytes(self.decode_data(await self._receive())) == self.ping_message
 
     @property
     def _ip_cls(self):
