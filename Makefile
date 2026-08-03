@@ -116,7 +116,7 @@ install:
 	done
 
 test:
-	@$(foreach dir,$(SUBDIRS),$(MAKE) -C $(dir) test || exit 1)
+	@$(foreach dir,$(SUBDIRS),$(MAKE) -C $(dir) test || exit 1;)
 
 FORCE:
 
