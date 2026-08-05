@@ -33,7 +33,7 @@ declare xfw_path="${TEMPESTA_XFW_PATH:-}"
 # 2) Default path
 declare default_path="/opt/tempesta"
 # TODO #10: move to /sys/fs/bpf/xfw
-declare -r xfw_bpf_path="/sys/fs/bpf/tc/globals"
+declare -r xfw_bpf_path="/sys/fs/bpf/xfw"
 
 declare -r xfw_tmp_path="/tmp/tempesta/xfw"
 declare -r version_file="$xfw_tmp_path/version"
@@ -216,16 +216,16 @@ is_bpf_attached_to_dev()
 bpf_maps_check()
 {
 	local maps="$(bpftool map | awk -v prefix='xfw_' 'index($0, prefix) {print $4}')"
-	local pr_err="${1:-echo -e}"
 
 	if [ -z "$maps" ]; then
-		$pr_err "BPF maps:\t\t\tnot loaded"
+		echo -e "BPF maps:\t\t\tnot loaded"
 		return 1
 	fi
 
 	local dup_maps="$(printf '%s\n' "$maps" | awk 'seen[$0]++ {print}')"
 	if [ -n "$dup_maps" ]; then
-		$pr_err "BPF maps:\t\t\tduplicated (ERROR!)"
+		echo -e "BPF maps:\t\t\tduplicated (ERROR!)"
+		echo -e "Duplicated maps:\n$dup_maps"
 		return 1
 	fi
 
@@ -293,11 +293,6 @@ load_xdp()
 	if [[ $rc -ne 0 ]]; then
 		error "Failed to create $xfw_tmp_path"
 	fi
-	mkdir -p "$xfw_bpf_path"
-	rc=$?
-	if [[ $rc -ne 0 ]]; then
-		error "Failed to create $xfw_bpf_path"
-	fi
 
 	tmp_log=$(mktemp "$xfw_tmp_path/xdp-load.XXXXXX")
 	rc=$?
@@ -305,11 +300,8 @@ load_xdp()
 		error "Failed to create XDP load log (exit code $rc)"
 	fi
 
-	[ "$v" -eq 1 ] && echo "$project_path/bin/xfw_bpf_loader" load \
-		"$project_path/lib/bpf/xdp.o" "xfw_xdp" "$xfw_bpf_path" "$xfw_bpf_path/xdp"
-
-	"$project_path/bin/xfw_bpf_loader" load \
-		"$project_path/lib/bpf/xdp.o" "xfw_xdp" "$xfw_bpf_path" "$xfw_bpf_path/xdp" > "$tmp_log" 2>&1
+	[ "$v" -eq 1 ] && echo "$project_path/bin/xfw_bpf_loader" load xdp "$xfw_bpf_path"
+	"$project_path/bin/xfw_bpf_loader" load xdp "$xfw_bpf_path" > "$tmp_log" 2>&1
 	rc=$?
 	if [[ $rc -ne 0 ]]; then
 		echo "Error while loading XDP program. See $tmp_log for details."
@@ -355,39 +347,61 @@ attach_xdp()
 
 load_tc()
 {
-	local dev="$1"
+	local tmp_log
+	local rc
 
-	mkdir -p /tmp/tempesta/xfw
-	local tmp_log=$(mktemp /tmp/tempesta/xfw/tc-loader.XXXXXX)
-
-	# Create a TC hook to attach by xFW TC program.
-	# The hook might be configured by somebody else, so check it first.
-	#
-	# TODO #10: replace the legacy tc calls with a
-	# bpf_program__attach_tcx() program.
-	if ! tc qdisc show dev "$dev" | grep -q clsact; then
-		tc qdisc add dev "$dev" clsact || {
-			unload_bpf
-			error "Failed to add clsact qdisc on $dev"
-		}
+	tmp_log=$(mktemp "$xfw_tmp_path/tc-load.XXXXXX")
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		echo "Failed to create TC load log"
+		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
+		unload_bpf
+		error "Failed to create TC load log (exit code $rc)"
 	fi
 
-	[ $v -eq 1 ] && echo tc filter add dev "$dev" egress bpf da obj "$project_path/lib/bpf/tc.o" sec tc
-
-	tc filter add dev "$dev" egress bpf da obj "$project_path/lib/bpf/tc.o" sec tc > "$tmp_log" 2>&1
-	local rc=$?
-	if [ $rc -ne 0 ]; then
+	[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader load tc "$xfw_bpf_path"
+	"$project_path"/bin/xfw_bpf_loader load tc "$xfw_bpf_path" >"$tmp_log" 2>&1
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
 		echo "Error while loading TC program. See $tmp_log for details."
 		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
 		unload_bpf
-		[ $v -eq 1 ] && echo ""
 		error "Failed to load TC program on device $dev (exit code $rc)"
 	fi
 
-	# tc is silent on success, so the log is usually empty.
-	[ $v -eq 1 ] && [ -s "$tmp_log" ] \
-		&& echo "tc result: $(tail -n 1 "$tmp_log")"
-	rm -f "$tmp_log"
+	if [ "$v" -eq 1 ]; then
+		echo "Loader output:"
+		cat "$tmp_log"
+	fi
+}
+
+attach_tc()
+{
+	local dev="$1"
+	local tmp_log
+	local rc
+
+	tmp_log=$(mktemp "$xfw_tmp_path/tc-attach.XXXXXX")
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		echo "Failed to create TC attach log"
+		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
+		unload_bpf
+		error "Failed to create TC attach log (exit code $rc)"
+	fi
+
+	[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader attach tc "$xfw_bpf_path" "$dev"
+	"$project_path"/bin/xfw_bpf_loader attach tc "$xfw_bpf_path" "$dev" >"$tmp_log" 2>&1
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		echo "Error while attaching TC program. See $tmp_log for details."
+		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
+		unload_bpf
+		error "Failed to attach TC program on device $dev (exit code $rc)"
+	fi
+
+	[ "$v" -eq 1 ] && echo "TC attaching output:"
+	[ "$v" -eq 1 ] && tail -n 1 "$tmp_log"
 }
 
 load_bpf()
@@ -395,6 +409,10 @@ load_bpf()
 	local rc
 
 	mkdir -p "$xfw_bpf_path"
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		error "Failed to create $xfw_bpf_path"
+	fi
 
 	if [[ -e "$xfw_bpf_path/xdp" ]]; then
 		error "XDP program is already pinned at '$xfw_bpf_path/xdp'. Please run '$0 --stop' first."
@@ -431,10 +449,11 @@ load_bpf()
 	done
 
 	load_xdp
+	load_tc
 
-	for dev in ${devs}; do		
+	for dev in ${devs}; do
 		attach_xdp "$dev" "$attach_type"
-		load_tc $dev
+		attach_tc "$dev"
 	done
 
 	bpf_maps_check
@@ -445,6 +464,18 @@ load_bpf()
 	fi
 
 	update_status $devmode
+}
+
+detach_tc()
+{
+	local dev="$1"
+	local rc
+
+	if [[ "$v" -eq 1 ]]; then
+		"$project_path"/bin/xfw_bpf_loader detach tc "$xfw_bpf_path" "$dev" || true
+	else
+		"$project_path"/bin/xfw_bpf_loader detach tc "$xfw_bpf_path" "$dev" 2>/dev/null || true
+	fi
 }
 
 detach_xdp()
@@ -468,29 +499,30 @@ detach_xdp()
 
 unload_bpf()
 {
+	local rc=0
+	local dev
+
 	read_config
 
 	for dev in ${devs}; do
 		detach_xdp "$dev"
-
-		if tc qdisc show dev "$dev" | grep -q clsact; then
-			if [ $v -eq 1 ]; then
-				tc qdisc del dev "$dev" clsact || true
-			else
-				tc qdisc del dev "$dev" clsact 2>/dev/null || true
-			fi
-		else
-			[ $v -eq 1 ] && echo "No TC program loaded on $dev"
-		fi
+		detach_tc "$dev"
 	done
 
+	if [[ -e "$xfw_bpf_path/tc" ]]; then
+		[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader unload tc "$xfw_bpf_path"
+		"$project_path"/bin/xfw_bpf_loader unload tc "$xfw_bpf_path"
+	fi
+
 	if [[ -e "$xfw_bpf_path/xdp" ]]; then
-		[[ "$v" -eq 1 ]] && echo "Removing pinned XDP program: $xfw_bpf_path/xdp"
-		rm -f "$xfw_bpf_path/xdp"
+		[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader unload xdp "$xfw_bpf_path"
+		"$project_path"/bin/xfw_bpf_loader unload xdp "$xfw_bpf_path"
 	fi
 
 	maps_clean
-	rm -rf $status_dir || true
+	rm -rf "$status_dir" || true
+
+	return $rc
 }
 
 start_mgr()

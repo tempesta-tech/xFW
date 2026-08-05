@@ -51,9 +51,8 @@ private:
 	static FdGuard
 	open_bpf_map_fd(const std::string &map_name)
 	{
-		// TOOD #10: move to /sys/fs/bpf/xfw
 		const std::string path =
-			std::string("/sys/fs/bpf/tc/globals/") + map_name;
+			std::string("/sys/fs/bpf/xfw/") + map_name;
 
 		int fd = bpf_obj_get(path.c_str());
 		if (fd < 0)
