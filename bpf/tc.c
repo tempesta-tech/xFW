@@ -42,7 +42,8 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
-		count_traffic_stat(ctx, XFW_IP4_TOTAL_EGRESS);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+				   XFW_IP4_TOTAL_EGRESS);
 		int proto = parse_iphdr(&ctx->hdr_cur, &ctx->iph4);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP4_BADHDR_EGRESS);
@@ -56,7 +57,8 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
 		return XFW_CTX_CONTINUE;
 	}
 	case bpf_ntohs(ETH_P_IPV6): {
-		count_traffic_stat(ctx, XFW_IP6_TOTAL_EGRESS);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+				   XFW_IP6_TOTAL_EGRESS);
 		int proto = parse_ip6hdr(&ctx->hdr_cur, &ctx->iph6);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP6_BADHDR_EGRESS);
@@ -84,7 +86,8 @@ out_process_l4(XfwGlobalCtx *ctx)
 {
 	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
-		count_traffic_stat(ctx, XFW_TCP_TOTAL_EGRESS);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+				   XFW_TCP_TOTAL_EGRESS);
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_TCP_BADHDR_EGRESS);
 
@@ -92,7 +95,8 @@ out_process_l4(XfwGlobalCtx *ctx)
 		return XFW_CTX_CONTINUE;
 	}
 	case XFW_L4_PROTO_UDP: {
-		count_traffic_stat(ctx, XFW_UDP_TOTAL_EGRESS);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+				   XFW_UDP_TOTAL_EGRESS);
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_UDP_BADHDR_EGRESS);
 
@@ -213,16 +217,20 @@ xfw_tc(struct __sk_buff *skb)
 		 * All this trafic were passed before we even know is it upstream
 		 * or downstream trafic.
 		 */
-		count_traffic_stat(&ctx, XFW_TOTAL_UPSTREAM_EGRESS);
+		count_traffic_stat(ctx.g_stats, ctx.pkt_sz,
+				   XFW_TOTAL_UPSTREAM_EGRESS);
 		if (res == XFW_CTX_PASS)
-			count_traffic_stat(&ctx, XFW_PASSED_UPSTREAM_EGRESS);
+			count_traffic_stat(ctx.g_stats, ctx.pkt_sz,
+					   XFW_PASSED_UPSTREAM_EGRESS);
 	} else {
-		count_traffic_stat(&ctx, XFW_TOTAL_DOWNSTREAM_EGRESS);
+		count_traffic_stat(ctx.g_stats, ctx.pkt_sz,
+				   XFW_TOTAL_DOWNSTREAM_EGRESS);
 		if (res == XFW_CTX_PASS)
-			count_traffic_stat(&ctx, XFW_PASSED_DOWNSTREAM_EGRESS);
+			count_traffic_stat(ctx.g_stats, ctx.pkt_sz,
+					   XFW_PASSED_DOWNSTREAM_EGRESS);
 	}
 
-	return finalize_result(&ctx, res);
+	return finalize_result(ctx.cfg, res);
 }
 
 char LICENSE[] SEC("license") = "GPL v2";

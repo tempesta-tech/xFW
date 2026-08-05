@@ -57,6 +57,14 @@ struct {
 	__uint(max_entries, XFW_MAX_PORTS);
 } MAP_SRC_PORT_RL_REF SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__type(key, __u32);
+	__type(value, __u32);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+	__uint(max_entries, XFW_PROG_MAX);
+} MAP_PROG_ARRAY_REF SEC(".maps");
+
 #define XFW_MAP_LOOKUP_OR_INIT(m, k, val_t)				\
 ({									\
 	void *r = bpf_map_lookup_elem(m, k);				\
@@ -71,7 +79,7 @@ struct {
 static __always_inline bool
 is_metadata_creation_necessary(const XfwGlobalCtx *ctx)
 {
-	return ctx->cfg->rules.dns.enabled;
+	return is_dns_filter_enabled(ctx);
 }
 
 static __always_inline int
@@ -396,7 +404,8 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
-		count_traffic_stat(ctx, XFW_IP4_TOTAL_INGRESS);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+				   XFW_IP4_TOTAL_INGRESS);
 		int proto = parse_iphdr(&ctx->hdr_cur, &ctx->iph4);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_IP4_BADHDR_INGRESS);
@@ -411,7 +420,8 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		return XFW_CTX_CONTINUE;
 	}
 	case bpf_ntohs(ETH_P_IPV6): {
-		count_traffic_stat(ctx, XFW_IP6_TOTAL_INGRESS);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+				   XFW_IP6_TOTAL_INGRESS);
 		int proto = parse_ip6hdr(&ctx->hdr_cur, &ctx->iph6);
 		if (unlikely(proto < 0)) {
 			if (proto == -EFBIG)
@@ -541,14 +551,14 @@ tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 
 	/* FIN: track connection for closing. */
 	if (th->fin) {
-		count_traffic_stat(ctx, XFW_FIN);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz, XFW_FIN);
 		return tcp_auth_conn_ingress_filter(ctx, addr,
 						    TCP_AUTH_EVENT_FIN);
 	}
 
 	/* RST: clear connection state and apply rate-limiting. */
 	if (th->rst) {
-		count_traffic_stat(ctx, XFW_RST);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz, XFW_RST);
 		CHAIN(tcp_auth_conn_ingress_filter, ctx, addr,
 		      TCP_AUTH_EVENT_RST);
 		return rst_rlimit(ctx);
@@ -561,20 +571,20 @@ tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 	 * to the trusted set. Here we only verify that this state exists.
 	 */
 	if (th->syn && th->ack) {
-		count_traffic_stat(ctx, XFW_SYNACK);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz, XFW_SYNACK);
 		return tcp_auth_conn_ingress_filter(ctx, addr,
 						    TCP_AUTH_EVENT_NORMAL);
 	}
 
 	/* SYN-only. Authenticate the connection if all checks pass. */
 	if (th->syn) {
-		count_traffic_stat(ctx, XFW_SYN);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz, XFW_SYN);
 		return tcp_rcv_syn_filter(ctx);
 	}
 
 	/* ACK-only: validate SYN-ACK cookies or authenticate normally.*/
 	if (th->ack) {
-		count_traffic_stat(ctx, XFW_ACK);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz, XFW_ACK);
 		return tcp_rcv_ack_filter(ctx, addr);
 	}
 
@@ -594,12 +604,12 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 
 	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
-		count_traffic_stat(ctx, XFW_TCP_TOTAL_INGRESS);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+				   XFW_TCP_TOTAL_INGRESS);
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_BADHDR_INGRESS);
 
 		CHAIN(tcp_anomaly_filter, ctx);
-
 		CHAIN(src_filter, ctx, ctx->th->source, src_ip_key);
 		
 		const XfwSockAddr addr = {
@@ -609,19 +619,20 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		return tcp_flags_filter(ctx, &addr);
 	}
 	case XFW_L4_PROTO_UDP: {
-		count_traffic_stat(ctx, XFW_UDP_TOTAL_INGRESS);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+				   XFW_UDP_TOTAL_INGRESS);
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_BADHDR_INGRESS);
 
 		if (ctx->uh->source == 0 || ctx->uh->dest == 0)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_ANOM_ZERO_PORT);
 
-		CHAIN(ingress_dns_filter, ctx);
 		return src_filter(ctx, ctx->uh->source, src_ip_key);
 	};
 	case XFW_L4_PROTO_ICMP:
 	case XFW_L4_PROTO_ICMPV6: {
-		count_traffic_stat(ctx, XFW_ICMP_TOTAL_INGRESS);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+				   XFW_ICMP_TOTAL_INGRESS);
 
 		XfwICMPCommon *ih;
 		if (unlikely(parse_icmphdr_common(&ctx->hdr_cur, &ih) < 0))
@@ -635,7 +646,10 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		};
 		CHAIN(icmp_filter, ctx, &key);
 		CHAIN(src_filter_ip, ctx, src_ip_key);
-		/* ICMP has no destination port, so dst rules cannot refine this path. */
+		/*
+		 * ICMP has no destination port, so dst rules cannot
+		 * refine this path.
+		 */
 		return XFW_CTX_PASS;
 	};
 	case XFW_L4_PROTO_GRE:
@@ -645,25 +659,17 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 	}
 }
 
-#define CHAIN_PASS_ALL(filter, ...)					\
-do {									\
-	r = filter(__VA_ARGS__);					\
-	if (r == XFW_CTX_CONTINUE)					\
-		break;							\
-	if (r == XFW_CTX_PASS)						\
-		goto pass;						\
-	return r;							\
-} while (0)
-
 static __always_inline int
 xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 {
-	count_traffic_stat(ctx, XFW_TOTAL_DOWNSTREAM_INGRESS);
+	count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+			   XFW_TOTAL_DOWNSTREAM_INGRESS);
 
 	XFW_DBG_INIT();
 
 	if (unlikely(!ctx->cfg->rules_active)) {
-		count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
+		count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+				   XFW_PASSED_DOWNSTREAM_INGRESS);
 		return XFW_MAKE_CTX_PASS(ctx, XFW_PRELOAD_INGRESS);
 	}
 
@@ -679,8 +685,17 @@ xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 	CHAIN_PASS_ALL(in_process_l4, ctx, &src_ip_key);
 	CHAIN_PASS_ALL(xfw_dst_filter, ctx);
 
+	if (ctx->l4_proto == XFW_L4_PROTO_UDP
+	    && is_dns_filter_enabled(ctx) && is_dns_packet(ctx)
+	    && dns_init_metadata(ctx))
+	{
+		bpf_tail_call(ctx->ctx, &MAP_PROG_ARRAY_REF,
+			      XFW_PROG_DNS_FILTER);
+	}
+
 pass:
-	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
+	count_traffic_stat(ctx->g_stats, ctx->pkt_sz,
+			   XFW_PASSED_DOWNSTREAM_INGRESS);
 	return XFW_CTX_PASS;
 }
 
@@ -703,7 +718,7 @@ xfw_xdp(struct xdp_md *xdp)
 	r = xfw_xdp_filter(&ctx);
 
 pass:
-	return finalize_result(&ctx, r);
+	return finalize_result(ctx.cfg, r);
 }
 
 char LICENSE[] SEC("license") = "GPL v2";
