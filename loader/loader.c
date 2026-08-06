@@ -42,12 +42,16 @@ struct xfw_program {
 	size_t reuse_maps_cnt;
 
 	/*
-	 * Open the BPF object with pin_root_path.
-	 *
-	 * Maps declared with LIBBPF_PIN_BY_NAME will be automatically
-	 * created or reused under pin_root.
+	 * Pin all maps from this object under pin_root.
+	 * Used only for the main XDP program, which owns shared maps.
 	 */
 	bool pin_maps;
+
+	/*
+	 * Register the loaded program in the global tail-call program array.
+	 */
+	bool register_in_prog_array;
+	uint32_t prog_array_idx;
 };
 
 static const struct xfw_program main_xdp = {
@@ -62,6 +66,8 @@ static const struct xfw_program main_xdp = {
 	 * The main XDP object creates and owns the shared maps.
 	 */
 	.pin_maps = true,
+	.register_in_prog_array = false,
+
 };
 
 static const struct map_desc tc_maps[] = {
@@ -90,11 +96,26 @@ static const struct xfw_program main_tc = {
 	 * created and pinned under the common pin root.
 	 */
 	.pin_maps = true,
+	.register_in_prog_array = false,
+};
+
+static const struct xfw_program tcp_syn_drop_module = {
+	.name = "tcp_syn_drop",
+	.obj_path = "/opt/tempesta/lib/bpf/tcp_syn_drop.o",
+	.prog_name = "xfw_tcp_syn_drop",
+	.prog_pin_name = "tcp_syn_drop",
+	.prog_type = BPF_PROG_TYPE_XDP,
+	.reuse_maps = NULL,
+	.reuse_maps_cnt = 0,
+	.pin_maps = true,
+	.register_in_prog_array = true,
+	.prog_array_idx = XFW_PROG_TCP_SYN_DROP_FILTER,
 };
 
 static const struct xfw_program *programs[] = {
 	&main_xdp,
 	&main_tc,
+	&tcp_syn_drop_module,
 };
 
 static void
@@ -110,15 +131,18 @@ usage(const char *prog)
 		"Programs:\n"
 		"  xdp\n"
 		"  tc\n"
+		"  dns\n"
 		"\n"
 		"Examples:\n"
 		"  %s load xdp /sys/fs/bpf/xfw\n"
 		"  %s load tc /sys/fs/bpf/xfw\n"
+		"  %s load dns /sys/fs/bpf/xfw\n"
 		"  %s attach tc /sys/fs/bpf/xfw enp1s0\n"
 		"  %s detach tc /sys/fs/bpf/xfw enp1s0\n"
 		"  %s unload tc /sys/fs/bpf/xfw\n"
-		"  %s unload xdp /sys/fs/bpf/xfw\n",
-		prog, prog, prog, prog,
+		"  %s unload xdp /sys/fs/bpf/xfw\n"
+		"  %s unload dns /sys/fs/bpf/xfw\n",
+		prog, prog, prog, prog, prog, prog,
 		prog, prog, prog, prog, prog, prog);
 }
 
@@ -260,6 +284,10 @@ out:
 	return err;
 }
 
+/*
+ * Reuse an already pinned map instead of creating a new instance.
+ * This allows modules to share state with the main XDP program.
+ */
 static int
 attach_tc(const struct xfw_program *desc, const char *pin_root,
 	  const char *device)
@@ -383,11 +411,100 @@ detach_tc(const struct xfw_program *desc, const char *pin_root,
 	return 0;
 }
 
+static int
+register_tail_call_program(const struct bpf_program *prog,
+			   const char *pin_root, __u32 key)
+{
+	char prog_array_pin[PATH_MAX];
+	int prog_array_fd;
+	int prog_fd;
+	int err;
+
+	err = make_pin_path(prog_array_pin, sizeof(prog_array_pin),
+			    pin_root, MAP_PROG_ARRAY_STR);
+	if (err)
+		return err;
+
+	prog_fd = bpf_program__fd(prog);
+	if (prog_fd < 0) {
+		fprintf(stderr, "Failed to get program fd: %s\n",
+			strerror(-prog_fd));
+		return prog_fd;
+	}
+
+	prog_array_fd = bpf_obj_get(prog_array_pin);
+	if (prog_array_fd < 0) {
+		err = -errno;
+		fprintf(stderr, "Failed to open prog array '%s': %s\n",
+			prog_array_pin, strerror(-err));
+		return err;
+	}
+
+	/*
+	 * Register the newly loaded program in the global PROG_ARRAY so that
+	 * it can be reached via bpf_tail_call().
+	 */
+	if (bpf_map_update_elem(prog_array_fd, &key, &prog_fd, BPF_ANY)) {
+		err = -errno;
+		fprintf(stderr, "Failed to update prog array '%s' at index %u: %s\n",
+			prog_array_pin, key, strerror(-err));
+	} else {
+		err = 0;
+	}
+
+	close(prog_array_fd);
+	return err;
+}
+
+static int
+unregister_tail_call_program(const struct xfw_program *desc,
+			     const char *pin_root)
+{
+	char prog_array_pin[PATH_MAX];
+	__u32 key = desc->prog_array_idx;
+	int prog_array_fd;
+	int err;
+
+	err = make_pin_path(prog_array_pin, sizeof(prog_array_pin),
+			    pin_root, MAP_PROG_ARRAY_STR);
+	if (err)
+		return err;
+
+	prog_array_fd = bpf_obj_get(prog_array_pin);
+	if (prog_array_fd < 0) {
+		if (errno == ENOENT)
+			return 0;
+
+		err = -errno;
+		fprintf(stderr, "Failed to open prog array '%s': %s\n",
+			prog_array_pin, strerror(-err));
+		return err;
+	}
+
+	err = 0;
+
+	/*
+	 * Remove the program from the tail-call dispatch table before
+	 * unpinning it.
+	 */
+	if (bpf_map_delete_elem(prog_array_fd, &key)) {
+		if (errno != ENOENT) {
+			err = -errno;
+			fprintf(stderr,
+				"Failed to remove program '%s' from "
+				"prog array index %u: %s\n",
+				desc->prog_name, key, strerror(-err));
+		}
+	}
+
+	close(prog_array_fd);
+	return err;
+}
+
 /*
- * Load and pin a BPF program.
- *
- * Programs opened with pin_root_path automatically create or reuse
- * maps declared with LIBBPF_PIN_BY_NAME under the specified directory.
+ * The main XDP program is loaded first and owns all shared maps.
+ * Optional modules only reuse those maps and register themselves
+ * in the tail-call program array.
  */
 static int
 load_program(const struct xfw_program *desc, const char *pin_root)
@@ -397,12 +514,9 @@ load_program(const struct xfw_program *desc, const char *pin_root)
 	struct bpf_program *prog;
 	char prog_pin[PATH_MAX];
 	char map_pin[PATH_MAX];
+	bool pinned = false;
 	size_t i;
 	int err;
-
-	err = check_pin_root(pin_root);
-	if (err)
-		return err;
 
 	err = make_pin_path(prog_pin, sizeof(prog_pin),
 			    pin_root, desc->prog_pin_name);
@@ -477,11 +591,22 @@ load_program(const struct xfw_program *desc, const char *pin_root)
 			desc->prog_name, prog_pin, strerror(-err));
 		goto out;
 	}
+	pinned = true;
+
+	if (desc->register_in_prog_array) {
+		err = register_tail_call_program(prog, pin_root,
+						 desc->prog_array_idx);
+		if (err)
+			goto out;
+	}
 
 	printf("Loaded program '%s'\n", desc->prog_name);
 	printf("Program pin: %s\n", prog_pin);
 
 out:
+	if (err && pinned)
+		unlink(prog_pin);
+
 	bpf_object__close(obj);
 
 	return err;
@@ -497,6 +622,12 @@ unload_program(const struct xfw_program *desc, const char *pin_root)
 			    pin_root, desc->prog_pin_name);
 	if (err)
 		return err;
+
+	if (desc->register_in_prog_array) {
+		err = unregister_tail_call_program(desc, pin_root);
+		if (err)
+			return err;
+	}
 
 	if (unlink(prog_pin)) {
 		if (errno == ENOENT)

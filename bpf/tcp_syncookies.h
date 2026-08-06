@@ -617,7 +617,7 @@ tcp_sk_listen_lookup(const XfwGlobalCtx *ctx, struct tcphdr *th)
  * are tolerated where possible.
  */
 static __always_inline int
-tcp_syncookies_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
+tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 {
 	XfwTcpSynCookieTs *ts = __tcp_get_tcp_syncookie_ts();
 	XFW_ASSERT(ts);
@@ -632,6 +632,9 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 		(void *)XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
 	uint32_t iph_len = is_ip4 ? sizeof(struct iphdr) : sizeof(struct ipv6hdr);
 	XFW_ASSERT(iph && iph + iph_len <= ctx->hdr_cur.end);
+	XFW_ASSERT(ctx->l4_off <= L4_OFF_MAX);
+	struct tcphdr *th = XFW_PKT_PTR(ctx, ctx->l4_off, struct tcphdr);
+	XFW_ASSERT((void *)(th + 1) <= ctx->hdr_cur.end);
 
 	/*
 	 * The kernel syncookie helper expects a minimal SYN header. Temporarily

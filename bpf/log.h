@@ -34,7 +34,7 @@ uint32_t pkt_id = 0;
 #if defined(XFW_TC)
 #define XFW_CTX_DBG(fmt, args...)	XFW_DBG("[out] " fmt, ##args)
 
-#elif defined(XFW_XDP)
+#elif defined(XFW_XDP) || defined(XFW_TCP_SYN_DROP)
 #define XFW_CTX_DBG(fmt, args...)	XFW_DBG("[in] " fmt, ##args)
 #endif
 
