@@ -27,7 +27,7 @@
 #if defined(XFW_TC)
 #define XFW_CTX_PASS		TC_ACT_OK
 #define XFW_CTX_DROP		TC_ACT_SHOT
-#elif defined(XFW_XDP)
+#elif defined(XFW_XDP) || defined(XFW_TCP_SYN_DROP)
 #define XFW_CTX_PASS		XDP_PASS
 #define XFW_CTX_DROP		XDP_DROP
 #else

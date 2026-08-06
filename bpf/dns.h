@@ -16,6 +16,7 @@
 #include "log.h"
 
 #include "filter.h"
+#include "metadata.h"
 #include "ctx.h"
 #include "parsing_helpers.h"
 
@@ -33,9 +34,6 @@
 
 /* Limit on answers count for verificator */
 #define MAX_ANCOUNT			100
-
-/* IPv4/IPv6 max len is 60, UDP len is 8*/
-#define L3_L4_HDRS_MAXLEN		68
 
 /* Necessary for verifier */
 /* RFC 6891 (6.2.5)*/
@@ -72,25 +70,6 @@ typedef struct XfwDnsRR {
 	__be32		ttl;
 	__be16		rdata_len;
 } __attribute__((packed)) XfwDnsRR;
-
-/**
- * Packet metadata.
- * We fill it to pass some info to global functions or tail calls.
- *
- * @cur_pos	- Current position of cursor (offset)
- * @ip_off	- Offset of ip hdr in packet
- * @is_ipv4	- 1 if L3 proto is IPv4, else 0 (in dns filter only IPv6)
- * @unused	- Currently unused field to match size of metadata
- */
-typedef struct {
-	uint16_t	cur_pos;
-	uint16_t	ip_off;
-	uint16_t	is_ipv4;
-	uint16_t	unused;
-} __attribute__((packed)) XfwPacketMetadata;
-
-STATIC_ASSERT(sizeof(XfwPacketMetadata) <= 32,
-	      "Packet metadata must be less than 32 bytes");
 
 typedef struct XfwDnsCtx {
 	XfwMd		*ctx;
@@ -419,30 +398,10 @@ ingress_dns_filter(XfwGlobalCtx *ctx, struct udphdr *uh)
 	    uh->source != bpf_htons(DNS_PORT))
 		return XFW_CTX_CONTINUE;
 
-	XfwMd* xdp_ctx = ctx->ctx;
-	uint16_t cur_pos = ctx->hdr_cur.pos - XFW_CTX_DATA_BGN(ctx->ctx);
-	uint16_t is_ipv4;
-
-	switch (ctx->ipver) {
-	case bpf_htons(ETH_P_IP):
-		is_ipv4 = 1;
-		break;
-	case bpf_htons(ETH_P_IPV6):
-		is_ipv4 = 0;
-		break;
-	default:
+	uint16_t cur_pos = (uint16_t)(ctx->hdr_cur.pos -
+			XFW_CTX_DATA_BGN(ctx->ctx));
+	if (!xfw_set_packet_metadata(ctx, cur_pos))
 		return XFW_CTX_CONTINUE;
-	}
-
-	XfwPacketMetadata *md = (void *)(long)xdp_ctx->data_meta;
-	if (unlikely((void *)(md + 1) > (void *)(long)xdp_ctx->data)) {
-		XFW_CTX_DBG("Logic error: created meta data is incorrect.");
-		return XFW_CTX_CONTINUE;
-	}
-
-	md->cur_pos = cur_pos;
-	md->ip_off = ctx->ip_off;
-	md->is_ipv4 = is_ipv4;
 
 	if (unlikely(!ctx->g_stats)) {
 		XFW_CTX_DBG("Logic error: there is no global stats.");

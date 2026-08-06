@@ -57,6 +57,14 @@ struct {
 	__uint(max_entries, XFW_MAX_PORTS);
 } MAP_SRC_PORT_RL_REF SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__type(key, __u32);
+	__type(value, __u32);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+	__uint(max_entries, XFW_PROG_MAX);
+} MAP_PROG_ARRAY_REF SEC(".maps");
+
 #define XFW_MAP_LOOKUP_OR_INIT(m, k, val_t)				\
 ({									\
 	void *r = bpf_map_lookup_elem(m, k);				\
@@ -67,12 +75,6 @@ struct {
 	}								\
 	r;								\
 })
-
-static __always_inline bool
-is_metadata_creation_necessary(const XfwGlobalCtx *ctx)
-{
-	return ctx->cfg->rules.dns.enabled;
-}
 
 static __always_inline int
 create_metadata(XfwGlobalCtx *ctx, struct xdp_md *xdp)
@@ -442,6 +444,22 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 	}
 	}
 }
+
+static __always_inline int
+tcp_syn_drop_filter(XfwGlobalCtx *ctx)
+{
+	if (!xfw_set_packet_metadata(ctx, ctx->l4_off))
+		return XFW_CTX_CONTINUE;
+
+	bpf_tail_call(ctx->ctx, &MAP_PROG_ARRAY_REF,
+		      XFW_PROG_TCP_SYN_DROP_FILTER);
+
+	/*
+	 * Tail call failed, continue normal XDP processing.
+	 */
+	return XFW_CTX_CONTINUE;
+}
+
 /**
  * SYN without ACK received: both SYN cookies and SYN rate limiting may be enabled
  * by configuration. In this case, we run both checks before considering the
@@ -450,9 +468,21 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 static __always_inline int
 tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
+	uint16_t cur_pos = (uint16_t)(ctx->hdr_cur.pos -
+		XFW_CTX_DATA_BGN(ctx->ctx));
+	if (ctx->cfg->rules.tcp_syn_drop.enabled)
+		CHAIN(tcp_syn_drop_filter, ctx);
+
+	/*
+	 * Reinitialize packet cursor after `bpf_tail_call`, because the
+	 * verifier may lose packet-pointer types stored in the global
+	 * context.
+	 */
+	INIT_CURSOR_FROM_BPF_CONTEXT(ctx->ctx, &ctx->hdr_cur);
+	ctx->hdr_cur.pos += cur_pos;
 	/* If a SYN cookie was generated, processing stops immediately. */
 	if (ctx->cfg->rules.syncookie.enabled)
-		CHAIN(tcp_syncookies_syn_filter, ctx, th);
+		CHAIN(tcp_syncookies_syn_filter, ctx);
 
 	CHAIN(syn_rlimit, ctx);
 
@@ -640,7 +670,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		if (unlikely(parse_icmphdr_common(&ctx->hdr_cur, &ih) < 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_BADHDR_INGRESS);
 
-		XFW_CTX_DBG("ICMP header parsed, type=%u", ih->type);
+		XFW_DBG("ICMP header parsed, type=%u", ih->type);
 
 		const XfwIcmpKey key = {
 			.proto = ctx->l4_proto,
