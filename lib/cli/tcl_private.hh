@@ -26,6 +26,14 @@ struct Syncookie {
 	int	flood_timer_ = 0;
 };
 
+struct TcpSynDrop {
+	uint64_t	hash_salt_ = 0;
+	uint64_t	time_min_ = 0;
+	uint64_t	max_delay_ = 0;
+	uint64_t	block_timeout_ = 0;
+	uint32_t	retry_count_ = 0;
+};
+
 struct TcpAnomalyRule {
 	BitSet<TcpAnomalyFeature, XFW_TCP_ANOMALY_FEATURE_MAX>		features_;
 	std::optional<BitSet<TcpControlBits, XFW_BIT_CONTROL_MAX>>	bad_tcp_flags_;
@@ -291,22 +299,24 @@ public:
 		EVALUATION_MODE_ON		= 4,
 		EVALUATION_MODE_OFF		= 5,
 		TCP_SYNCOOKIE_FILTER_OFF	= 6,
+		TCP_SYN_DROP_FILTER_OFF		= 7,
 		//If the TCP_RST_FLAGS_FILTER_OFF/TCP_SYN_FLAGS_FILTER_OFF flag is
 		//set, the filter must be disabled. Otherwise, the data may be
 		//present in a std::vector<TcpFlags>. In that case, the existing
 		//values should be overwritten. If the data is not present, the
 		//server'sbehavior has already been defined and should not be changed.
-		TCP_SYN_FLAGS_FILTER_OFF	= 7,
-		TCP_RST_FLAGS_FILTER_OFF	= 8,
-		DNS_FILTER_ON			= 9,
-		DNS_FILTER_OFF			= 10,
-		IP_PROTO_FILTER_OFF		= 11,
+		TCP_SYN_FLAGS_FILTER_OFF	= 8,
+		TCP_RST_FLAGS_FILTER_OFF	= 9,
+		DNS_FILTER_ON			= 10,
+		DNS_FILTER_OFF			= 11,
+		IP_PROTO_FILTER_OFF		= 12,
 		_MAX_BIT
 	};
 
 	BitSet<Opt, Opt::_MAX_BIT>	flags_;
 	std::optional<IpProtoRule>	ip_proto_;
 	std::optional<Syncookie>	syncookie_;
+	std::optional<TcpSynDrop>	tcp_syn_drop_;
 	std::vector<NetRule>		net_rules_;
 	std::vector<TcpFlags>		tcp_flags_;
 	std::vector<Ratelimit>		ratelimits_;
