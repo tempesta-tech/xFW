@@ -15,10 +15,13 @@
 /* Use type redefinitions instead of typedefs to not to confuse BTF/CO-RE. */
 #if defined(XFW_TC)
 #define XfwMd				struct __sk_buff
+#define XFW_DATA_META(ctx)		((XfwPacketMetadata *)(void *)(ctx)->cb)
 #elif defined(XFW_XDP)
 #define XfwMd				struct xdp_md
+#define XFW_DATA_META(ctx)		((XfwPacketMetadata *)(long)(ctx)->data_meta)
 #elif defined(XFW_DNS)
 #define XfwMd				struct xdp_md
+#define XFW_DATA_META(ctx)		((XfwPacketMetadata *)(long)(ctx)->data_meta)
 #else
 #error "Undefined program type: should be TC or XDP"
 #endif

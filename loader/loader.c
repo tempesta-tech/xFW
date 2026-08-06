@@ -50,7 +50,7 @@ struct xfw_program {
 	/*
 	 * Register the loaded program in the global tail-call program array.
 	 */
-	bool register_in_prog_array;
+	const char *prog_array_name;
 	uint32_t prog_array_idx;
 };
 
@@ -66,7 +66,7 @@ static const struct xfw_program main_xdp = {
 	 * The main XDP object creates and owns the shared maps.
 	 */
 	.pin_maps = true,
-	.register_in_prog_array = false,
+	.prog_array_name = NULL,
 
 };
 
@@ -96,7 +96,7 @@ static const struct xfw_program main_tc = {
 	 * created and pinned under the common pin root.
 	 */
 	.pin_maps = true,
-	.register_in_prog_array = false,
+	.prog_array_name = NULL,
 };
 
 static const struct map_desc dns_maps[] = {
@@ -118,8 +118,8 @@ static const struct xfw_program dns_module = {
 	.reuse_maps = dns_maps,
 	.reuse_maps_cnt = ARRAY_SIZE(dns_maps),
 	.pin_maps = false,
-	.register_in_prog_array = true,
-	.prog_array_idx = XFW_PROG_DNS_FILTER,
+	.prog_array_name = MAP_XDP_PROG_ARRAY_STR,
+	.prog_array_idx = XFW_PROG_INGRESS_DNS_FILTER,
 };
 
 static const struct xfw_program *programs[] = {
@@ -423,7 +423,8 @@ detach_tc(const struct xfw_program *desc, const char *pin_root,
 
 static int
 register_tail_call_program(const struct bpf_program *prog,
-			   const char *pin_root, __u32 key)
+			   const char *pin_root, 
+			   const char *prog_array_name, __u32 key)
 {
 	char prog_array_pin[PATH_MAX];
 	int prog_array_fd;
@@ -431,7 +432,7 @@ register_tail_call_program(const struct bpf_program *prog,
 	int err;
 
 	err = make_pin_path(prog_array_pin, sizeof(prog_array_pin),
-			    pin_root, MAP_PROG_ARRAY_STR);
+			    pin_root, prog_array_name);
 	if (err)
 		return err;
 
@@ -476,7 +477,7 @@ unregister_tail_call_program(const struct xfw_program *desc,
 	int err;
 
 	err = make_pin_path(prog_array_pin, sizeof(prog_array_pin),
-			    pin_root, MAP_PROG_ARRAY_STR);
+			    pin_root, desc->prog_array_name);
 	if (err)
 		return err;
 
@@ -603,8 +604,9 @@ load_program(const struct xfw_program *desc, const char *pin_root)
 	}
 	pinned = true;
 
-	if (desc->register_in_prog_array) {
+	if (desc->prog_array_name) {
 		err = register_tail_call_program(prog, pin_root,
+						 desc->prog_array_name,
 						 desc->prog_array_idx);
 		if (err)
 			goto out;
@@ -633,7 +635,7 @@ unload_program(const struct xfw_program *desc, const char *pin_root)
 	if (err)
 		return err;
 
-	if (desc->register_in_prog_array) {
+	if (desc->prog_array_name) {
 		err = unregister_tail_call_program(desc, pin_root);
 		if (err)
 			return err;

@@ -11,6 +11,7 @@
 #include "vmlinux.h"
 
 #include "../bpf_uapi/types.h"
+#include "../bpf_uapi/map_names.h"
 
 #ifndef TC_ACT_OK
 #define TC_ACT_OK		BPF_OK
@@ -33,6 +34,14 @@ SHADOW_MAP(MAP_NET_IP4_BASENAME, BPF_MAP_TYPE_LPM_TRIE, XFW_MAX_PROTECTED_NET_RU
 	    XfwIpv4LpmKey, int, BPF_F_NO_PREALLOC);
 SHADOW_MAP(MAP_NET_IP6_BASENAME, BPF_MAP_TYPE_LPM_TRIE, XFW_MAX_PROTECTED_NET_RULES,
 	    XfwIpv6LpmKey, int, BPF_F_NO_PREALLOC);
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__type(key, __u32);
+	__type(value, __u32);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+	__uint(max_entries, XFW_PROG_MAX);
+} MAP_TC_PROG_ARRAY_REF SEC(".maps");
 
 /**
  * Parsing function, should not drop packets!
@@ -100,7 +109,12 @@ out_process_l4(XfwGlobalCtx *ctx)
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_UDP_BADHDR_EGRESS);
 
-		egress_dns_filter(ctx);
+
+		if (ctx->l4_proto == XFW_L4_PROTO_UDP
+		    && is_dns_filter_enabled(ctx) && is_dns_packet(ctx)
+		    && dns_init_egress_metadata(ctx))
+			egress_dns_filter(ctx->ctx);
+			
 
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
@@ -161,6 +175,17 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 	/* Build map lookup keys before policy evaluation. */
 	CHAIN(out_process_l3, ctx, &prot_net_key, &prot_net_map);
 	CHAIN(out_process_l4, ctx);
+
+#if 0
+	if (ctx->l4_proto == XFW_L4_PROTO_UDP
+	    && is_dns_filter_enabled(ctx) && is_dns_packet(ctx)
+	    && dns_init_egress_metadata(ctx))
+	{
+		bpf_tail_call(ctx->ctx, &MAP_PROG_ARRAY_REF,
+			      XFW_PROG_EGRESS_DNS_FILTER);
+	}
+#endif
+
 	/* Parsing is complete; start policy checks. */
 
 	*is_upstream_egress = (bpf_map_lookup_elem(prot_net_map, &prot_net_key) == NULL);

@@ -89,6 +89,9 @@ STATIC_ASSERT(sizeof(XfwPacketMetadata) <= 32,
 	      "Packet metadata must be less than 32 bytes");
 STATIC_ASSERT(sizeof(XfwPacketMetadata) % 4 == 0,
 	      "XDP metadata size must be 4-byte aligned");
+STATIC_ASSERT(sizeof(XfwPacketMetadata) <=
+	      sizeof(((struct __sk_buff *)0)->cb),
+	      "XfwPacketMetadata does not fit into skb->cb");
 
 SIMPLE_PARSE_FUNC_DECL(parse_dnshdr, XfwDnsHdr);
 SIMPLE_PARSE_FUNC_DECL(parse_dns_question_record, XfwDnsQRec);
@@ -133,7 +136,7 @@ is_dns_packet(const XfwGlobalCtx *ctx)
 }
 
 static __always_inline bool
-dns_init_metadata(XfwGlobalCtx *ctx)
+dns_init_ingress_metadata(XfwGlobalCtx *ctx)
 {
 	XfwMd *xdp_ctx = ctx->ctx;
 	uint16_t is_ipv4, ip_pos;
@@ -156,35 +159,85 @@ dns_init_metadata(XfwGlobalCtx *ctx)
 		return false;
 	}
 
-	md->cur_pos =  ctx->hdr_cur.pos - XFW_CTX_DATA_BGN(xdp_ctx);
+	md->cur_pos = ctx->hdr_cur.pos - XFW_CTX_DATA_BGN(xdp_ctx);
 	md->ip_pos = ip_pos;
 	md->is_ipv4 = is_ipv4;
 
 	return true;
 }
 
-static __always_inline void
-egress_dns_filter(XfwGlobalCtx *ctx)
+static __always_inline bool
+dns_init_egress_metadata(XfwGlobalCtx *ctx)
 {
-	if (unlikely(!ctx->cfg->rules.dns.enabled))
+	XfwMd *xdp_ctx = ctx->ctx;
+	__u32 cur_pos;
+
+	cur_pos = (__u16)(ctx->hdr_cur.pos - XFW_CTX_DATA_BGN(xdp_ctx));
+	asm volatile(
+		"*(u32 *)(%[ctx] + %[off]) = %[value]"
+		:
+		: [ctx] "r"(xdp_ctx),
+		  [off] "i"(offsetof(struct __sk_buff, cb) +
+			    offsetof(XfwPacketMetadata, cur_pos)),
+		  [value] "r"(cur_pos),
+		  "m"(*xdp_ctx)
+	);
+
+	return true;
+}
+
+static __always_inline __u16
+dns_get_egress_cur_pos(const XfwMd *tc_ctx)
+{
+	__u32 value;
+
+	asm volatile(
+		"%[value] = *(u32 *)(%[ctx] + %[off])"
+		: [value] "=r"(value)
+		: [ctx] "r"(tc_ctx),
+		  [off] "i"(offsetof(struct __sk_buff, cb) +
+			    offsetof(XfwPacketMetadata, cur_pos)),
+		  "m"(*tc_ctx)
+	);
+
+	return (__u16)value;
+}
+
+static __always_inline void
+egress_dns_filter(XfwMd *xdp_ctx)
+{
+	void *data = XFW_CTX_DATA_BGN(xdp_ctx);
+	void *data_end = XFW_CTX_DATA_END(xdp_ctx);
+	__u32 cur_pos = dns_get_egress_cur_pos(xdp_ctx);
+	XfwHdrCursor cur;
+	XfwDnsHdr dh;
+	void *dns_pos;
+	uint16_t hflags;
+	uint8_t qr;
+
+	/*
+	 * cur_pos comes from skb->cb and is therefore a scalar.
+	 * Build a packet pointer from the current skb->data and check
+	 * the complete DNS header using that exact pointer.
+	 */
+	dns_pos = data + cur_pos;
+
+	if (dns_pos + sizeof(XfwDnsHdr) > data_end)
 		return;
 
-	if (ctx->uh->dest != bpf_htons(DNS_PORT) &&
-		ctx->uh->source != bpf_htons(DNS_PORT))
+	cur.pos = dns_pos;
+	cur.end = data_end;
+
+	if (bpf_skb_load_bytes(xdp_ctx, cur_pos, &dh, sizeof(dh)) < 0)
 		return;
 
-	XfwDnsHdr *dh = parse_dnshdr(&ctx->hdr_cur);
-	if (unlikely(dh == NULL))
-		return;
+	hflags = bpf_ntohs(dh.flags);
+	qr = dns_get_qr(hflags);
 
-	uint16_t hflags = bpf_ntohs(dh->flags);
-	uint8_t qr = dns_get_qr(hflags);
-
-	if (qr == DNS_QUERY) { /* Is query */
+	if (qr == DNS_QUERY) {
 		uint8_t zero = 0;
-		bpf_map_update_elem(&MAP_DNS_EGR_FD_REF, &dh->id, &zero, BPF_NOEXIST);
-		return;
-	}
 
-	/* Packet is a response, nothing to do for now */
+		bpf_map_update_elem(&MAP_DNS_EGR_FD_REF,
+				    &dh.id, &zero, BPF_NOEXIST);
+	}
 }

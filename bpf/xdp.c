@@ -63,7 +63,7 @@ struct {
 	__type(value, __u32);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__uint(max_entries, XFW_PROG_MAX);
-} MAP_PROG_ARRAY_REF SEC(".maps");
+} MAP_XDP_PROG_ARRAY_REF SEC(".maps");
 
 #define XFW_MAP_LOOKUP_OR_INIT(m, k, val_t)				\
 ({									\
@@ -687,10 +687,10 @@ xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 
 	if (ctx->l4_proto == XFW_L4_PROTO_UDP
 	    && is_dns_filter_enabled(ctx) && is_dns_packet(ctx)
-	    && dns_init_metadata(ctx))
+	    && dns_init_ingress_metadata(ctx))
 	{
-		bpf_tail_call(ctx->ctx, &MAP_PROG_ARRAY_REF,
-			      XFW_PROG_DNS_FILTER);
+		bpf_tail_call(ctx->ctx, &MAP_XDP_PROG_ARRAY_REF,
+			      XFW_PROG_INGRESS_DNS_FILTER);
 	}
 
 pass:
