@@ -44,16 +44,25 @@ enum XFWOpt : byte {
 	EVALUATION_MODE_ON		= 4,
 	EVALUATION_MODE_OFF		= 5,
 	TCP_SYNCOOKIE_FILTER_OFF	= 6,
-	TCP_SYN_FLAGS_FILTER_OFF	= 7,
-	TCP_RST_FLAGS_FILTER_OFF	= 8,
-	DNS_FILTER_ON               	= 9,
-	DNS_FILTER_OFF             	= 10,
-	IP_PROTO_FILTER_OFF		=11
+	TCP_SYN_DROP_FILTER_OFF		= 7,
+	TCP_SYN_FLAGS_FILTER_OFF	= 8,
+	TCP_RST_FLAGS_FILTER_OFF	= 9,
+	DNS_FILTER_ON               	= 10,
+	DNS_FILTER_OFF             	= 11,
+	IP_PROTO_FILTER_OFF		= 12
 }
 
 table Syncookie {
 	passive_timer: uint32;
 	flood_timer: uint32;
+}
+
+table TcpSynDrop {
+	hash_salt: uint64;
+	time_min: uint64;
+	max_delay: uint64;
+	block_timeout: uint64;
+	retry_count: uint32;
 }
 
 table TcpAnomaly {
@@ -155,6 +164,7 @@ table XFWCfg {
 	flags: [ubyte];	// Representing the bitset for flags
 	ip_proto: IpProto;
 	syncookie: Syncookie;
+	tcp_syn_drop: TcpSynDrop;
 	tcp_flags: [TcpFlagsFilter];
 	net_rules: [NetRule];
 	icmp_rules: [IcmpRule];
