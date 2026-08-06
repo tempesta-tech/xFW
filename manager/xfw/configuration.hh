@@ -56,6 +56,14 @@ public:
 		uint64_t	flood_timer_ = 0;
 	};
 
+	struct TcpSynDropFilter {
+		uint64_t	hash_salt_ = 0;
+		uint64_t	time_min_ = 0;
+		uint64_t	max_delay_ = 0;
+		uint64_t	block_timeout_ = 0;
+		uint32_t	retry_count_ = 0;
+	};
+
 	struct TcpFlagFilter
 	{
 		RatelimitIndex ratelimit_index_ = -1;
@@ -283,6 +291,7 @@ public:
 	EvaluationMode			evaluation_mode_;
 	std::optional<IpProtoFilter>	ip_proto_filter_;
 	std::optional<SynCookieFilter>	syncookie_filter_;
+	std::optional<TcpSynDropFilter> tcp_syn_drop_filter_;
 	std::optional<TcpFlagFilter>	tcp_syn_flag_filter_;
 	std::optional<TcpFlagFilter>	tcp_rst_flag_filter_;
 	TcpAnomalyFilter		anomaly_filter_;

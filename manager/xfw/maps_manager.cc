@@ -329,10 +329,26 @@ BpfMapsManager::set_simple_rules(const XfwConfig &config)
 	cfg.rules.dns.enabled = config.dns_filter_.enabled_;
 
 	cfg.rules.syncookie.enabled = config.syncookie_filter_.has_value();
+
+	auto msecs_to_jiffies = [this](uint64_t msecs) {
+		return (msecs * hz_) / 1000;
+	};
 	if (cfg.rules.syncookie.enabled) {
 		const auto &data = config.syncookie_filter_.value();
 		cfg.rules.syncookie.flood_timer_jiff = data.flood_timer_ * hz_;
 		cfg.rules.syncookie.passive_timer_jiff = data.passive_timer_ * hz_;
+	}
+	cfg.rules.tcp_syn_drop.enabled = config.tcp_syn_drop_filter_.has_value();
+	if (cfg.rules.tcp_syn_drop.enabled) {
+		const auto &data = config.tcp_syn_drop_filter_.value();
+		cfg.rules.tcp_syn_drop.hash_salt = data.hash_salt_;
+		cfg.rules.tcp_syn_drop.time_min_jiff =
+			msecs_to_jiffies(data.time_min_);
+		cfg.rules.tcp_syn_drop.max_delay_jiff =
+			msecs_to_jiffies(data.max_delay_);
+		cfg.rules.tcp_syn_drop.block_timeout_jiff =
+			msecs_to_jiffies(data.block_timeout_);
+		cfg.rules.tcp_syn_drop.retry_count = data.retry_count_;	
 	}
 
 	upload_config_changes(cfg, no_ratelimit_buckets);

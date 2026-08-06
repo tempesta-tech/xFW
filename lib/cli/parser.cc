@@ -15,6 +15,7 @@
 
 #include <boost/asio/ip/address.hpp>
 
+#include "config_defaults.hh"
 #include "defaults_section.hh"
 #include "ip_proto_section.hh"
 #include "tempesta_client.hh" // for extern "C" API
@@ -282,6 +283,30 @@ protected:
 		std::optional<uint32_t>		p_timer_;
 	};
 
+	struct TcpSynDropSection final: public Section {
+	public:
+		TcpSynDropSection(XfwConf &conf)
+			: Section("tcp_syn_drop", std::unique_ptr<ActionProcessor>(),
+				  std::make_unique<EditProcessor>())
+			, xfw_conf_(conf)
+		{}
+
+		virtual ~TcpSynDropSection() override {}
+
+	private:
+		virtual bool process_attributes() override;
+
+		virtual void commit() override;
+
+	private:
+		XfwConf				&xfw_conf_;
+		std::optional<uint64_t>		hash_salt_;
+		std::optional<uint64_t>		time_min_;
+		std::optional<uint64_t>		max_delay_;
+		std::optional<uint64_t>		block_timeout_;
+		std::optional<uint32_t>		retry_count_;
+	};
+
 	class RatelimitSection final: public Section
 	{
 	public:
@@ -460,6 +485,8 @@ XfwSection::process_body()
 		return {true, std::make_shared<TcpAuthSection>(xfw_conf_)};
 	else if (name == "tcp_syncookies"sv)
 		return {true, std::make_shared<TcpSyncookieSection>(xfw_conf_)};
+	else if (name == "tcp_syn_drop"sv)
+		return {true, std::make_shared<TcpSynDropSection>(xfw_conf_)};
 	else if (name == "net"sv)
 		return {true, std::make_shared<ProtectedNetSection>(xfw_conf_)};
 	else if (name == "icmp"sv)
@@ -1193,6 +1220,109 @@ XfwSection::TcpSyncookieSection::commit()
 	}
 	xfw_conf_.syncookie_.emplace(p_timer_.value_or(0),
 		f_timer_.value_or(0));
+}
+
+/*
+ * ------------------------------------------------------------------------
+ *	XfwSection::TcpSynDropSection section parsing
+ * ------------------------------------------------------------------------
+ */
+bool
+XfwSection::TcpSynDropSection::process_attributes()
+{
+	using namespace std::literals;
+
+	auto name = peek_until_delimeters();
+	if (name == "hash_salt") {
+		hash_salt_ = consume_typed_assignment<uint64_t>(name);
+		return true;
+	}
+	else if (name == "time_min") {
+		time_min_ = consume_typed_assignment<uint64_t>(name);
+		return true;
+	}
+	else if (name == "max_delay") {
+		max_delay_ = consume_typed_assignment<uint64_t>(name);
+		return true;
+	}
+	else if (name == "retry_count") {
+		retry_count_ = consume_typed_assignment<uint32_t>(name);
+		return true;
+	}
+	else if (name == "block_timeout") {
+		block_timeout_ = consume_typed_assignment<uint64_t>(name);
+		return true;
+	}
+
+	return false;
+}
+
+void
+XfwSection::TcpSynDropSection::commit()
+{
+	assert(!!edit_processor_);
+	auto edit_action = edit_processor_->get_result();
+	if (edit_action.has_value()) {
+		if (*edit_action != EditProcessor::EditType::DELETE)
+			throw Except("Operation '{}' is not allowed with tcp_syn_drop",
+				     EditProcessor::to_string(edit_action.value()));
+		xfw_conf_.flags_.set(XfwConf::Opt::TCP_SYN_DROP_FILTER_OFF);
+		return;
+	}
+
+	/*
+	 * The salt cannot safely have a generic default because it is part of
+	 * the protection against predictable hash collisions.
+	 */
+	if (!hash_salt_.has_value()) {
+		throw Except(
+			"tcp_syn_drop requires the 'hash_salt' parameter."
+		);
+	}
+
+	/*
+	 * The design does not specify a default retry count, so it must be
+	 * explicitly configured.
+	 */
+	if (!retry_count_.has_value()) {
+		throw Except(
+			"tcp_syn_drop requires the 'retry_count' parameter."
+		);
+	}
+
+	if (!retry_count_.value()) {
+		throw Except(
+			"tcp_syn_drop: 'retry_count' must be greater than zero."
+		);
+	}
+
+	const uint64_t time_min =
+		time_min_.value_or(TCP_SYN_DROP_DEFAULT_TIME_MIN);
+
+	const uint64_t max_delay =
+		max_delay_.value_or(TCP_SYN_DROP_DEFAULT_MAX_DELAY);
+
+	const uint64_t block_timeout =
+		block_timeout_.value_or(TCP_SYN_DROP_DEFAULT_BLOCK_TIMEOUT);
+
+	/*
+	 * The valid retransmission window is defined as:
+	 *
+	 *     stored_time + time_min <= now <= stored_time + max_delay
+	 *
+	 * Therefore, time_min must not exceed max_delay, otherwise no
+	 * retransmission could ever satisfy the condition.
+	 */
+	if (time_min > max_delay) {
+		throw Except(
+			"tcp_syn_drop: 'time_min' ({}) must not exceed "
+			"'max_delay' ({}).", time_min, max_delay
+		);
+	}
+
+	xfw_conf_.tcp_syn_drop_.emplace(hash_salt_.value(),
+					time_min, max_delay, block_timeout,
+					retry_count_.value());
 }
 
 /*
