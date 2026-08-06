@@ -38,6 +38,18 @@ serialize(flatbuffers::grpc::MessageBuilder &builder, const XfwConf &xfw)
 					    xfw.syncookie_.value().flood_timer_);
 	}
 
+	flatbuffers::Offset<TempestaRPC::TcpSynDrop> tcp_syn_drop;
+	if (xfw.tcp_syn_drop_.has_value()) {
+		tcp_syn_drop = CreateTcpSynDrop(
+			builder,
+			xfw.tcp_syn_drop_.value().hash_salt_,
+			xfw.tcp_syn_drop_.value().time_min_,
+			xfw.tcp_syn_drop_.value().max_delay_,
+			xfw.tcp_syn_drop_.value().block_timeout_,
+			xfw.tcp_syn_drop_.value().retry_count_
+		);
+	}
+
 	// Create TcpFlags.
 	std::vector<flatbuffers::Offset<TempestaRPC::TcpFlagsFilter>> tcp_flags;
 	if (!xfw.tcp_flags_.empty()) {
@@ -160,14 +172,15 @@ serialize(flatbuffers::grpc::MessageBuilder &builder, const XfwConf &xfw)
 
 	return CreateXFWCfg(builder,
 			    bitset_serialize(builder, xfw.flags_),
-			    xfw.ip_proto_.has_value() ? ip_proto: 0,
-			    xfw.syncookie_.has_value() ? syncookie: 0,
+			    xfw.ip_proto_.has_value() ? ip_proto : 0,
+			    xfw.syncookie_.has_value() ? syncookie : 0,
+			    xfw.tcp_syn_drop_.has_value() ? tcp_syn_drop : 0,
 			    xfw.tcp_flags_.empty() ? 0 : builder.CreateVector(tcp_flags),
 			    xfw.net_rules_.empty() ? 0 : builder.CreateVector(net_rules),
 			    xfw.icmp_rules_.empty() ? 0 : builder.CreateVector(icmp_rules),
-			    xfw.ratelimits_.empty() ? 0: builder.CreateVector(ratelimits),
+			    xfw.ratelimits_.empty() ? 0 : builder.CreateVector(ratelimits),
 			    xfw.defaults_.empty() ? 0 : builder.CreateVector(defaults),
-			    xfw.tcp_anomaly_.has_value() ? tcp_anomaly: 0);
+			    xfw.tcp_anomaly_.has_value() ? tcp_anomaly : 0);
 }
 
 flatbuffers::grpc::Message<TempestaRPC::Request>
