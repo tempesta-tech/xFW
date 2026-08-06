@@ -33,11 +33,14 @@ declare xfw_path="${TEMPESTA_XFW_PATH:-}"
 # 2) Default path
 declare default_path="/opt/tempesta"
 # TODO #10: move to /sys/fs/bpf/xfw
-declare -r xfw_bpf_path="/sys/fs/bpf/tc/globals"
+declare -r xfw_bpf_path="/sys/fs/bpf/xfw"
 
-declare -r pin_dispatchers_log="/tmp/tempesta/xfw/pin_dispatchers"
-declare -r version_file="/tmp/tempesta/xfw/version"
-declare -r status_dir="/tmp/tempesta/xfw/status/"
+declare -r xfw_tmp_path="/tmp/tempesta/xfw"
+declare -r version_file="$xfw_tmp_path/version"
+declare -r status_dir="$xfw_tmp_path/status/"
+declare -ar bpf_modules=(
+	dns
+)
 
 # Select the first existing directory
 if [ -n "$xfw_path" ] && [ -d "$xfw_path" ]; then
@@ -216,16 +219,16 @@ is_bpf_attached_to_dev()
 bpf_maps_check()
 {
 	local maps="$(bpftool map | awk -v prefix='xfw_' 'index($0, prefix) {print $4}')"
-	local pr_err="${1:-echo -e}"
 
 	if [ -z "$maps" ]; then
-		$pr_err "BPF maps:\t\t\tnot loaded"
+		echo -e "BPF maps:\t\t\tnot loaded"
 		return 1
 	fi
 
 	local dup_maps="$(printf '%s\n' "$maps" | awk 'seen[$0]++ {print}')"
 	if [ -n "$dup_maps" ]; then
-		$pr_err "BPF maps:\t\t\tduplicated (ERROR!)"
+		echo -e "BPF maps:\t\t\tduplicated (ERROR!)"
+		echo -e "Duplicated maps:\n$dup_maps"
 		return 1
 	fi
 
@@ -237,7 +240,9 @@ bpf_maps_check()
 
 maps_clean()
 {
-	find "$xfw_bpf_path" -name "xfw_*" -type f -delete
+	if [[ -d "$xfw_bpf_path" ]]; then
+		find "$xfw_bpf_path" -name "xfw_*" -type f -delete
+	fi
 }
 
 update_status()
@@ -263,94 +268,204 @@ load_and_print_status()
 	fi
 }
 
+xdp_attach_type()
+{
+	local mode="$1"
+
+	case "$mode" in
+	native | drv)
+		echo "xdpdrv"
+		;;
+	skb | generic)
+		echo "xdpgeneric"
+		;;
+
+	*)
+		echo ""
+		;;
+	esac
+}
+
+load_module()
+{
+	local module="$1"
+	local tmp_log
+	local rc
+
+	tmp_log=$(mktemp "$xfw_tmp_path/${module}-load.XXXXXX")
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		unload_bpf
+		error "Failed to create log file for BPF module '$module'"
+	fi
+
+	[[ "$v" -eq 1 ]] && echo "$project_path"/bin/xfw_bpf_loader load "$module" "$xfw_bpf_path"
+
+	"$project_path"/bin/xfw_bpf_loader load "$module" "$xfw_bpf_path" > "$tmp_log" 2>&1
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		echo "Error while loading BPF module '$module'. See $tmp_log for details."
+		[[ "$v" -eq 1 ]] && echo "Trying to unload remaining BPF programs:"
+		unload_bpf
+		error "Failed to load BPF module '$module' (exit code $rc)"
+	fi
+
+	if [[ "$v" -eq 1 ]]; then
+		echo "BPF module '$module' loader output:"
+		cat "$tmp_log"
+	fi
+}
+
+load_modules()
+{
+	local module
+
+	for module in "${bpf_modules[@]}"; do
+		load_module "$module"
+	done
+}
+
 load_xdp()
 {
-	local dev="$1"
+	local tmp_log
+	local rc
 
-	mkdir -p /tmp/tempesta/xfw
-	local tmp_log=$(mktemp /tmp/tempesta/xfw/xdp-loader.XXXXXX)
+	mkdir -p "$xfw_tmp_path"
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		error "Failed to create $xfw_tmp_path"
+	fi
 
-	# Always run with -vvv and capture output
-	[ $v -eq 1 ] && echo xdp-loader load -vvv -m $devmode $dev "$project_path/lib/bpf/xdp.o" -p "$xfw_bpf_path"
+	tmp_log=$(mktemp "$xfw_tmp_path/xdp-load.XXXXXX")
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		error "Failed to create XDP load log (exit code $rc)"
+	fi
 
-	xdp-loader load -vvv -m $devmode $dev "$project_path/lib/bpf/xdp.o" -p "$xfw_bpf_path" > "$tmp_log" 2>&1
-	local rc=$?
-	if [ $rc -ne 0 ]; then
+	[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader load xdp "$xfw_bpf_path"
+	"$project_path"/bin/xfw_bpf_loader load xdp "$xfw_bpf_path" > "$tmp_log" 2>&1
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
 		echo "Error while loading XDP program. See $tmp_log for details."
+		[ "$v" -eq 1 ] && echo "Trying to unload remaining BPF programs:"
+		unload_bpf
+		error "Failed to load XDP program (exit code $rc)"
+	fi
+	if [ "$v" -eq 1 ]; then
+		echo "XDP loader output:"
+		cat "$tmp_log"
+	fi
+}
+
+attach_xdp()
+{
+	local dev="$1"
+	local attach_type=$2
+	local tmp_log
+	local rc
+
+	tmp_log=$(mktemp "$xfw_tmp_path/xdp-attach.XXXXXX")
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		echo "Failed to create XDP attach log"
 		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
 		unload_bpf
-		[ $v -eq 1 ] && echo ""
-		error "Failed to load XDP program on device $dev (exit code $rc)"
+		error "Failed to create XDP attach log (exit code $rc)"
 	fi
 
-	[ $v -eq 1 ] && echo -n "xdp-loader result: "
+	[ $v -eq 1 ] && echo bpftool net attach "$attach_type" pinned "$xfw_bpf_path/xdp" dev "$dev"
+	bpftool net attach "$attach_type" pinned "$xfw_bpf_path/xdp" dev "$dev" > "$tmp_log" 2>&1
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		echo "Error while attaching XDP program. See $tmp_log for details."
+		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
+		unload_bpf
+		error "Failed to attach XDP program on device $dev (exit code $rc)"
+	fi
+
+	[ $v -eq 1 ] && echo -n "bpftool attaching result: "
 	[ $v -eq 1 ] && tail -n 1 "$tmp_log"
-
-	# Extract the pinned path from log
-	# Looking for pattern: libxdp: Pinning multiprog fd \d+ beneath [^\s]+xdp/dispatch-\d+-\d+
-	local pinned_paths=$(grep -oP 'libxdp: Pinning multiprog fd \d+ beneath \K[^\s]+xdp/dispatch-\d+-\d+' "$tmp_log")
-	local count=$(printf '%s\n' "$pinned_paths" | grep -c . || true)
-
-	if [ "$count" -eq 1 ]; then
-		local pinned_path="$pinned_paths"
-	elif [ "$count" -gt 1 ]; then
-		echo "WARNING: Found multiple pinned paths in xdp-loader output ($count matches)" >&2
-	else
-		error "Could not extract pinned path from xdp-loader output"
-	fi
-
-	# Save pinned path to file
-	mkdir -p "$(dirname "$pin_dispatchers_log")"
-	echo "$pinned_path" >> "$pin_dispatchers_log"
 }
 
 load_tc()
 {
-	local dev="$1"
+	local tmp_log
+	local rc
 
-	mkdir -p /tmp/tempesta/xfw
-	local tmp_log=$(mktemp /tmp/tempesta/xfw/tc-loader.XXXXXX)
-
-	# Create a TC hook to attach by xFW TC program.
-	# The hook might be configured by somebody else, so check it first.
-	#
-	# TODO #10: replace the legacy tc calls with a
-	# bpf_program__attach_tcx() program.
-	if ! tc qdisc show dev "$dev" | grep -q clsact; then
-		tc qdisc add dev "$dev" clsact || {
-			unload_bpf
-			error "Failed to add clsact qdisc on $dev"
-		}
+	tmp_log=$(mktemp "$xfw_tmp_path/tc-load.XXXXXX")
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		echo "Failed to create TC load log"
+		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
+		unload_bpf
+		error "Failed to create TC load log (exit code $rc)"
 	fi
 
-	[ $v -eq 1 ] && echo tc filter add dev "$dev" egress bpf da obj "$project_path/lib/bpf/tc.o" sec tc
-
-	tc filter add dev "$dev" egress bpf da obj "$project_path/lib/bpf/tc.o" sec tc > "$tmp_log" 2>&1
-	local rc=$?
-	if [ $rc -ne 0 ]; then
+	[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader load tc "$xfw_bpf_path"
+	"$project_path"/bin/xfw_bpf_loader load tc "$xfw_bpf_path" >"$tmp_log" 2>&1
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
 		echo "Error while loading TC program. See $tmp_log for details."
 		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
 		unload_bpf
-		[ $v -eq 1 ] && echo ""
 		error "Failed to load TC program on device $dev (exit code $rc)"
 	fi
 
-	# tc is silent on success, so the log is usually empty.
-	[ $v -eq 1 ] && [ -s "$tmp_log" ] \
-		&& echo "tc result: $(tail -n 1 "$tmp_log")"
-	rm -f "$tmp_log"
+	if [ "$v" -eq 1 ]; then
+		echo "Loader output:"
+		cat "$tmp_log"
+	fi
+}
+
+attach_tc()
+{
+	local dev="$1"
+	local tmp_log
+	local rc
+
+	tmp_log=$(mktemp "$xfw_tmp_path/tc-attach.XXXXXX")
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		echo "Failed to create TC attach log"
+		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
+		unload_bpf
+		error "Failed to create TC attach log (exit code $rc)"
+	fi
+
+	[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader attach tc "$xfw_bpf_path" "$dev"
+	"$project_path"/bin/xfw_bpf_loader attach tc "$xfw_bpf_path" "$dev" >"$tmp_log" 2>&1
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		echo "Error while attaching TC program. See $tmp_log for details."
+		[ $v -eq 1 ] && echo "Trying to unload rest bpf programs:"
+		unload_bpf
+		error "Failed to attach TC program on device $dev (exit code $rc)"
+	fi
+
+	[ "$v" -eq 1 ] && echo "TC attaching output:"
+	[ "$v" -eq 1 ] && tail -n 1 "$tmp_log"
 }
 
 load_bpf()
 {
-	mkdir -p "$xfw_bpf_path"
+	local rc
 
-	# Check that pin_dispatchers from previous run is empty
-	if [ -f "$pin_dispatchers_log" ] && [ -s "$pin_dispatchers_log" ]; then
-		error "Some eBPF programs are still loaded from previous run (`tr '\n' ' ' < $pin_dispatchers_log`).\nPlease run '$0 --stop' first to clean up previous state."
+	mkdir -p "$xfw_bpf_path"
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		error "Failed to create $xfw_bpf_path"
+	fi
+
+	if [[ -e "$xfw_bpf_path/xdp" ]]; then
+		error "XDP program is already pinned at '$xfw_bpf_path/xdp'. Please run '$0 --stop' first."
 	fi
 
 	read_config
+
+	local attach_type=$(xdp_attach_type "$devmode")
+	if [[ -z "$attach_type" ]]; then
+		error "unknown XDP mode '$devmode'; expected native or skb"
+	fi
 
 	sysctl -w net.core.bpf_jit_enable=1 >/dev/null
 	for opt in tcp_syncookies tcp_max_syn_backlog; do
@@ -365,93 +480,129 @@ load_bpf()
 		if ! ip link show "$dev" >/dev/null 2>&1; then
 			error "Network interface '$dev' does not exist"
 		fi
-	done
 
-	for dev in ${devs}; do
 		if is_bpf_attached_to_dev xdp $dev; then
 			error "Some eBPF programs are still loaded(XDP on $dev). Please run 'xfwctl --stop'. If the problem persists, reboot the system or reload the network interface."
 		fi
-		
-		load_xdp $dev
 
 		if is_bpf_attached_to_dev tc $dev; then
 			error "Some eBPF programs are still loaded(TC on $dev). Please run 'xfwctl --stop'. If the problem persists, reboot the system or reload the network interface."
 		fi
-
-		load_tc $dev
 	done
 
-	bpf_maps_check error
+	load_xdp
+	load_tc
+	load_modules
+
+	for dev in ${devs}; do
+		attach_xdp "$dev" "$attach_type"
+		attach_tc "$dev"
+	done
+
+	bpf_maps_check
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		unload_bpf
+		error "BPF map validation failed"
+	fi
 
 	update_status $devmode
 }
 
-unload_bpf()
+detach_tc()
 {
-	read_config
+	local dev="$1"
+	local rc
 
-	local -A device_ifindices
+	if [[ "$v" -eq 1 ]]; then
+		"$project_path"/bin/xfw_bpf_loader detach tc "$xfw_bpf_path" "$dev" || true
+	else
+		"$project_path"/bin/xfw_bpf_loader detach tc "$xfw_bpf_path" "$dev" 2>/dev/null || true
+	fi
+}
 
-	for dev in ${devs}; do
-		# Check if device exists
-		if [ -e "/sys/class/net/$dev" ]; then
-			if [ -n "$v" ]; then
-				xdp-loader unload $dev --all || true
-			else
-				xdp-loader unload $dev --all 2>/dev/null || true
-			fi
+detach_xdp()
+{
+	local dev="$1"
+	local attach_type
 
-			local ifindex=$(cat "/sys/class/net/$dev/ifindex" 2>/dev/null || echo "")
-			if [ -n "$ifindex" ]; then
-				device_ifindices[$ifindex]=1
-			fi
-		fi
+	# Check if device exists
+	if [[ ! -e "/sys/class/net/$dev" ]]; then
+		return
+	fi
 
-		if tc qdisc show dev "$dev" | grep -q clsact; then
-			if [ $v -eq 1 ]; then
-				tc qdisc del dev "$dev" clsact || true
-			else
-				tc qdisc del dev "$dev" clsact 2>/dev/null || true
-			fi
+	for attach_type in xdpdrv xdpgeneric xdpoffload; do
+		if [[ "$v" -eq 1 ]]; then
+			bpftool net detach "$attach_type" dev "$dev" || true
 		else
-			[ $v -eq 1 ] && echo "No TC program loaded on $dev"
+			bpftool net detach "$attach_type" dev "$dev" >/dev/null 2>&1 || true
 		fi
 	done
+}
 
-	# Cleanup pinned dispatcher programs for interfaces that no longer exist
-	if [ -f "$pin_dispatchers_log" ]; then
-		local saved_pin_dispatchers=$(mktemp)
+unload_module()
+{
+	local module="$1"
+	local prog_pin
+	local rc
 
-		while IFS= read -r pinned_path; do
-			# Extract ifindex from dispatcher-x-y format
-			# pinned_path looks like: /sys/fs/bpf/xfw/xdp/dispatcher-2-0
-			if [[ "$pinned_path" =~ /dispatch-([0-9]+)-([0-9]+)$ ]]; then
-				local ifindex="${BASH_REMATCH[1]}"
+	case "$module" in
+	dns)
+		prog_pin="$xfw_bpf_path/xfw_dns"
+		;;
+	*)
+		return
+		;;
+	esac
 
-				# Check if interface with this ifindex exists
-				if [ -z "$(ip -o link | awk -v idx="$ifindex:" '$1 == "'"$ifindex"':"')" ]; then
-					if [ "$v" -eq 1 ] && [ -d "$pinned_path" ]; then
-						echo "Removing dispatcher for non-existent interface (ifindex=$ifindex): $pinned_path"
-					fi
-					rm -rf "$pinned_path"
-				elif [ -n "${device_ifindices[$ifindex]+x}" ]; then
-					rm -rf "$pinned_path"
-				else
-					# Interface exists, save it to temp file
-					echo "$pinned_path" >> "$saved_pin_dispatchers"
-				fi
-
-			fi
-		done < "$pin_dispatchers_log"
-
-		# Replace original file with filtered list
-		mv "$saved_pin_dispatchers" "$pin_dispatchers_log"
+	if [[ -e "$prog_pin" ]]; then
+		if [[ "$v" -eq 1 ]]; then
+			"$project_path/bin/xfw_bpf_loader" unload "$module" "$xfw_bpf_path" || true
+		else
+			"$project_path/bin/xfw_bpf_loader" unload "$module" "$xfw_bpf_path" 2>/dev/null || true
+		fi
 	else
-		[ $v -eq 1 ] && echo "Pin files log not found, skipping dispatcher cleanup."
+		[[ "$v" -eq 1 ]] && echo "BPF module '$module' is not loaded"
+	fi
+}
+
+unload_modules()
+{
+	local module
+
+	for module in "${bpf_modules[@]}"; do
+		unload_module "$module"
+	done
+}
+
+unload_bpf()
+{
+	local rc=0
+	local dev
+
+	read_config
+
+	for dev in ${devs}; do
+		detach_xdp "$dev"
+		detach_tc "$dev"
+	done
+
+	unload_modules
+
+	if [[ -e "$xfw_bpf_path/tc" ]]; then
+		[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader unload tc "$xfw_bpf_path"
+		"$project_path"/bin/xfw_bpf_loader unload tc "$xfw_bpf_path"
+	fi
+
+	if [[ -e "$xfw_bpf_path/xdp" ]]; then
+		[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader unload xdp "$xfw_bpf_path"
+		"$project_path"/bin/xfw_bpf_loader unload xdp "$xfw_bpf_path"
 	fi
 
 	maps_clean
-	rm -rf $status_dir || true
+	rm -rf "$status_dir" || true
+
+	return $rc
 }
 
 start_mgr()

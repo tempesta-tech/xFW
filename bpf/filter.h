@@ -30,6 +30,9 @@
 #elif defined(XFW_XDP)
 #define XFW_CTX_PASS		XDP_PASS
 #define XFW_CTX_DROP		XDP_DROP
+#elif defined(XFW_DNS)
+#define XFW_CTX_PASS		XDP_PASS
+#define XFW_CTX_DROP		XDP_DROP
 #else
 #error "Undefined program type: should be TC or XDP"
 #endif
@@ -62,14 +65,24 @@ do {									\
 		return r;						\
 } while (0)
 
+#define CHAIN_PASS_ALL(filter, ...)					\
+do {									\
+	r = filter(__VA_ARGS__);					\
+	if (r == XFW_CTX_CONTINUE)					\
+		break;							\
+	if (r == XFW_CTX_PASS)						\
+		goto pass;						\
+	return r;							\
+} while (0)
+
 /**
  * Override XFW_CTX_DROP with XFW_CTX_PASS in case of evaluation mode enabled.
  * Should be called before passing the result to the kernel.
  */
 static __always_inline int
-finalize_result(const XfwGlobalCtx *ctx, int code)
+finalize_result(const XfwFilterCfg *cfg, int code)
 {
-	if (code == XFW_CTX_DROP && ctx->cfg->rules.evaluation_mode.enabled) {
+	if (code == XFW_CTX_DROP && cfg->rules.evaluation_mode.enabled) {
 		XFW_CTX_DBG("Packet would be dropped, "
 			    "but allowed in evaluation mode");
 		return XFW_CTX_PASS;
@@ -79,24 +92,27 @@ finalize_result(const XfwGlobalCtx *ctx, int code)
 }
 
 static __always_inline void
-count_traffic_stat(const XfwGlobalCtx *ctx, enum XfwTrafficStat reason)
+count_traffic_stat(XfwPerCpuStats *g_stats, uint32_t pkt_sz,
+		   enum XfwTrafficStat reason)
 {
-	++ctx->g_stats->traffic[reason].packets;
-	ctx->g_stats->traffic[reason].bytes += ctx->pkt_sz;
+	++g_stats->traffic[reason].packets;
+	g_stats->traffic[reason].bytes += pkt_sz;
 }
 
 static __always_inline void
-count_pass_stat(const XfwGlobalCtx *ctx, enum XfwPassStat reason)
+count_pass_stat(XfwPerCpuStats *g_stats, uint32_t pkt_sz,
+		enum XfwPassStat reason)
 {
-	++ctx->g_stats->pass[reason].packets;
-	ctx->g_stats->pass[reason].bytes += ctx->pkt_sz;
+	++g_stats->pass[reason].packets;
+	g_stats->pass[reason].bytes += pkt_sz;
 }
 
 static __always_inline void
-count_tx_stat(const XfwGlobalCtx *ctx, enum XfwTxStat reason)
+count_tx_stat(XfwPerCpuStats *g_stats, uint32_t pkt_sz,
+	      enum XfwTxStat reason)
 {
-	++ctx->g_stats->transmitted[reason].packets;
-	ctx->g_stats->transmitted[reason].bytes += ctx->pkt_sz;
+	++g_stats->transmitted[reason].packets;
+	g_stats->transmitted[reason].bytes += pkt_sz;
 }
 
 /**
@@ -120,7 +136,7 @@ count_tx_stat(const XfwGlobalCtx *ctx, enum XfwTxStat reason)
  */
 #define XFW_MAKE_CTX_PASS_EXT(ctx, reason_idx, postfix, args...)	\
 ({									\
-	count_pass_stat(ctx, reason_idx);				\
+	count_pass_stat(ctx->g_stats, ctx->pkt_sz, reason_idx);		\
 	XFW_CTX_DBG("[PASS] %s" postfix,				\
 		    xfw_pass_stats[reason_idx].desc, ##args);		\
 	XFW_CTX_PASS;							\
@@ -136,7 +152,7 @@ count_tx_stat(const XfwGlobalCtx *ctx, enum XfwTxStat reason)
  */
 #define MAKE_XDP_TX(ctx, reason_idx, args...)				\
 ({									\
-	count_tx_stat(ctx, reason_idx);				\
+	count_tx_stat(ctx->g_stats, ctx->pkt_sz, reason_idx);		\
 	XFW_CTX_DBG("[TRANSMIT] %s",					\
 		    xfw_tx_stats[reason_idx].desc, ##args);		\
 	XDP_TX;								\

@@ -17,6 +17,8 @@
 #define XfwMd				struct __sk_buff
 #elif defined(XFW_XDP)
 #define XfwMd				struct xdp_md
+#elif defined(XFW_DNS)
+#define XfwMd				struct xdp_md
 #else
 #error "Undefined program type: should be TC or XDP"
 #endif

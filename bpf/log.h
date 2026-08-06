@@ -36,6 +36,9 @@ uint32_t pkt_id = 0;
 
 #elif defined(XFW_XDP)
 #define XFW_CTX_DBG(fmt, args...)	XFW_DBG("[in] " fmt, ##args)
+
+#elif defined(XFW_DNS)
+#define XFW_CTX_DBG(fmt, args...)	XFW_DBG("[in] " fmt, ##args)
 #endif
 
 /*

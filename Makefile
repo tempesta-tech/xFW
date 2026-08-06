@@ -68,7 +68,7 @@ help:
 	@echo " * 'help'	- Show this help message"
 	@echo " * 'print-all'	- Print out all makefile variables computed in runtime"
 
-SUBDIRS := lib cli manager bpf logger
+SUBDIRS := lib cli manager loader bpf logger
 
 .PHONY: $(SUBDIRS) prepare_dirs
 
@@ -84,6 +84,9 @@ cli: lib | prepare_dirs
 	@$(MAKE) -C $@ build
 
 manager: lib | prepare_dirs
+	@$(MAKE) -C $@ build
+
+loader: lib | prepare_dirs
 	@$(MAKE) -C $@ build
 
 $(BUILD_INCLUDE)/vmlinux.h: | prepare_dirs
