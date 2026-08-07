@@ -126,6 +126,7 @@ async def test_dst_change_ratelimit(
         await check_connection(client, server) is False
     ), f"Server {server.ip_testing}:{server.port} is not blocked"
 
+    await client.stop()
     await xfw.rules_patch(f"""
         xfw {{
             dst {ip_version}.{protocol} : ratelimit=b {{
@@ -134,11 +135,7 @@ async def test_dst_change_ratelimit(
         }}
         """)
 
-    # Wait until the retransmission from the previous message is handled.
-    # Probably, retransmission can be the reason for extra packets from #509.
-    # Remove sleep from here when #520 is closed.
-    await asyncio.sleep(1)
-
+    await client.start()
     assert (
         await check_connection(client, server) is True
     ), f"Server {server.ip_testing}:{server.port} is not allowed"
@@ -168,6 +165,7 @@ async def test_dst_change_ratelimit_value(
         await check_connection(client, server) is False
     ), f"Server {server.ip_testing}:{server.port} is not blocked"
 
+    await client.stop()
     await xfw.rules_patch(f"""
         xfw {{
             ratelimit=b pps=10 bps=1000;
@@ -177,11 +175,7 @@ async def test_dst_change_ratelimit_value(
         }}
         """)
 
-    # Wait until the retransmission from the previous message is handled.
-    # Probably, retransmission can be the reason for extra packets from #509.
-    # Remove sleep from here when #520 is closed.
-    await asyncio.sleep(1)
-
+    await client.start()
     assert (
         await check_connection(client, server) is True
     ), f"Server {server.ip_testing}:{server.port} is not allowed"

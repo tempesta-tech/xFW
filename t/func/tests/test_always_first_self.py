@@ -19,6 +19,7 @@ from framework.asyn import (
 )
 from framework.cmp import check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
+from framework.utils import run_cmd
 
 
 @pytest.mark.nic_e1000_warmup
@@ -117,3 +118,15 @@ async def test_raw_socket_tcp_traffic_collisions(
     assert await tcp_raw_client.receive_packet() is not None
 
     await tcp_raw_client_2.stop()
+
+
+async def test_tcp_retransmission_delay(network):
+    namespace = network.config.client_namespace
+
+    for version in ("ip", "ip -6"):
+        returncode, stdout, stderr = await run_cmd(
+            f"ip netns exec {namespace} {version} route show", network.logger
+        )
+
+        assert returncode == 0, f"Could not replace rto_min for {version}.\n{stdout}\n{stderr}"
+        assert "rto_min lock" in stdout, f"Unexpected rto_min for {version}.\n{stdout}\n{stderr}"
