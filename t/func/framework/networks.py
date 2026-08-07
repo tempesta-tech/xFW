@@ -16,6 +16,7 @@ class BaseNetwork(metaclass=abc.ABCMeta):
     def __init__(self, logger: logging.Logger, config: ConfigSettings):
         self.logger = logger
         self.config = config
+        self._rto_min_suffix = "rto_min 5000"  # ms
 
     @abc.abstractmethod
     async def prepare(self):
@@ -103,22 +104,22 @@ class LocalVeth(BaseNetwork):
     async def _add_default_route(self, iface: str, ip4: str, ip6: str, namespace: str = None):
         code, _, stderr = await run_cmd(
             cmd=self._with_netns(
-                cmd=f"ip route add default via {ip4} dev {iface}",
+                cmd=f"ip route replace default via {ip4} dev {iface} {self._rto_min_suffix}",
                 namespace=namespace,
             ),
             logger=self.logger,
         )
 
-        assert code == 0, f"Could not add default ip4 route: {stderr}"
+        assert code == 0, f"Could not replace default ip4 route: {stderr}"
 
         code, _, stderr = await run_cmd(
             cmd=self._with_netns(
-                cmd=f"ip -6 route add default via {ip6} dev {iface}",
+                cmd=f"ip -6 route replace default via {ip6} dev {iface} {self._rto_min_suffix}",
                 namespace=namespace,
             ),
             logger=self.logger,
         )
-        assert code == 0, f"Could not add default ip6 route: {stderr}"
+        assert code == 0, f"Could not replace default ip6 route: {stderr}"
 
     async def _add_route(
         self,
@@ -133,7 +134,10 @@ class LocalVeth(BaseNetwork):
 
         code, _, stderr = await run_cmd(
             cmd=self._with_netns(
-                cmd=f"ip route add {net.network_address}/{ip4_address_mask} dev {iface}",
+                cmd=(
+                    f"ip route replace {net.network_address}/{ip4_address_mask}"
+                    f" dev {iface} {self._rto_min_suffix}"
+                ),
                 namespace=namespace,
             ),
             logger=self.logger,
@@ -146,7 +150,10 @@ class LocalVeth(BaseNetwork):
         net6 = ip_network(f"{ip6_address_to}/{ip6_address_mask}", strict=False)
         code, _, stderr = await run_cmd(
             cmd=self._with_netns(
-                cmd=f"ip -6 route add {net6.network_address}/{ip6_address_mask} dev {iface}",
+                cmd=(
+                    f"ip -6 route replace {net6.network_address}/{ip6_address_mask}"
+                    f" dev {iface} {self._rto_min_suffix}"
+                ),
                 namespace=namespace,
             ),
             logger=self.logger,
@@ -166,21 +173,27 @@ class LocalVeth(BaseNetwork):
         cmd_end = " onlink" if onlink else ""
         code, _, stderr = await run_cmd(
             cmd=self._with_netns(
-                cmd=f"ip route add {ip4_address_to} via {ip4_address_via} dev {iface}" + cmd_end,
+                cmd=(
+                    f"ip route replace {ip4_address_to} via {ip4_address_via}"
+                    f" dev {iface} {cmd_end} {self._rto_min_suffix}"
+                ),
                 namespace=namespace,
             ),
             logger=self.logger,
         )
-        assert code == 0, f"Could not add default ip4 route: {stderr}"
+        assert code == 0, f"Could not replace default ip4 route: {stderr}"
 
         code, _, stderr = await run_cmd(
             cmd=self._with_netns(
-                cmd=f"ip -6 route add {ip6_address_to} via {ip6_address_via} dev {iface}" + cmd_end,
+                cmd=(
+                    f"ip -6 route replace {ip6_address_to} via {ip6_address_via} "
+                    f"dev {iface} {cmd_end} {self._rto_min_suffix}"
+                ),
                 namespace=namespace,
             ),
             logger=self.logger,
         )
-        assert code == 0, f"Could not add default ip6 route: {stderr}"
+        assert code == 0, f"Could not replace default ip6 route: {stderr}"
 
     async def _sysctl_settings(self):
         code, _, stderr = await run_cmd(

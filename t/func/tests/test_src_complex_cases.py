@@ -120,6 +120,7 @@ async def test_src_change_ratelimit(
         await check_connection(client, server) is False
     ), f"Server {server.ip_testing}:{server.port} is not blocked"
 
+    await client.stop()
     await xfw.rules_patch(f"""
         xfw {{
             src=extended_group {ip_version}.{protocol} : ratelimit=b {{
@@ -128,12 +129,7 @@ async def test_src_change_ratelimit(
         }}
         """)
 
-    # Wait until the retransmission from the previous message is handled.
-    # Correct sleep with -1 second when #520 is closed.
-    # Also old src ratelimits continue to work one more second after
-    # reconfiguration so until #8 is done, we need +1 seconds here.
-    await asyncio.sleep(2)
-
+    await client.start()
     assert (
         await check_connection(client, server) is True
     ), f"Server {server.ip_testing}:{server.port} is not allowed"
@@ -164,6 +160,7 @@ async def test_src_change_ratelimit_value(
     assert (
         await check_connection(client, server) is False
     ), f"Server {server.ip_testing}:{server.port} is not blocked"
+    await client.stop()
 
     await xfw.rules_patch(f"""
         xfw {{
@@ -174,12 +171,7 @@ async def test_src_change_ratelimit_value(
         }}
         """)
 
-    # Wait until the retransmission from the previous message is handled.
-    # Correct sleep with -1 second when #520 is closed.
-    # Also old src ratelimits continue to work one more second after
-    # reconfiguration so until #8 is done, we need +1 seconds here.
-    await asyncio.sleep(2)
-
+    await client.start()
     assert (
         await check_connection(client, server) is True
     ), f"Server {server.ip_testing}:{server.port} is not allowed"
