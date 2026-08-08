@@ -101,17 +101,17 @@ typedef struct XfwHdrCursor {
  * @l4_proto   - XFW_L4_PROTO_UDP or XFW_L4_PROTO_TCP if != 0
  */
 typedef struct XfwGlobalCtx {
+	XfwMd		*ctx;
 	XfwFilterCfg	*cfg;
 	XfwPerCpuStats	*g_stats;
 	XfwHdrCursor	hdr_cur;
+	XfwIp		ilog_addr;
+	uint64_t	ts_jiff;
 	uint32_t	pkt_sz;
 	uint16_t	ipver;
 	uint16_t	l4_off;
 	uint8_t		ip_off;
 	uint8_t		l4_proto;
-	XfwMd		*ctx;
-	uint64_t	ts_jiff;
-	XfwIp		ilog_addr;
 } XfwGlobalCtx;
 
 #define XFW_PKT_PTR(ctx, off, type) \
