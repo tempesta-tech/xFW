@@ -40,19 +40,19 @@
 #include "../bpf_uapi/static_assert.h"
 
 typedef struct XfwIpv4SynTuple {
-	__u32 src_ip;
-	__u32 dst_ip;
-	__u32 seq;
-	__u16 sport;
-	__u16 dport;
+	uint32_t src_ip;
+	uint32_t dst_ip;
+	uint32_t seq;
+	uint16_t sport;
+	uint16_t dport;
 } XfwIpv4SynTuple;
 
 typedef struct XfwIpv6SynTuple {
-	__u8 src_ip[16];
-	__u8 dst_ip[16];
-	__u32 seq;
-	__u16 sport;
-	__u16 dport;
+	uint8_t	src_ip[16];
+	uint8_t dst_ip[16];
+	uint32_t seq;
+	uint16_t sport;
+	uint16_t dport;
 } XfwIpv6SynTuple;
 
 /*
@@ -75,10 +75,11 @@ typedef struct XfwIpv6SynTuple {
  *
  * This corresponds to one XXH64 input block.
  */
-static __always_inline __u64
-syn_ports_seq(__u16 sport, __u16 dport, __u32 seq)
+static __always_inline uint64_t
+syn_ports_seq(uint16_t sport, uint16_t dport, uint32_t seq)
 {
-	return (__u64)seq | ((__u64)sport << 32) | ((__u64)dport << 48);
+	return (uint64_t)seq | ((uint64_t)sport << 32) |
+		((uint64_t)dport << 48);
 }
 
 /*
@@ -139,11 +140,11 @@ syn_ports_seq(__u16 sport, __u16 dport, __u32 seq)
  * After all input blocks are processed, XXH64 applies the
  * avalanche stage.
  */
-static __always_inline __u64
-syn_xxh64_ipv4(XfwIpv4SynTuple *syn_tuple, __u64 seed)
+static __always_inline uint64_t
+syn_xxh64_ipv4(XfwIpv4SynTuple *syn_tuple, uint64_t seed)
 {
-	__u64 hash;
-	__u64 block;
+	uint64_t hash;
+	uint64_t block;
 
 	STATIC_ASSERT(sizeof(XfwIpv4SynTuple) == 16,
 		      "XfwIpv4SynTuple size must be 16 bytes");
@@ -158,7 +159,8 @@ syn_xxh64_ipv4(XfwIpv4SynTuple *syn_tuple, __u64 seed)
 	hash = seed + XXH_PRIME64_5 + 16;
 
 	/* Construct first 8-byte block. */
-	block = (__u64)syn_tuple->src_ip | ((__u64)syn_tuple->dst_ip << 32);
+	block = (uint64_t)syn_tuple->src_ip |
+		((uint64_t)syn_tuple->dst_ip << 32);
 	hash = xxh64_update64(hash, block);
 
 	/* Construct second 8-byte block. */
@@ -194,12 +196,12 @@ syn_xxh64_ipv4(XfwIpv4SynTuple *syn_tuple, __u64 seed)
  *
  * followed by XXH64_finalize().
  */
-static __always_inline __u64
-syn_xxh64_ipv6(XfwIpv6SynTuple *syn_tuple, __u64 seed)
+static __always_inline uint64_t
+syn_xxh64_ipv6(XfwIpv6SynTuple *syn_tuple, uint64_t seed)
 {
-	__u64 acc[4];
-	__u64 hash;
-	__u64 block;
+	uint64_t acc[4];
+	uint64_t hash;
+	uint64_t block;
 
 	STATIC_ASSERT(sizeof(XfwIpv6SynTuple) == 40,
 		      "XfwIpv6SynTuple size must be 40 bytes");

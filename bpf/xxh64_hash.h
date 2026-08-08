@@ -63,7 +63,7 @@
  * acc[3] = seed - PRIME64_1;
  */
 static __always_inline void
-xxh64_init_accs(__u64 acc[4], __u64 seed)
+xxh64_init_accs(uint64_t acc[4], uint64_t seed)
 {
 	acc[0] = seed + XXH_PRIME64_1 + XXH_PRIME64_2;
 	acc[1] = seed + XXH_PRIME64_2;
@@ -80,13 +80,13 @@ xxh64_init_accs(__u64 acc[4], __u64 seed)
  *
  * from xxHash.
  */
-static __always_inline __u64
-xxh_load64_le(const __u8 *p)
+static __always_inline uint64_t
+xxh_load64_le(const uint8_t *p)
 {
-	return ((__u64)p[0]) | ((__u64)p[1] << 8) | ((__u64)p[2] << 16) |
-	       ((__u64)p[3] << 24) | ((__u64)p[4] << 32) |
-	       ((__u64)p[5] << 40) | ((__u64)p[6] << 48) |
-	       ((__u64)p[7] << 56);
+	return ((uint64_t)p[0]) | ((uint64_t)p[1] << 8) |
+	       ((uint64_t)p[2] << 16) | ((uint64_t)p[3] << 24) |
+	       ((uint64_t)p[4] << 32) | ((uint64_t)p[5] << 40) |
+	       ((uint64_t)p[6] << 48) | ((uint64_t)p[7] << 56);
 }
 
 /**
@@ -98,8 +98,8 @@ xxh_load64_le(const __u8 *p)
  * intrinsics, while eBPF uses the portable shift/or implementation
  * accepted by the verifier.
  */
-static __always_inline __u64
-xxh_rotl64(__u64 x, __u32 r)
+static __always_inline uint64_t
+xxh_rotl64(uint64_t x, uint32_t r)
 {
 	return (x << r) | (x >> (64 - r));
 }
@@ -117,8 +117,8 @@ xxh_rotl64(__u64 x, __u32 r)
  * acc = XXH_rotl64(acc,31);
  * acc *= PRIME64_1;
  */
-static __always_inline __u64
-xxh64_round(__u64 acc, __u64 input)
+static __always_inline uint64_t
+xxh64_round(uint64_t acc, uint64_t input)
 {
 	acc += input * XXH_PRIME64_2;
 	acc = xxh_rotl64(acc, 31);
@@ -140,8 +140,8 @@ xxh64_round(__u64 acc, __u64 input)
  * acc ^= val;
  * acc  = acc * XXH_PRIME64_1 + XXH_PRIME64_4;
  */
-static __always_inline __u64
-xxh64_merge_round(__u64 acc, __u64 val)
+static __always_inline uint64_t
+xxh64_merge_round(uint64_t acc, uint64_t val)
 {
 	val  = xxh64_round(0, val);
 	acc ^= val;
@@ -167,10 +167,10 @@ xxh64_merge_round(__u64 acc, __u64 val)
  * h64 = XXH64_mergeRound(h64, acc[2]);
  * h64 = XXH64_mergeRound(h64, acc[3]);
  */
-static __always_inline __u64
-xxh64_merge_accs(__u64 acc[4])
+static __always_inline uint64_t
+xxh64_merge_accs(uint64_t acc[4])
 {
-	__u64 h64;
+	uint64_t h64;
 
 	h64 = xxh_rotl64(acc[0], 1) + xxh_rotl64(acc[1], 7) +
 	      xxh_rotl64(acc[2], 12) + xxh_rotl64(acc[3], 18);
@@ -214,10 +214,10 @@ xxh64_merge_accs(__u64 acc[4])
  * required number of 64-bit block operations and avoid
  * variable-length processing.
  */
-static __always_inline __u64
-xxh64_update64(__u64 hash, __u64 input)
+static __always_inline uint64_t
+xxh64_update64(uint64_t hash, uint64_t input)
 {
-	const __u64 k1 = xxh64_round(0, input);
+	const uint64_t k1 = xxh64_round(0, input);
 
 	hash ^= k1;
 	hash = xxh_rotl64(hash, 27) * XXH_PRIME64_1 + XXH_PRIME64_4;
@@ -240,8 +240,8 @@ xxh64_update64(__u64 hash, __u64 input)
  * h *= PRIME64_3;
  * h ^= h >> 32;
  */
-static __always_inline __u64
-xxh64_avalanche(__u64 h)
+static __always_inline uint64_t
+xxh64_avalanche(uint64_t h)
 {
 	h ^= h >> 33;
 	h *= XXH_PRIME64_2;

@@ -68,7 +68,7 @@ help:
 	@echo " * 'help'	- Show this help message"
 	@echo " * 'print-all'	- Print out all makefile variables computed in runtime"
 
-SUBDIRS := lib cli manager bpf logger
+SUBDIRS := lib cli manager bpf logger t
 
 .PHONY: $(SUBDIRS) prepare_dirs
 
@@ -94,6 +94,9 @@ bpf: $(BUILD_INCLUDE)/vmlinux.h | prepare_dirs
 
 # NOTE: The logger and all its dependencies are built with g++
 logger: | prepare_dirs
+	@$(MAKE) -C $@ build
+
+t: | prepare_dirs
 	@$(MAKE) -C $@ build
 
 clang-format:

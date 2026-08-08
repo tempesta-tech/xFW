@@ -2,7 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+
 OBJ_DIR = BUILD
+TARGET:= $(OBJ_DIR)/utest
 
 # GoogleTest source directory (you might need to manually compile gtest-all.cc)
 GTEST_DIR = /usr/src/gtest
@@ -22,14 +24,14 @@ LDFLAGS	+=  -L/$(BUILD_LIBDIR)
 CXXFLAGS += -I/usr/include/gtest -pthread
 INCLUDES += -I$(BUILD_INCLUDE)
 
-.PHONY: build utest install clean test
+.PHONY: build install clean test
 
 # Main target for building the test binary
-build: $(OBJ_DIR)/utest
+build: $(TARGET)
 
 # Build the test binary and link with GoogleTest
-$(OBJ_DIR)/utest: $(OBJECTS) $(GTEST_OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) -lgrpc++ -ltfwcli -lxxhash -lproto $(GTEST_LIBS) -Wl,-rpath,'$$ORIGIN/../../../BUILD/lib'
+$(TARGET): $(OBJECTS) $(GTEST_OBJ)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) -lgrpc++ -ltfwcli -lproto $(GTEST_LIBS) -Wl,-rpath,'$$ORIGIN/../../../BUILD/lib'
 
 # Build object files from source files
 $(OBJ_DIR)/%.o: %.cc
@@ -41,16 +43,16 @@ $(GTEST_OBJ):
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) -I$(GTEST_DIR) -c $(GTEST_SRC) -o $@
 
-clean : FORCE
-	@rm -rf $(OBJ_DIR) utest
+clean: FORCE
+	@rm -rf $(OBJ_DIR)
 
 install:
 
 -include $(DEPS)
 
 # You can call utest with "-v" or "--verbose" to get all debug output.
-test: utest
+test:
 	@echo $(BUILD_DIR)
-	@$(OBJ_DIR)/utest
+	@$(TARGET)
 
-FORCE :
+FORCE:

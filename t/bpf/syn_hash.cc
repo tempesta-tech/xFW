@@ -20,7 +20,6 @@ TEST(Xxh64SynHash, IPv4GoldenVector)
 	ASSERT_EQ(hash, ref_hash);
 }
 
-
 TEST(Xxh64SynHash, IPv6GoldenVector)
 {
 	XfwIpv6SynTuple tuple = {
