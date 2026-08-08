@@ -51,7 +51,7 @@ MAKEFLAGS += --jobs=$(JOBS)
 export CXX CC CXXFLAGS CFLAGS LDFLAGS INCLUDES MAKEFLAGS BUILD_DIR Q
 export BINDIR SBINDIR LIBDIR INCLUDEDIR BUILD_LIBDIR BUILD_BINDIR BUILD_SBINDIR BUILD_INCLUDE
 
-.PHONY: all help build install clean test clang-format print-all
+.PHONY: all help build install clean test benchmark clang-format print-all
 
 .SUFFIXES:
 
@@ -64,11 +64,12 @@ help:
 	@echo " * 'build'	- build all Tempesta xFW modules"
 	@echo " * 'install'	- Install binaries and documents to system locations"
 	@echo " * 'test'	- Execute unit tests"
+	@echo " * 'benchmark'	- Execute benchmarks"
 	@echo " * 'clean'	- Clean artifacts"
 	@echo " * 'help'	- Show this help message"
 	@echo " * 'print-all'	- Print out all makefile variables computed in runtime"
 
-SUBDIRS := lib cli manager bpf logger
+SUBDIRS := lib cli manager bpf logger t benchmarks
 
 .PHONY: $(SUBDIRS) prepare_dirs
 
@@ -96,6 +97,12 @@ bpf: $(BUILD_INCLUDE)/vmlinux.h | prepare_dirs
 logger: | prepare_dirs
 	@$(MAKE) -C $@ build
 
+t: | prepare_dirs
+	@$(MAKE) -C $@ build
+
+benchmarks: | prepare_dirs
+	@$(MAKE) -C $@ build
+
 clang-format:
  	#find . -name '*.cc' -o -name '*.c' -o -name '*.h' -o -name '*.hh' | xargs clang-format -i
 
@@ -116,7 +123,10 @@ install:
 	done
 
 test:
-	@$(foreach dir,$(SUBDIRS),$(MAKE) -C $(dir) test || exit 1)
+	@$(foreach dir,$(SUBDIRS),$(MAKE) -C $(dir) test || exit 1;)
+
+benchmark:
+	$(MAKE) -C benchmarks benchmark
 
 FORCE:
 
