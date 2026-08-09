@@ -7,7 +7,7 @@ import os.path
 import typing
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, fields
-from typing import Iterator, Optional
+from typing import Iterator, Optional, AsyncGenerator
 
 import httpx
 
@@ -368,7 +368,7 @@ class XFW(NetworkStateful):
     @asynccontextmanager
     async def metrics_diff(
         self, metrics: list[str] = None, wait_softirq: bool = False, non_zero: bool = False
-    ) -> dict[str, int]:
+    ) -> AsyncGenerator[dict[str, int], None]:
         metrics_before = await self.metrics()
 
         if metrics:
@@ -398,7 +398,7 @@ class XFW(NetworkStateful):
     async def set_config(self, new_config: str):
         self.config = new_config
 
-    async def syncookies_read_stats(self) -> tuple[int, int, int]:
+    async def syncookies_read_kern_stats(self) -> tuple[int, int, int]:
         """
         Return values of SyncookieSent, SyncookieRecv, SyncookieFailed
         """
@@ -459,7 +459,7 @@ class XFWRemote(RemoteServer, XFW):
         "rules_push_patch_inline",
         "set_http_port",
         "set_config",
-        "syncookies_read_stats",
+        "syncookies_read_kern_stats",
         "set_mtu",
     ]
 
