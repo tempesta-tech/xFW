@@ -52,8 +52,8 @@ public:
 	using AliasToIndexMap = std::map<std::string, RatelimitIndex, std::less<>>;
 	struct SynCookieFilter
 	{
-		uint64_t	passive_timer_ = 0;
-		uint64_t	flood_timer_ = 0;
+		uint64_t	passive_timer_ = 1;
+		uint64_t	flood_timer_ = 1;
 	};
 
 	struct TcpFlagFilter

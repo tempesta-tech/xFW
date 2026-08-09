@@ -29,6 +29,7 @@ enum XfwTrafficStat {
 	XFW_TOTAL_UPSTREAM_EGRESS,
 	XFW_PASSED_DOWNSTREAM_EGRESS,
 	XFW_PASSED_UPSTREAM_EGRESS,
+	XFW_SYNCOOKIE_RECEIVED,
 
 	XFW_TRAFFIC_STAT_MAX
 };
@@ -85,7 +86,9 @@ static const struct XfwStatInfo xfw_traffic_stats[] = {
 	[XFW_PASSED_DOWNSTREAM_EGRESS]		= {"xfw_passed_downstream_egress",
 						   "Passed trafic from xFW to upstream"},
 	[XFW_PASSED_UPSTREAM_EGRESS]		= {"xfw_passed_upstream_egress",
-						   "Passed trafic from xFW to downstream"}
+						   "Passed trafic from xFW to downstream"},
+	[XFW_SYNCOOKIE_RECEIVED]		= {"xfw_syncookie_received",
+						   "Received packet with valid syncookie"}
 };
 XFW_STAT_ARRAY_ASSERT(xfw_traffic_stats, XFW_TRAFFIC_STAT_MAX);
 
