@@ -8,6 +8,9 @@
 
 #include "statistics_types.h"
 
+/*
+ * Statistics for events that result in an XDP_TX decision.
+ */
 enum XfwTxStat {
 	XFW_SYNCOOKIE_GENERATED,
 	XFW_TX_STAT_MAX

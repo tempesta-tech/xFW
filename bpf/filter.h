@@ -99,6 +99,13 @@ count_tx_stat(const XfwGlobalCtx *ctx, enum XfwTxStat reason)
 	ctx->g_stats->transmitted[reason].bytes += ctx->pkt_sz;
 }
 
+static __always_inline void
+count_syncookie_failed_stat(const XfwGlobalCtx *ctx)
+{
+	++ctx->g_stats->syncookie_failed.packets;
+	ctx->g_stats->syncookie_failed.bytes += ctx->pkt_sz;
+}
+
 /**
  * Avoid returning DROP codes directly without using these 2 functions, as it is
  * easy to forget updating the dropped packet statistics.

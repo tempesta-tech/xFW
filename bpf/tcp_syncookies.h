@@ -638,6 +638,7 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 	if (unlikely(!sk)) {
 		/* Treat a SYN for a non-listening or absent socket as flooding. */
 		ts->last_gen_jiff = ctx->ts_jiff;
+		count_syncookie_failed_stat(ctx);
 		return XFW_MAKE_CTX_DROP(ctx, XFW_SYNCOOKIE_FAILED,
 					 "No listening socket");
 	}
@@ -660,6 +661,7 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 
 	if (unlikely(seq_mss < 0)) {
 		XFW_CTX_DBG("Cannot generate syncookie, %d", seq_mss);
+		count_syncookie_failed_stat(ctx);
 		return XFW_MAKE_CTX_DROP(ctx, XFW_SYNCOOKIE_FAILED, "bad MSS");
 	}
 
@@ -667,15 +669,18 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 	long r = tcp_parse_opts(ctx, &opts);
 	if (unlikely(r)) {
 		XFW_CTX_DBG("Cannot parse TCP options, %d", r);
+		count_syncookie_failed_stat(ctx);
 		return XFW_MAKE_CTX_DROP(ctx, XFW_SYNCOOKIE_FAILED,
 					 "bad TCP options in SYN");
 	}
 
 	r = tcp_syncookies_make_synack(ctx, (uint32_t)seq_mss,
 				       (uint16_t)(seq_mss >> 32), &opts);
-	if (unlikely(r))
+	if (unlikely(r)) {
+		count_syncookie_failed_stat(ctx);
 		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SYNCOOKIE_FAILED,
 					     "Cannot generate SYN-ACK, %d", r);
+	}
 
 	return MAKE_XDP_TX(ctx, XFW_SYNCOOKIE_GENERATED);
 }
@@ -692,9 +697,11 @@ tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx)
 {
 	/* Lookup socket to validate ACK against SYN cookie */
 	struct bpf_sock *sk = tcp_sk_listen_lookup(ctx);
-	if (!sk)
+	if (!sk) {
+		count_syncookie_failed_stat(ctx);
 		return XFW_MAKE_CTX_DROP(ctx, XFW_SYNCOOKIE_FAILED,
 					 "No host socket");
+	}
 
 	const bool in_listen_state = sk->state == BPF_TCP_LISTEN;
 	bpf_sk_release(sk);
@@ -717,20 +724,25 @@ tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx)
 	 */
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		int r = bpf_tcp_raw_check_syncookie_ipv4(ctx->iph4, ctx->th);
-		if (r < 0)
+		if (r < 0) {
+			count_syncookie_failed_stat(ctx);
 			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SYNCOOKIE_FAILED,
 				"IPv4 ACK with invalid cookie, retcode=%d.", r);
+		}
 	}
 	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
 		/* This check is just to satisfy the verifier. */
 		XFW_ASSERT((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end);
 
 		int r = bpf_tcp_raw_check_syncookie_ipv6(ctx->iph6, ctx->th);
-		if (r < 0)
+		if (r < 0) {
+			count_syncookie_failed_stat(ctx);
 			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SYNCOOKIE_FAILED,
 				"IPv6 ACK with invalid cookie, retcode=%d.", r);
+		}
 	}
 
+	count_traffic_stat(ctx, XFW_SYNCOOKIE_RECEIVED);
 	return XFW_CTX_CONTINUE;
 }
 

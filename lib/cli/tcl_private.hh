@@ -22,8 +22,8 @@
 #include "../error.hh"
 
 struct Syncookie {
-	int	passive_timer_ = 0;
-	int	flood_timer_ = 0;
+	int	passive_timer_ = 1;
+	int	flood_timer_ = 1;
 };
 
 struct TcpAnomalyRule {

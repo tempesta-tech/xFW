@@ -7,6 +7,7 @@
 
 #include "../../lib/log.hh"
 #include "../../lib/error.hh"
+#include "../../bpf_uapi/drop_stats.h"
 
 #include "stats.hh"
 
@@ -42,6 +43,9 @@ BpfStats::load_global_stats_prometheus()
 
 	for (size_t i = 0; i < XFW_TX_STAT_MAX; ++i)
 		format_stat(ss, xfw_tx_stats[i], stats.transmitted[i]);
+
+	format_stat(ss, xfw_drop_stats[XFW_SYNCOOKIE_FAILED],
+		    stats.syncookie_failed);
 
 	return ss.str();
 }

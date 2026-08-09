@@ -460,8 +460,8 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx)
 /**
  * Filter incoming ACK packets.
  *
- * 1. If SYN cookies are disabled or flood mode not active → fall back to
- *    normal TCP auth filter.
+ * 1. If SYN cookies are disabled or flood mode is inactive → fall back to
+ *    the normal TCP auth filter.
  * 2. If a trusted connection already exists → continue.
  * 3. Otherwise, call SYN-cookie-specific check.
  * 4. If valid, trust the connection on ingress side.
