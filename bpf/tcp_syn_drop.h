@@ -115,15 +115,6 @@ xfw_hash_ipv6_syn(const struct ipv6hdr *ipv6,
 }
 
 /*
- * Return values:
- *
- *   0  - initial SYN was parsed and hashed;
- *   1  - packet is not an initial SYN;
- *  -1  - packet headers are truncated or invalid.
- */
-
-
-/*
  * Move a tuple from the large pending map to the smaller validated map.
  *
  * The new entry is inserted first. This way a map insertion failure does
@@ -135,8 +126,9 @@ xfw_promote_syn(uint64_t hash, uint64_t now,
 {
 	XfwSynRetry retry = {
 		.jtxtstamp = now,
-		.max_delay = cfg->max_delay_jiff,
+		.max_delay = cfg->max_delay_jiff * 2,
 		.blocked_until = 0,
+		.retry_count = 1,
 		.blocked = false,
 	};
 
