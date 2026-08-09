@@ -5,7 +5,7 @@ import asyncio
 import logging
 import random
 import time
-from typing import Union
+from typing import Union, AsyncGenerator
 
 import pytest
 from scapy.layers.inet import TCP
@@ -18,7 +18,7 @@ from framework.asyn import (
     TcpServer,
 )
 from framework.fabrics import client_fabric
-from framework.utils import get_tcp_packet, run_in_background
+from framework.utils import get_tcp_packet, run_in_background, compare_metrics_diff
 from framework.xfw import XFW
 
 SynStats = tuple[int, int, int]
@@ -63,6 +63,13 @@ def check_stats(
     syn_cookies_fail = stats_after[2] - stats_before[2]
     logger.info(f"fail={syn_cookies_fail}")
     assert cmp_stats(syn_cookies_fail, expectation[2]), "SynCookieFail is different"
+
+
+stats_counters = [
+    "xfw_syncookie_generated_packets",
+    "xfw_syncookie_failed_packets",
+    "xfw_syncookie_received_packets",
+]
 
 
 class TcpRawSynCookieClient(TcpRawClient):
@@ -160,7 +167,8 @@ class TcpRawSynCookieIpv6Client(TcpRawSynCookieClient, TcpIpV6RawClient):
 
 
 @pytest.fixture
-async def tcp_ip4_raw_syncookie_client(config: ConfigSettings, logging_level: int) -> TcpServer:
+async def tcp_ip4_raw_syncookie_client(config: ConfigSettings, logging_level: int
+                                       ) -> AsyncGenerator[TcpServer, None]:
     client = client_fabric(
         logging_level=logging_level,
         config=config,
@@ -171,7 +179,8 @@ async def tcp_ip4_raw_syncookie_client(config: ConfigSettings, logging_level: in
 
 
 @pytest.fixture
-async def tcp_ip6_raw_syncookie_client(config: ConfigSettings, logging_level) -> TcpServer:
+async def tcp_ip6_raw_syncookie_client(config: ConfigSettings, logging_level
+                                       ) -> AsyncGenerator[TcpServer, None]:
     client = client_fabric(
         logging_level=logging_level,
         config=config,
@@ -187,7 +196,12 @@ def tcp_syncookie_client(request, ip_version):
 
 
 @pytest.fixture
-async def xfw_with_forced_syncookie(xfw: XFW) -> XFW:
+async def xfw_with_forced_syncookie(xfw: XFW) -> AsyncGenerator[XFW, None]:
+    """
+    While `sysctl-tcp-syncookies: 2` is not practical, it's required for the
+    test to get a deterministic kernel behavior always requireing a syncookie
+    generation.
+    """
     original_mode = await xfw.syncookies_value_get()
     await xfw.set_config(f"""{{
         "devices": "{xfw.network_interface}",
@@ -208,7 +222,7 @@ async def xfw_with_forced_syncookie(xfw: XFW) -> XFW:
 @pytest.fixture
 async def group_of_clients(
     tcp_syncookie_client: TcpRawSynCookieClient, client_cloner
-) -> list[TcpRawSynCookieClient]:
+) -> AsyncGenerator[list[TcpRawSynCookieClient], None]:
     clients: list[TcpRawClient] = client_cloner(
         cloner=tcp_syncookie_client,
         amount=2,
@@ -226,13 +240,11 @@ async def group_of_clients(
         await client.stop()
 
 
-@pytest.mark.skip("ISSUE: 470")
 @pytest.mark.parametrize(
     "tcp_syncookies_parameter",
     [
-        pytest.param("flood_timer=0 passive_timer=0", id="default"),
-        pytest.param("flood_timer=1", id="flood"),
-        pytest.param("passive_timer=1", id="passive"),
+        pytest.param("flood_timer=1 passive_timer=1", id="recommended"),
+        pytest.param("flood_timer=1 passive_timer=0", id="always-passive"),
     ],
 )
 async def test_normal_connection(
@@ -251,24 +263,38 @@ async def test_normal_connection(
     tcp_raw_client.port = random.randrange(1, 65000)
 
     # STAGE 1: Connection
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
-    assert await tcp_raw_client.handshake() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    async with xfw_with_forced_syncookie.metrics_diff(stats_counters, wait_softirq=True) as diff:
+        stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
+        assert await tcp_raw_client.handshake() is True
+        stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
-    # 1 cookie issued by the server and 1 OK receive from client
-    assert stats_after[0] == stats_before[0] + 1
+    # Full TCP handshake: xFW handles client SYN and sends SYN+ACK,
+    # the received client ACK goes to the TCP/IP stack, so:
+    # SyncookieSent are the same, SyncookieRecv is +1 and
+    # xfw_syncookie_generated_packets is +1.
+    assert stats_after[0] == stats_before[0]
     assert stats_after[1] == stats_before[1] + 1
     assert stats_after[2] == stats_before[2]
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 1,
+            "xfw_syncookie_failed_packets": 0,
+            "xfw_syncookie_received_packets": 1,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
 
     # STAGE 2: Send data
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     await tcp_raw_client.send_packet(TCP(flags="PA") / b"hello")
 
     answer = await tcp_raw_client.receive_packet()
     assert answer is not None
     assert tcp_raw_client.has_flag(answer, "A")
 
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     # nothing changes
     assert stats_after[0] == stats_before[0]
@@ -276,10 +302,10 @@ async def test_normal_connection(
     assert stats_after[2] == stats_before[2]
 
     # STAGE 3: Disconnecting
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     assert await tcp_raw_client.close_connection() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     # nothing changes
     assert stats_after[0] == stats_before[0]
@@ -333,11 +359,11 @@ async def test_syncookie_with_options(
     # because syncookie is issues on 4-tuple
     tcp_raw_client.port = random.randrange(1, 65000)
 
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     assert await tcp_raw_client.handshake(tcp_packet) is True
     assert await tcp_raw_client.close_connection() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     # 1 cookie issued by the server and 1 OK receive from client
     assert stats_after[0] == stats_before[0] + 1
@@ -372,10 +398,10 @@ async def test_flood_mode(
     )
 
     # On the handshake the Send and Recv cookie should be increased
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert await tcp_raw_client.handshake() is True
     assert await tcp_raw_client.close_connection() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert stats_after[0] == stats_before[0] + 1
     assert stats_after[1] == stats_before[1] + 1
     assert stats_after[2] == stats_before[2]
@@ -386,10 +412,10 @@ async def test_flood_mode(
     middle_of_flood_timer_loop = flood_timer / 2
     await asyncio.sleep(flood_timer + middle_of_flood_timer_loop)
 
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert await tcp_raw_client.handshake() is True
     assert await tcp_raw_client.close_connection() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert stats_after[0] == stats_before[0] + 1
     assert stats_after[1] == stats_before[1] + 1
     assert stats_after[2] == stats_before[2]
@@ -400,10 +426,10 @@ async def test_flood_mode(
     await xfw_with_forced_syncookie.syncookies_never()
     await asyncio.sleep(flood_timer)
 
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert await tcp_raw_client.handshake() is True
     assert await tcp_raw_client.close_connection() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert stats_after[0] == stats_before[0]
     assert stats_after[1] == stats_before[1]
     assert stats_after[2] == stats_before[2]
@@ -413,10 +439,10 @@ async def test_flood_mode(
     await xfw_with_forced_syncookie.syncookies_always()
     await asyncio.sleep(flood_timer)
 
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert await tcp_raw_client.handshake() is True
     assert await tcp_raw_client.close_connection() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert stats_after[0] == stats_before[0] + 1
     assert stats_after[1] == stats_before[1] + 1
     assert stats_after[2] == stats_before[2]
@@ -449,10 +475,10 @@ async def test_passive_mode(
     )
 
     # As we in the passive_mode, no syncookies should be issued
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert await tcp_raw_client.handshake() is True
     assert await tcp_raw_client.close_connection() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert stats_after[0] == stats_before[0]
     assert stats_after[1] == stats_before[1]
     assert stats_after[2] == stats_before[2]
@@ -463,10 +489,10 @@ async def test_passive_mode(
     middle_of_passive_timer_loop = passive_timer / 2
     await asyncio.sleep(passive_timer + middle_of_passive_timer_loop)
 
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert await tcp_raw_client.handshake() is True
     assert await tcp_raw_client.close_connection() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert stats_after[0] == stats_before[0]
     assert stats_after[1] == stats_before[1]
     assert stats_after[2] == stats_before[2]
@@ -478,10 +504,10 @@ async def test_passive_mode(
     await xfw_with_forced_syncookie.syncookies_always()
     await asyncio.sleep(passive_timer)
 
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert await tcp_raw_client.handshake() is True
     assert await tcp_raw_client.close_connection() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert stats_after[0] == stats_before[0] + 1
     assert stats_after[1] == stats_before[1] + 1
     assert stats_after[2] == stats_before[2]
@@ -491,10 +517,10 @@ async def test_passive_mode(
     await xfw_with_forced_syncookie.syncookies_never()
     await asyncio.sleep(passive_timer)
 
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert await tcp_raw_client.handshake() is True
     assert await tcp_raw_client.close_connection() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     assert stats_after[0] == stats_before[0]
     assert stats_after[1] == stats_before[1]
     assert stats_after[2] == stats_before[2]
@@ -539,7 +565,7 @@ async def test_normal_connection_under_flood(
 ):
     await xfw_with_forced_syncookie.rules_set(f"xfw {{ tcp_syncookies {option}; }}")
 
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     coroutines = [
         client.flood(packet=packet, amount=packets_amount, duration=duration)
         for client in group_of_clients
@@ -558,7 +584,7 @@ async def test_normal_connection_under_flood(
             await tcp_raw_client.close_connection() is True
         ), "Normal client can not close tcp connection"
 
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     check_stats(conf_logger, stats_before, stats_after, (sent, recv, fail))
 
 
@@ -592,7 +618,7 @@ async def test_normal_connection_under_handshake_flood(
 ):
     await xfw_with_forced_syncookie.rules_set(f"xfw {{ tcp_syncookies {option}; }}")
 
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     coroutines = [
         client.flood_handshake(amount=handshakes, duration=duration) for client in group_of_clients
@@ -610,7 +636,7 @@ async def test_normal_connection_under_handshake_flood(
             await tcp_raw_client.close_connection() is True
         ), "Normal client can not close tcp connection"
 
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
     check_stats(conf_logger, stats_before, stats_after, (sent, recv, fail))
 
 
@@ -633,7 +659,7 @@ async def test_artificial_flood_timer(
     await xfw_with_forced_syncookie.rules_set(
         f"xfw {{ tcp_syncookies passive_timer={passive_timer} flood_timer={flood_timer}; }}"
     )
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     start_time = time.time()
     coroutines = [
@@ -653,7 +679,7 @@ async def test_artificial_flood_timer(
 
     assert time.time() - start_time < 50, "Haven't finished all syns in time"
 
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     # 0 sent (because kernel generated nothing),
     # 1 recved from normal client,
@@ -661,7 +687,7 @@ async def test_artificial_flood_timer(
     check_stats(conf_logger, stats_before, stats_after, (0, 1, 0))
 
     await xfw_with_forced_syncookie.syncookies_value_set(0)
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     # wait till xfw leave flood mode (passive timer expires)
     await asyncio.sleep(time.time() - start_time + flood_timer)
@@ -695,7 +721,7 @@ async def test_artificial_flood_timer(
 
     expected_total = handshakes_amount * len(group_of_clients)
 
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_stats()
+    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     # ~1200 sent
     # 1 recved from normal client,
