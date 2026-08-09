@@ -1191,8 +1191,8 @@ XfwSection::TcpSyncookieSection::commit()
 		throw Except("Section must contain at least one "
 			     "of 'passive_timer' or 'flood_timer'.");
 	}
-	xfw_conf_.syncookie_.emplace(p_timer_.value_or(0),
-		f_timer_.value_or(0));
+	xfw_conf_.syncookie_.emplace(p_timer_.value_or(1),
+		f_timer_.value_or(1));
 }
 
 /*
