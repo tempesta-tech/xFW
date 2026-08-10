@@ -158,5 +158,4 @@ xfw_ctx_init(XfwGlobalCtx *ctx, XfwMd *pkt_ctx)
 	INIT_CURSOR_FROM_BPF_CONTEXT(pkt_ctx, &ctx->hdr_cur);
 	ctx->pkt_sz = ctx->hdr_cur.end - ctx->hdr_cur.pos;
 	ctx->ctx = pkt_ctx;
-	ctx->ts_jiff = bpf_jiffies64();
 }
