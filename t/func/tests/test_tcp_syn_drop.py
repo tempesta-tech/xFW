@@ -409,3 +409,45 @@ async def test_retry_max_delay_exponential_backoff(
     received = await tcp_raw_server.receive_packet()
     assert received is not None
     assert tcp_raw_server.has_flag(received, "S")
+
+
+async def test_dst_rules_with_tcp_syn_drop_enabled(
+    xfw: XFW,
+    ip_version: str,
+    tcp_syn_drop_client: TcpRawClient,
+    tcp_raw_server: TcpRawServer,
+    start_tcp_raw_server_and_raw_clients,
+):
+    time_min = 1000
+    max_delay = 5000
+    seq = random.randrange(1, 2**31)
+
+    await xfw.rules_set(f"""
+        xfw {{
+            defaults {{ dst: allow; }}
+
+            tcp_syn_drop
+                hash_salt=12345
+                time_min={time_min}
+                max_delay={max_delay}
+                retry_count=3
+                block_timeout=0;
+
+            dst {ip_version}.tcp : block {{
+                {tcp_raw_server.ip_testing}:{tcp_raw_server.port}
+            }}
+        }}
+        """)
+
+    packet = syn_packet(seq)
+
+    # First SYN is dropped by tcp_syn_drop.
+    await tcp_syn_drop_client.send_packet(packet)
+    assert await tcp_raw_server.receive_packet() is None
+
+    await asyncio.sleep(time_min / 1000 + 0.2)
+
+    # tcp_syn_drop accepts the retransmission, but dst_filter must
+    # still process and block it.
+    await tcp_syn_drop_client.send_packet(packet)
+    assert await tcp_raw_server.receive_packet() is None

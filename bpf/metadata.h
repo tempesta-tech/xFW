@@ -13,19 +13,23 @@
  * Packet metadata shared between the main XDP program and tail-call
  * subprograms.
  *
+ * @ts_jiff - current jiffies timestamp shared by all filters
  * @cur_pos - Current packet offset expected by the called subprogram.
  *            Its exact meaning is module-specific. For the DNS module it
  *            points to the current DNS parsing position; for TCP SYN
  *            protection it points to the TCP header.
- * @ip_pos  - Offset of the IP header from packet data.
+ * @ipver   - ETH_P_IP or ETH_P_IPV6.
+ * @ip_off  - Offset of the IP header from packet data.
  * @is_ipv4 - Non-zero for IPv4, zero for IPv6.
- * @unused  - Reserved for future metadata without changing the layout.
  */
 typedef struct {
+	uint64_t	ts_jiff;
 	uint16_t	cur_pos;
-	uint16_t	ip_off;
-	uint16_t	is_ipv4;
-	uint16_t	unused;
+	uint16_t	ipver;
+	uint8_t		ip_off;
+	uint8_t		l4_proto;
+	uint8_t		is_ipv4;
+	uint8_t		unused;
 } __attribute__((packed)) XfwPacketMetadata;
 
 STATIC_ASSERT(sizeof(XfwPacketMetadata) <= 32,
@@ -59,8 +63,11 @@ xfw_set_packet_metadata(XfwGlobalCtx *ctx, uint16_t cur_pos)
 		return false;
 	}
 
+	md->ts_jiff = ctx->ts_jiff;
 	md->cur_pos = cur_pos;
+	md->ipver = ctx->ipver;
 	md->ip_off = ctx->ip_off;
+	md->l4_proto = ctx->l4_proto;
 	md->is_ipv4 = is_ipv4;
 	md->unused = 0;
 

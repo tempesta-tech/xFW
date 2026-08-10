@@ -204,6 +204,7 @@ xfw_tc(struct __sk_buff *skb)
 {
 	XfwGlobalCtx ctx;
 	xfw_ctx_init(&ctx, skb);
+	ctx.ts_jiff = bpf_jiffies64();
 	/* We can't use XFW_ASSERT here because ctx.g_stats is not available. */
 	VERIFY_TRUE_OR_RETURN(ctx.cfg && ctx.g_stats, XFW_CTX_PASS);
 

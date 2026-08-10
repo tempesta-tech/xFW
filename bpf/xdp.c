@@ -738,6 +738,7 @@ xfw_xdp(struct xdp_md *xdp)
 
 	XfwGlobalCtx ctx;
 	xfw_ctx_init(&ctx, xdp);
+	ctx.ts_jiff = bpf_jiffies64();
 	/* We can't use XFW_ASSERT here because ctx.g_stats is not available. */
 	VERIFY_TRUE_OR_RETURN(ctx.cfg && ctx.g_stats, XFW_CTX_PASS);
 

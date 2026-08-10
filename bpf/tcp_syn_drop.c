@@ -20,6 +20,7 @@
 #include "parsing_helpers.h"
 #include "syn_hash.h"
 #include "ctx.h"
+#include "dst.h"
 
 #include "../bpf_uapi/config.h"
 #include "../bpf_uapi/map_names.h"
@@ -116,21 +117,12 @@ xfw_hash_ipv6_syn(const struct ipv6hdr *ipv6,
 }
 
 /*
- * Return values:
- *
- *   0  - initial SYN was parsed and hashed;
- *   1  - packet is not an initial SYN;
- *  -1  - packet headers are truncated or invalid.
- */
-
-
-/*
  * Move a tuple from the large pending map to the smaller validated map.
  *
  * The new entry is inserted first. This way a map insertion failure does
  * not remove the only existing protection state.
  */
-static __always_inline int
+static __always_inline bool
 xfw_promote_syn(uint64_t hash, uint64_t now,
 		const XfwRulesCfgTcpSynDrop *cfg)
 {
@@ -146,12 +138,12 @@ xfw_promote_syn(uint64_t hash, uint64_t now,
 	{
 		XFW_CTX_DBG("Failed to add SYN tuple to the %s table",
 			    MAP_SYN_RETRY_STR);
-		return XDP_DROP;
+		return false;
 	}
 
 	bpf_map_delete_elem(&MAP_SYN_PENDING_REF, &hash);
 
-	return XDP_PASS;
+	return true;
 }
 
 /**
@@ -186,8 +178,8 @@ xfw_promote_syn(uint64_t hash, uint64_t now,
  * retransmissions to be tracked using exponential backoff and
  * retry_count.
  *
- * Return XDP_PASS when the retransmitted SYN is valid and the tuple is
- * successfully promoted to the retry map, or XDP_DROP when the tuple is
+ * Return `true` when the retransmitted SYN is valid and the tuple is
+ * successfully promoted to the retry map, or `false` when the tuple is
  * blocked, the retransmission timing is invalid, or promotion fails.
  */
 static __always_inline int
@@ -195,7 +187,7 @@ xfw_process_pending(uint64_t hash, XfwSynPending *entry, uint64_t now,
 		    const XfwRulesCfgTcpSynDrop *cfg)
 {
 	if (entry->blocked)
-		return XDP_DROP;
+		return false;
 	/*
 	 * The valid retransmission window is:
 	 *
@@ -207,7 +199,7 @@ xfw_process_pending(uint64_t hash, XfwSynPending *entry, uint64_t now,
 	    || now > entry->jtxtstamp + cfg->max_delay_jiff)
 	{
 		entry->blocked = true;
-		return XDP_DROP;
+		return false;
 	}
 
 	return xfw_promote_syn(hash, now, cfg);
@@ -304,11 +296,11 @@ xfw_start_validation(uint64_t hash, uint64_t now)
  * @now:   current jiffies value.
  * @cfg:   TCP SYN drop filter configuration.
  *
- * Return `XDP_PASS` for a valid retransmitted SYN which may be forwarded
- * to upstream, or XDP_DROP when the tuple is blocked or the retransmission
+ * Return `true` for a valid retransmitted SYN which may be forwarded
+ * to upstream, or false when the tuple is blocked or the retransmission
  * timing is invalid.
  */
-static __always_inline int
+static __always_inline bool
 xfw_process_retry(uint64_t hash, XfwSynRetry *entry, uint64_t now,
 		  const XfwRulesCfgTcpSynDrop *cfg)
 {
@@ -317,7 +309,7 @@ xfw_process_retry(uint64_t hash, XfwSynRetry *entry, uint64_t now,
 	 * eviction.
 	 */
 	if (entry->blocked) 
-		return XDP_DROP;
+		return false;
 
 	/*
 	 * `retry_count` may impose a finite block. Once it expires, restart
@@ -326,7 +318,7 @@ xfw_process_retry(uint64_t hash, XfwSynRetry *entry, uint64_t now,
 	 */
 	if (entry->blocked_until) {
 		if (now < entry->blocked_until)
-			return XDP_DROP;
+			return false;
 
 		/*
 		 * The finite block has expired. Treat this SYN as the first SYN
@@ -336,7 +328,7 @@ xfw_process_retry(uint64_t hash, XfwSynRetry *entry, uint64_t now,
 		if (xfw_start_validation(hash, now))
 			bpf_map_delete_elem(&MAP_SYN_RETRY_REF, &hash);
 
-		return XDP_DROP;
+		return false;
 	}
 
 	if (entry->jtxtstamp + cfg->time_min_jiff > now
@@ -347,7 +339,7 @@ xfw_process_retry(uint64_t hash, XfwSynRetry *entry, uint64_t now,
 		 * blocked, as required by the design.
 		 */
 		entry->blocked = true;
-		return XDP_DROP;
+		return false;
 	}
 
 	entry->retry_count++;
@@ -368,7 +360,7 @@ xfw_process_retry(uint64_t hash, XfwSynRetry *entry, uint64_t now,
 		} else {
 			entry->blocked = true;	
 		}
-		return XDP_PASS;
+		return true;
 	}
 
 	/*
@@ -379,63 +371,66 @@ xfw_process_retry(uint64_t hash, XfwSynRetry *entry, uint64_t now,
 	entry->max_delay = entry->max_delay * 2;
 	entry->jtxtstamp = now;
 
+	return true;
+}
+
+static __always_inline int
+xfw_xdp_filter(struct XfwGlobalCtx *ctx)
+{
+	CHAIN(xfw_dst_filter, ctx);
+	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
 	return XDP_PASS;
 }
 
 SEC("xdp")
 int xfw_tcp_syn_drop(struct xdp_md *xdp)
 {
-	const unsigned zero = 0;
+	XfwGlobalCtx gctx;
+	XfwGlobalCtx *ctx = &gctx;
 	const XfwRulesCfgTcpSynDrop *syn_cfg;
-	const XfwPerCpuStats *g_stats;
-	const XfwFilterCfg *cfg;
-	XfwHdrCursor hdr_cur;
 	struct tcphdr *th;
 	XfwSynPending *pending;
 	XfwSynRetry *retry;
 	uint64_t hash;
-	uint64_t now;
+	int r;
 
 	XFW_DBG_INIT();
 
-	g_stats = bpf_map_lookup_elem(&MAP_GLBL_STAT_REF, &zero);
-	cfg = bpf_map_lookup_elem(&MAP_CFG_REF, &zero);
-	VERIFY_TRUE_OR_RETURN(cfg && g_stats, XDP_PASS);
+	xfw_ctx_init(ctx, xdp);
+	VERIFY_TRUE_OR_RETURN(ctx->cfg && ctx->g_stats, XFW_CTX_PASS);
 
-	syn_cfg = &cfg->rules.tcp_syn_drop;
-	if (!syn_cfg->enabled)
-		return XDP_PASS;
-
-	INIT_CURSOR_FROM_BPF_CONTEXT(xdp, &hdr_cur);
 	XfwPacketMetadata *md = (void *)(long)xdp->data_meta;
 	/* Limiting is important for verifier */
-	if (unlikely((void *)(md + 1) > hdr_cur.pos
-		     || md->cur_pos > L3_L4_HDRS_MAXLEN))
-		return XDP_DROP;
-	hdr_cur.pos += md->cur_pos;
-	if (unlikely(parse_tcphdr(&hdr_cur, &th) <= 0))
-		return XDP_DROP;
+	XFW_ASSERT((void *)(md + 1) <= ctx->hdr_cur.pos
+		   && md->cur_pos <= L4_OFF_MAX
+		   && md->ip_off <= L3_L4_HDRS_MAXLEN);
+
+	ctx->ts_jiff = md->ts_jiff;
+	ctx->ipver = md->ipver;
+	ctx->l4_off = md->cur_pos;
+	ctx->ip_off = md->ip_off;
+	ctx->l4_proto = md->l4_proto;
+	ctx->hdr_cur.pos += md->cur_pos;
+	XFW_ASSERT(parse_tcphdr(&ctx->hdr_cur, &th) > 0);
+
+	syn_cfg = &ctx->cfg->rules.tcp_syn_drop;
+	if (!syn_cfg->enabled)
+		goto pass;
 
 	if (!xfw_is_valid_initial_syn(th))
-		return XDP_PASS;
+		goto pass;
 
-	if (unlikely(md->ip_off > L3_L4_HDRS_MAXLEN))
-		return XDP_DROP;
-	void *ip_hdr = (void *)(long)xdp->data + md->ip_off;
+	void *ip_hdr = (void *)(long)xdp->data + ctx->ip_off;
 	if (md->is_ipv4) {
 		struct iphdr *ipv4 = ip_hdr;
-		if (unlikely((void*)(ipv4 + 1) > hdr_cur.end))
-			return -1;
+		XFW_ASSERT((void*)(ipv4 + 1) <= ctx->hdr_cur.end);
 		xfw_hash_ipv4_syn(ipv4, th, syn_cfg->hash_salt, &hash);
 	}
 	else {
 		struct ipv6hdr *ipv6 = ip_hdr;
-		if (unlikely((void*)(ipv6 + 1) > hdr_cur.end))
-			return -1;
+		XFW_ASSERT((void*)(ipv6 + 1) <= ctx->hdr_cur.end);
 		xfw_hash_ipv6_syn(ipv6, th, syn_cfg->hash_salt, &hash);
 	}
-
-	now = bpf_jiffies64();
 
 	/*
 	 * Check the retry map first.
@@ -454,8 +449,11 @@ int xfw_tcp_syn_drop(struct xdp_md *xdp)
 	 * `xfw_process_retry`.
 	 */
 	retry = bpf_map_lookup_elem(&MAP_SYN_RETRY_REF, &hash);
-	if (retry)
-		return xfw_process_retry(hash, retry, now, syn_cfg);
+	if (retry) {
+		if (!xfw_process_retry(hash, retry, ctx->ts_jiff, syn_cfg))
+			return XDP_DROP;
+		goto pass;
+	}
 	
 	/*
 	 * The tuple was not found in the retry map, therefore either this is
@@ -468,12 +466,19 @@ int xfw_tcp_syn_drop(struct xdp_md *xdp)
 	 * tuple is permanently blocked until it is evicted from the LRU map.
 	 */
 	pending = bpf_map_lookup_elem(&MAP_SYN_PENDING_REF, &hash);
-	if (pending)
-		return xfw_process_pending(hash, pending, now, syn_cfg);
+	if (pending) {
+		if (!xfw_process_pending(hash, pending, ctx->ts_jiff, syn_cfg))
+			return XDP_DROP;
+		goto pass;
+	}
 
-	xfw_start_validation(hash, now);
+	xfw_start_validation(hash, ctx->ts_jiff);
 
 	return XDP_DROP;
+
+pass:
+	r = xfw_xdp_filter(ctx);
+	return finalize_result(ctx, r);
 }
 
 char LICENSE[] SEC("license") = "GPL v2";
