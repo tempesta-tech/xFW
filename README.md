@@ -7,15 +7,19 @@ before it reaches the protected application. Run it on an individual server, an
 inline Linux gateway, or a dedicated scrubbing node to mitigate TCP, UDP, ICMP,
 and DNS floods.
 
-**[Host · Gateway · Scrubbing](#deployment-modes)** ·
-**[Published lab workloads: 196 Mpps ICMPv6 and 176 Gbps mixed TCP/UDP](#performance)** ·
-**[Optional L3-L7 and bot-protection stack](#full-stack-ddos-and-bot-protection)**
+**At a glance**
 
-[GitHub](https://github.com/tempesta-tech/xFW) ·
-[Get started](#quick-start) ·
-[Documentation](https://tempesta-tech.com/tempesta-escudo/knowledge-base/XFW/) ·
-[Benchmarks](#performance) ·
-[DDoS protection use cases](https://tempesta-tech.com/tempesta-escudo/knowledge-base/DDoS-Protection-Use-Cases/)
+- **[Host · Gateway · Scrubbing](#deployment-modes)**
+- **[Published lab workload: up to approximately 200 Mpps on one Intel Xeon Gold 6348 CPU](#performance)**
+- **[Optional L3-L7 and bot-protection stack](#full-stack-ddos-and-bot-protection)**
+
+**Quick links**
+
+- [GitHub](https://github.com/tempesta-tech/xFW)
+- [Get started](#quick-start)
+- [Documentation](https://tempesta-tech.com/tempesta-escudo/knowledge-base/XFW/)
+- [Benchmarks](#performance)
+- [DDoS protection use cases](https://tempesta-tech.com/tempesta-escudo/knowledge-base/DDoS-Protection-Use-Cases/)
 
 ## Why Tempesta xFW?
 
@@ -30,8 +34,10 @@ and DNS floods.
   without dropping it, so policies can be tuned against real workloads.
 - **Operate with familiar tooling.** Update rules over gRPC, export Prometheus
   counters, and optionally record security events in ClickHouse.
-- **Extend protection through L7.** Combine xFW with Tempesta FW and WebShield for
-  volumetric, application-layer, and bot protection.
+- **Extend protection through L7.** Combine xFW with
+  [Tempesta FW](https://github.com/tempesta-tech/tempesta) and
+  [WebShield](https://github.com/tempesta-tech/webshield) for volumetric,
+  application-layer, and bot protection.
 
 ## How it works
 
@@ -52,10 +58,11 @@ remotely. In an on-demand scrubbing design, an external attack detector and
 controller can redirect an attacked destination or prefix through xFW and update
 its mitigation rules.
 
-The management daemon listens on loopback by default. Its gRPC transport does not
-currently provide authentication or encryption; do not expose it directly to an
-untrusted network. Use a trusted management network and appropriate network-level
-access controls for remote operation.
+The management daemon listens on a network socket and accepts gRPC requests. Use
+the [`tfw` CLI](https://tempesta-tech.com/tempesta-escudo/knowledge-base/Command-line-interface/)
+to configure xFW, or use the
+[C client library](https://tempesta-tech.com/tempesta-escudo/knowledge-base/Client-library/)
+to build xFW control flows into an application.
 
 ## Features
 
@@ -117,31 +124,21 @@ application context for L7 and bot decisions.
 
 ## Performance
 
-The current lab tests use Cisco TRex, Ubuntu Server 24.04.3, one Intel Xeon Gold
-6348 CPU on the system under test, and a dual-port NVIDIA/Mellanox ConnectX-6 Dx
-100 GbE adapter. The loads below are aggregate TRex totals across both ports.
+Lab measurements demonstrate attack processing at **up to approximately 200
+Mpps** and **more than 100 Gbps**, depending on packet size, attack type, and
+enabled protection. The documented test system uses one Intel Xeon Gold 6348 CPU
+and a dual-port NVIDIA/Mellanox ConnectX-6 Dx 100 GbE adapter.
 
-| Attack workload | TRex offered load | xFW configuration |
-| --- | ---: | --- |
-| ICMPv6 flood | **129 Gbps / 196 Mpps** | Native XDP with a 150K-source allowlist |
-| Mixed TCP/UDP flood | **176 Gbps / 59 Mpps** | UDP plus ACK, FIN, NULL, RST, SYN, SYN-ACK, URG, and XMAS traffic |
-| TCP SYN flood, host mode | **93 Gbps / 149 Mpps** | XDP SYN cookies |
-| TCP SYN flood, gateway/scrubbing mode | **104 Gbps / 167 Mpps** | SYN rate limiting; allowed packets discarded before the Linux stack |
+The test coverage includes ICMPv6 floods, mixed TCP/UDP floods, SYN-cookie
+protection in host mode, SYN rate limiting in gateway/scrubbing mode, and latency
+under load. Reported rates are aggregate TRex offered workloads across both ports
+while xFW processes and filters the traffic, not end-to-end application
+throughput.
 
-These figures are the lab-generated attack workloads reported by TRex while xFW
-was processing and filtering the traffic; they are not end-to-end forwarded
-application throughput. In the gateway/scrubbing test, iptables deliberately
-discarded the packets allowed by xFW to avoid measuring a Linux-stack bottleneck.
-The raw saturation output also reports non-zero generator queue-full counters.
-
-In the documented 10 Mpps SYN-flood latency sample, average latency
-changed from 173 µs without xFW to 202 µs with filtering, and the observed maximum
-changed from 181 µs to 252 µs. The published results do not yet identify the xFW
-revision, test date, repeated-run count, or percentile distribution, so treat them
-as a lab snapshot rather than a capacity guarantee.
-
-Read the [methodology and raw results](https://tempesta-tech.com/tempesta-escudo/knowledge-base/Performance/)
-and inspect the checked-in [TRex workload sources](t/trex/) for more detail.
+Benchmarks are updated regularly. See the
+[Performance page](https://tempesta-tech.com/tempesta-escudo/knowledge-base/Performance/)
+for the latest numbers, test configurations, methodology, and raw results. The
+repository also contains the [TRex workload sources](t/trex/).
 
 ## Quick start
 
