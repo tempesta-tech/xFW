@@ -249,6 +249,10 @@ class XFW(NetworkStateful):
         self.write_config(file_path=self.tfw_logger_config_file, content=self.xfw_logger_config)
         await self._start_daemon()
 
+        # We need to call metrics here to exclude syncookie statistics changes in the tests.
+        # We just make the first request to xfw immediately after the launch.
+        await self.metrics()
+
         self._state = State.started
 
     async def restart_daemon(self):
@@ -403,7 +407,7 @@ class XFW(NetworkStateful):
         Return values of SyncookieSent, SyncookieRecv, SyncookieFailed
         """
         code, stats, _ = await run_cmd(
-            cmd="cat /proc/net/netstat | grep -A1 Syncookie | tail -n 1 | awk '{print $2, $3, $4}'",
+            cmd="grep -A1 Syncookie /proc/net/netstat | tail -n 1 | awk '{print $2, $3, $4}'",
             logger=self.logger,
         )
         assert code == 0, "Can not read netstat"
