@@ -40,6 +40,7 @@ declare -r version_file="$xfw_tmp_path/version"
 declare -r status_dir="$xfw_tmp_path/status/"
 declare -ar bpf_modules=(
 	tcp_syn_drop
+	tcp_syncookies
 )
 
 # Select the first existing directory
@@ -549,6 +550,9 @@ unload_module()
 	case "$module" in
 	tcp_syn_drop)
 		prog_pin="$xfw_bpf_path/tcp_syn_drop"
+		;;
+	tcp_syncookies)
+		prog_pin="$xfw_bpf_path/tcp_syncookies"
 		;;
 	*)
 		return

@@ -8,6 +8,7 @@
 
 #include "ctx.h"
 #include "log.h"
+#include "parsing_helpers.h"
 
 /**
  * Packet metadata shared between the main XDP program and tail-call
@@ -75,8 +76,59 @@ xfw_set_packet_metadata(XfwGlobalCtx *ctx, uint16_t cur_pos)
 }
 
 static __always_inline bool
+xfw_ctx_init_from_metadata(XfwGlobalCtx *ctx, XfwMd *pkt_ctx)
+{
+	xfw_ctx_init(ctx, pkt_ctx);
+	VERIFY_TRUE_OR_RETURN(ctx->cfg && ctx->g_stats, false);
+
+	XfwPacketMetadata *md = (void *)(long)pkt_ctx->data_meta;
+	/* Limiting is important for verifier */
+	VERIFY_TRUE_OR_RETURN((void *)(md + 1) <= ctx->hdr_cur.pos
+			       && md->cur_pos <= L4_OFF_MAX,
+			       false);
+	ctx->hdr_cur.pos += md->cur_pos;
+
+	VERIFY_TRUE_OR_RETURN(md->ip_off <= L3_L4_HDRS_MAXLEN, false);
+	void *ip_hdr = (void *)(long)pkt_ctx->data + md->ip_off;
+	if (md->is_ipv4) {
+		struct iphdr *ipv4 = ip_hdr;
+		VERIFY_TRUE_OR_RETURN((void *)(ipv4 + 1) <= ctx->hdr_cur.end,
+				      false);
+		xfw_ipv4_to_ipv6_mapped(ipv4->saddr, ctx->ilog_addr.addr32);
+	}
+	else {
+		struct ipv6hdr *ipv6 = ip_hdr;
+		VERIFY_TRUE_OR_RETURN((void *)(ipv6 + 1) <= ctx->hdr_cur.end,
+				      false);
+		ctx->ilog_addr.in6 = ipv6->saddr;
+	}
+
+	ctx->ts_jiff = md->ts_jiff;
+	ctx->ipver = md->ipver;
+	/*
+	 * Derive `l4_off` from the already verified packet cursor
+	 * instead of copying `md->cur_pos`. Packet bounds checks above
+	 * split and merge verifier states and may lose range information
+	 * for scalar offsets.
+	 *
+	 * Do not use XFW_CTX_DATA_BGN(ctx) here. ctx->ctx is a spilled BPF
+	 * context pointer stored inside the stack-resident XfwGlobalCtx,
+	 * and accessing pkt_ctx->data through it may be compiled as a partial
+	 * load from the spilled pointer, which the verifier rejects with
+	 * "invalid size of register fill".
+	 */
+	ctx->l4_off = (uint16_t)(ctx->hdr_cur.pos -
+		(void *)(long)pkt_ctx->data);
+	ctx->ip_off = md->ip_off;
+	ctx->l4_proto = md->l4_proto;
+
+	return true;
+}
+
+static __always_inline bool
 is_metadata_creation_necessary(const XfwGlobalCtx *ctx)
 {
 	return ctx->cfg->rules.dns.enabled ||
-	       ctx->cfg->rules.tcp_syn_drop.enabled;
+	       ctx->cfg->rules.tcp_syn_drop.enabled ||
+	       ctx->cfg->rules.syncookie.enabled;
 }

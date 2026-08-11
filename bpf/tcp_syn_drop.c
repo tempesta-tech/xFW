@@ -375,53 +375,26 @@ xfw_process_retry(uint64_t hash, XfwSynRetry *entry, uint64_t now,
 }
 
 static __always_inline int
-xfw_xdp_filter(struct XfwGlobalCtx *ctx)
+xfw_tcp_syn_drop_filter(XfwGlobalCtx *ctx)
 {
-	CHAIN(xfw_dst_filter, ctx);
-	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
-	return XDP_PASS;
-}
-
-SEC("xdp")
-int xfw_tcp_syn_drop(struct xdp_md *xdp)
-{
-	XfwGlobalCtx gctx;
-	XfwGlobalCtx *ctx = &gctx;
 	const XfwRulesCfgTcpSynDrop *syn_cfg;
-	struct tcphdr *th;
 	XfwSynPending *pending;
 	XfwSynRetry *retry;
 	uint64_t hash;
-	int r;
 
 	XFW_DBG_INIT();
 
-	xfw_ctx_init(ctx, xdp);
-	VERIFY_TRUE_OR_RETURN(ctx->cfg && ctx->g_stats, XFW_CTX_PASS);
-
-	XfwPacketMetadata *md = (void *)(long)xdp->data_meta;
-	/* Limiting is important for verifier */
-	XFW_ASSERT((void *)(md + 1) <= ctx->hdr_cur.pos
-		   && md->cur_pos <= L4_OFF_MAX
-		   && md->ip_off <= L3_L4_HDRS_MAXLEN);
-
-	ctx->ts_jiff = md->ts_jiff;
-	ctx->ipver = md->ipver;
-	ctx->l4_off = md->cur_pos;
-	ctx->ip_off = md->ip_off;
-	ctx->l4_proto = md->l4_proto;
-	ctx->hdr_cur.pos += md->cur_pos;
-	XFW_ASSERT(parse_tcphdr(&ctx->hdr_cur, &th) > 0);
-
+	const bool is_ipv4 = ctx->ipver == bpf_htons(ETH_P_IP);
 	syn_cfg = &ctx->cfg->rules.tcp_syn_drop;
-	if (!syn_cfg->enabled)
-		goto pass;
+	XFW_ASSERT(ctx->l4_off <= L4_OFF_MAX);
+	struct tcphdr *th = XFW_PKT_PTR(ctx, ctx->l4_off, struct tcphdr);
+	XFW_ASSERT((void *)(th + 1) <= ctx->hdr_cur.end);
 
 	if (!xfw_is_valid_initial_syn(th))
-		goto pass;
+		return XFW_CTX_CONTINUE;
 
-	void *ip_hdr = (void *)(long)xdp->data + ctx->ip_off;
-	if (md->is_ipv4) {
+	void *ip_hdr = (void *)(long)ctx->ctx->data + ctx->ip_off;
+	if (is_ipv4) {
 		struct iphdr *ipv4 = ip_hdr;
 		XFW_ASSERT((void*)(ipv4 + 1) <= ctx->hdr_cur.end);
 		xfw_hash_ipv4_syn(ipv4, th, syn_cfg->hash_salt, &hash);
@@ -452,7 +425,7 @@ int xfw_tcp_syn_drop(struct xdp_md *xdp)
 	if (retry) {
 		if (!xfw_process_retry(hash, retry, ctx->ts_jiff, syn_cfg))
 			return XDP_DROP;
-		goto pass;
+		return XFW_CTX_CONTINUE;
 	}
 	
 	/*
@@ -469,16 +442,34 @@ int xfw_tcp_syn_drop(struct xdp_md *xdp)
 	if (pending) {
 		if (!xfw_process_pending(hash, pending, ctx->ts_jiff, syn_cfg))
 			return XDP_DROP;
-		goto pass;
+		return XFW_CTX_CONTINUE;
 	}
 
 	xfw_start_validation(hash, ctx->ts_jiff);
 
 	return XDP_DROP;
+}
 
-pass:
-	r = xfw_xdp_filter(ctx);
-	return finalize_result(ctx, r);
+static __always_inline int
+xfw_xdp_filter_chain(XfwGlobalCtx *ctx)
+{
+	CHAIN(xfw_tcp_syn_drop_filter, ctx);
+	CHAIN(xfw_dst_filter, ctx);
+
+	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
+	return XFW_CTX_PASS;
+}
+
+SEC("xdp")
+int xfw_tcp_syn_drop(struct xdp_md *xdp)
+{
+	XfwGlobalCtx ctx;
+	VERIFY_TRUE_OR_RETURN(xfw_ctx_init_from_metadata(&ctx, xdp),
+			      XFW_CTX_PASS);
+
+	int r = xfw_xdp_filter_chain(&ctx);
+
+	return finalize_result(&ctx, r);
 }
 
 char LICENSE[] SEC("license") = "GPL v2";
