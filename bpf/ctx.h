@@ -15,7 +15,7 @@
 /* Use type redefinitions instead of typedefs to not to confuse BTF/CO-RE. */
 #if defined(XFW_TC)
 #define XfwMd				struct __sk_buff
-#elif defined(XFW_XDP) || defined(XFW_TCP_SYN_DROP)
+#elif defined(XFW_XDP) || defined(XFW_TCP_SYN_DROP) || defined(XFW_TCP_SYNCOOKIES)
 #define XfwMd				struct xdp_md
 #else
 #error "Undefined program type: should be TC or XDP"

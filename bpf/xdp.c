@@ -15,6 +15,7 @@
 #include "dns.h"
 #include "dst.h"
 #include "filter.h"
+#include "filter_modules.h"
 #include "parsing_helpers.h"
 #include "tcp_anomaly_filter.h"
 #include "tcp_auth.h"
@@ -56,14 +57,6 @@ struct {
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__uint(max_entries, XFW_MAX_PORTS);
 } MAP_SRC_PORT_RL_REF SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
-	__type(key, __u32);
-	__type(value, __u32);
-	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, XFW_PROG_MAX);
-} MAP_PROG_ARRAY_REF SEC(".maps");
 
 #define XFW_MAP_LOOKUP_OR_INIT(m, k, val_t)				\
 ({									\
@@ -445,21 +438,6 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 	}
 }
 
-static __always_inline int
-tcp_syn_drop_filter(XfwGlobalCtx *ctx)
-{
-	if (!xfw_set_packet_metadata(ctx, ctx->l4_off))
-		return XFW_CTX_CONTINUE;
-
-	bpf_tail_call(ctx->ctx, &MAP_PROG_ARRAY_REF,
-		      XFW_PROG_TCP_SYN_DROP_FILTER);
-
-	/*
-	 * Tail call failed, continue normal XDP processing.
-	 */
-	return XFW_CTX_CONTINUE;
-}
-
 /**
  * SYN without ACK received: both SYN cookies and SYN rate limiting may be enabled
  * by configuration. In this case, we run both checks before considering the
@@ -473,6 +451,10 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	if (ctx->cfg->rules.tcp_syn_drop.enabled)
 		CHAIN(tcp_syn_drop_filter, ctx);
 
+	/* If a SYN cookie was generated, processing stops immediately. */
+	if (ctx->cfg->rules.syncookie.enabled)
+		CHAIN(tcp_syncookies_filter, ctx);
+
 	/*
 	 * Reinitialize packet cursor after `bpf_tail_call`, because the
 	 * verifier may lose packet-pointer types stored in the global
@@ -480,9 +462,6 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	 */
 	INIT_CURSOR_FROM_BPF_CONTEXT(ctx->ctx, &ctx->hdr_cur);
 	ctx->hdr_cur.pos += cur_pos;
-	/* If a SYN cookie was generated, processing stops immediately. */
-	if (ctx->cfg->rules.syncookie.enabled)
-		CHAIN(tcp_syncookies_syn_filter, ctx);
 
 	CHAIN(syn_rlimit, ctx);
 
@@ -503,8 +482,7 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
  * 4. If valid, trust the connection on ingress side.
  */
 static __always_inline int
-tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th,
-		   const XfwSockAddr *addr)
+tcp_rcv_ack_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 {
 	/* Fast path - no SYN cookies. */
 	if (!ctx->cfg->rules.syncookie.enabled)
@@ -521,20 +499,19 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th,
 	if (ctx->cfg->rules.tcp_auth.enabled && tcp_auth_has_conn_trusted(ctx, addr))
 		return XFW_CTX_CONTINUE;
 
-	/* Perform SYN-cookie-specific ACK validation */
-	CHAIN(tcp_syncookies_ack_filter, ctx, th);
+	uint16_t cur_pos = (uint16_t)(ctx->hdr_cur.pos -
+		XFW_CTX_DATA_BGN(ctx->ctx));
 
+	/* Perform SYN-cookie-specific ACK validation */
+	CHAIN(tcp_syncookies_filter, ctx);
 	/*
-	 * This is the scenario where a SYN cookie was issued and successfully
-	 * validated. We need to authenticate TCP flows passing through the host
-	 * or designated to the local host.
-	 *
-	 * This is the only case where xdp.c adds a connection to the trusted set.
-	 * The SYN arrived on the ingress interface, while the SYN-ACK was
-	 * generated and sent directly by xdp.c, bypassing tc.c. This ensures
-	 * the connection is correctly tracked without relying on tc.c.
+	 * Reinitialize packet cursor after `bpf_tail_call`, because the
+	 * verifier may lose packet-pointer types stored in the global
+	 * context.
 	 */
-	tcp_auth_conn_add(addr);
+	INIT_CURSOR_FROM_BPF_CONTEXT(ctx->ctx, &ctx->hdr_cur);
+	ctx->hdr_cur.pos += cur_pos;
+
 	return XFW_CTX_CONTINUE;
 }
 
@@ -611,7 +588,7 @@ tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
 	/* ACK-only: validate SYN-ACK cookies or authenticate normally.*/
 	if (th->ack) {
 		count_traffic_stat(ctx, XFW_ACK);
-		return tcp_rcv_ack_filter(ctx, th, addr);
+		return tcp_rcv_ack_filter(ctx, addr);
 	}
 
 	/* Default: authenticate any remaining TCP packets. */
@@ -699,7 +676,7 @@ do {									\
 } while (0)
 
 static __always_inline int
-xfw_xdp_filter(struct XfwGlobalCtx *ctx)
+xfw_xdp_filter_chain(struct XfwGlobalCtx *ctx)
 {
 	count_traffic_stat(ctx, XFW_TOTAL_DOWNSTREAM_INGRESS);
 
@@ -744,7 +721,7 @@ xfw_xdp(struct xdp_md *xdp)
 
 	CHAIN_PASS_ALL(create_metadata, &ctx, xdp);
 
-	r = xfw_xdp_filter(&ctx);
+	r = xfw_xdp_filter_chain(&ctx);
 
 pass:
 	return finalize_result(&ctx, r);

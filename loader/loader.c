@@ -112,10 +112,24 @@ static const struct xfw_program tcp_syn_drop_module = {
 	.prog_array_idx = XFW_PROG_TCP_SYN_DROP_FILTER,
 };
 
+static const struct xfw_program tcp_syncookies_module = {
+	.name = "tcp_syncookies",
+	.obj_path = "/opt/tempesta/lib/bpf/tcp_syncookies.o",
+	.prog_name = "xfw_tcp_syncookies",
+	.prog_pin_name = "tcp_syncookies",
+	.prog_type = BPF_PROG_TYPE_XDP,
+	.reuse_maps = NULL,
+	.reuse_maps_cnt = 0,
+	.pin_maps = true,
+	.register_in_prog_array = true,
+	.prog_array_idx = XFW_PROG_TCP_SYNCOOKIES_FILTER,
+};
+
 static const struct xfw_program *programs[] = {
 	&main_xdp,
 	&main_tc,
 	&tcp_syn_drop_module,
+	&tcp_syncookies_module,
 };
 
 static void

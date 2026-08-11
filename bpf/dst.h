@@ -15,6 +15,7 @@
 #include "log.h"
 
 #include "filter.h"
+#include "parsing_helpers.h"
 
 SHADOW_MAP(MAP_DST_BASENAME, BPF_MAP_TYPE_HASH, XFW_MAX_DST_RULES, XfwDstKey,
 	    XfwActionRule, 0);
