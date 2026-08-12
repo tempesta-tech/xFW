@@ -17,35 +17,51 @@ struct {
 	__type(key, __u32);
 	__type(value, __u32);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, XFW_PROG_MAX);
-} MAP_PROG_ARRAY_REF SEC(".maps");
+	__uint(max_entries, XFW_XDP_PROG_MAX);
+} MAP_XDP_PROG_ARRAY_REF SEC(".maps");
 
-static __always_inline int
-tcp_syn_drop_filter(XfwGlobalCtx *ctx)
-{
-	if (!xfw_set_packet_metadata(ctx, ctx->l4_off))
-		return XFW_CTX_CONTINUE;
+struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__type(key, __u32);
+	__type(value, __u32);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+	__uint(max_entries, XFW_TC_PROG_MAX);
+} MAP_TC_PROG_ARRAY_REF SEC(".maps");
 
-	bpf_tail_call(ctx->ctx, &MAP_PROG_ARRAY_REF,
-		      XFW_PROG_TCP_SYN_DROP_FILTER);
-
-	/*
-	 * Tail call failed, continue normal XDP processing.
-	 */
-	return XFW_CTX_CONTINUE;
+#define XDP_MODULE_FILTER(name, index)				\
+static __always_inline int					\
+xdp_##name##_module_filter(const XfwGlobalCtx *ctx)		\
+{								\
+	if (!xfw_set_packet_metadata(ctx, ctx->l4_off))		\
+		return XFW_CTX_CONTINUE;			\
+								\
+	bpf_tail_call(ctx->ctx, &MAP_XDP_PROG_ARRAY_REF, index); \
+	/*							\
+	 * Tail call failed, continue normal XDP processing.	\
+	 */							\
+	return XFW_CTX_CONTINUE;				\
 }
 
-static __always_inline int
-tcp_syncookies_filter(XfwGlobalCtx *ctx)
-{
-	if (!xfw_set_packet_metadata(ctx, ctx->l4_off))
-		return XFW_CTX_CONTINUE;
+XDP_MODULE_FILTER(tcp_syn_drop, XFW_XDP_PROG_TCP_SYN_DROP_FILTER)
+XDP_MODULE_FILTER(tcp_syncookies, XFW_XDP_PROG_TCP_SYNCOOKIES_FILTER)
+XDP_MODULE_FILTER(dst, XFW_XDP_PROG_DST_FILTER)
 
-	bpf_tail_call(ctx->ctx, &MAP_PROG_ARRAY_REF,
-		      XFW_PROG_TCP_SYNCOOKIES_FILTER);
+#undef XDP_MODULE_FILTER
 
-	/*
-	 * Tail call failed, continue normal XDP processing.
-	 */
-	return XFW_CTX_CONTINUE;
+#define TC_MODULE_FILTER(name, index)				\
+static __always_inline int					\
+tc_##name##_module_filter(const XfwGlobalCtx *ctx)		\
+{								\
+	if (!xfw_set_packet_metadata(ctx, ctx->l4_off))		\
+		return XFW_CTX_CONTINUE;			\
+								\
+	bpf_tail_call(ctx->ctx, &MAP_TC_PROG_ARRAY_REF, index); \
+	/*							\
+	 * Tail call failed, continue normal XDP processing.	\
+	 */							\
+	return XFW_CTX_CONTINUE;				\
 }
+
+TC_MODULE_FILTER(dst, XFW_TC_PROG_DST_FILTER)
+
+#undef TC_MODULE_FILTER

@@ -14,8 +14,8 @@
 #include <bpf/bpf_endian.h>
 
 #include "compiler.h"
-#include "dst.h"
 #include "filter.h"
+#include "filter_modules.h"
 #include "log.h"
 #include "metadata.h"
 #include "parsing_helpers.h"
@@ -735,7 +735,7 @@ xfw_xdp_filter_chain(XfwGlobalCtx *ctx)
 		};
 		tcp_auth_conn_add(&addr);
 	}
-	CHAIN(xfw_dst_filter, ctx);
+	CHAIN(xdp_dst_module_filter, ctx);
 
 	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
 	return XFW_CTX_PASS;

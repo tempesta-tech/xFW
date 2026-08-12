@@ -7,13 +7,17 @@
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
-#pragma once
-
-#pragma push_macro("BANNER")
-#undef BANNER
+#define BPF_PROGRAM
+#define XFW_TC
 #define BANNER "dst"
-#include "log.h"
 
+#include "vmlinux.h"
+
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_endian.h>
+
+#include "compiler.h"
+#include "log.h"
 #include "filter.h"
 #include "parsing_helpers.h"
 
@@ -138,5 +142,25 @@ xfw_dst_filter(const XfwGlobalCtx *ctx)
 				     &dst_key.addr.in6);
 }
 
-#undef BANNER
-#pragma pop_macro("BANNER")
+static __always_inline int
+xfw_xdp_filter_chain(XfwGlobalCtx *ctx)
+{
+	CHAIN(xfw_dst_filter, ctx);
+
+	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
+	return XFW_CTX_PASS;
+}
+
+SEC("xdp")
+int xfw_dst(struct xdp_md *xdp)
+{
+	XfwGlobalCtx ctx;
+	VERIFY_TRUE_OR_RETURN(xfw_ctx_init_from_metadata(&ctx, xdp),
+			      XFW_CTX_PASS);
+
+	int r = xfw_xdp_filter_chain(&ctx);
+
+	return finalize_result(&ctx, r);
+}
+
+char LICENSE[] SEC("license") = "GPL v2";

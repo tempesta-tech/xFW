@@ -42,7 +42,7 @@ STATIC_ASSERT(sizeof(XfwPacketMetadata) % 4 == 0,
 #define L3_L4_HDRS_MAXLEN		68
 
 static __always_inline bool
-xfw_set_packet_metadata(XfwGlobalCtx *ctx, uint16_t cur_pos)
+xfw_set_packet_metadata(const XfwGlobalCtx *ctx, uint16_t cur_pos)
 {
 	XfwMd* xdp_ctx = ctx->ctx;
 	uint16_t is_ipv4;

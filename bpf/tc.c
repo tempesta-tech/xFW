@@ -22,8 +22,8 @@
 
 #include "ctx.h"
 #include "dns.h"
-#include "dst.h"
 #include "filter.h"
+#include "filter_modules.h"
 #include "log.h"
 #include "parsing_helpers.h"
 #include "tcp_auth.h"
@@ -127,7 +127,7 @@ static __always_inline int
 process_downstream_egress(const XfwGlobalCtx *ctx)
 {
 	/* Traffic still heading toward protected services must pass dst policy. */
-	CHAIN(xfw_dst_filter, ctx);
+	CHAIN(tc_dst_module_filter, ctx);
 
 	return XFW_CTX_CONTINUE;
 }

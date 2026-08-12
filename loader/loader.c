@@ -48,9 +48,10 @@ struct xfw_program {
 	bool pin_maps;
 
 	/*
-	 * Register the loaded program in the global tail-call program array.
+	 * Register the loaded program in the global tail-call
+	 * program array with @prog_array_name (if not NULL).
 	 */
-	bool register_in_prog_array;
+	const char *prog_array_name;
 	uint32_t prog_array_idx;
 };
 
@@ -66,8 +67,7 @@ static const struct xfw_program main_xdp = {
 	 * The main XDP object creates and owns the shared maps.
 	 */
 	.pin_maps = true,
-	.register_in_prog_array = false,
-
+	.prog_array_name = NULL,
 };
 
 static const struct map_desc tc_maps[] = {
@@ -96,7 +96,7 @@ static const struct xfw_program main_tc = {
 	 * created and pinned under the common pin root.
 	 */
 	.pin_maps = true,
-	.register_in_prog_array = false,
+	.prog_array_name = NULL,
 };
 
 static const struct xfw_program tcp_syn_drop_module = {
@@ -108,8 +108,8 @@ static const struct xfw_program tcp_syn_drop_module = {
 	.reuse_maps = NULL,
 	.reuse_maps_cnt = 0,
 	.pin_maps = true,
-	.register_in_prog_array = true,
-	.prog_array_idx = XFW_PROG_TCP_SYN_DROP_FILTER,
+	.prog_array_name = MAP_XDP_PROG_ARRAY_STR,
+	.prog_array_idx = XFW_XDP_PROG_TCP_SYN_DROP_FILTER,
 };
 
 static const struct xfw_program tcp_syncookies_module = {
@@ -121,8 +121,8 @@ static const struct xfw_program tcp_syncookies_module = {
 	.reuse_maps = NULL,
 	.reuse_maps_cnt = 0,
 	.pin_maps = true,
-	.register_in_prog_array = true,
-	.prog_array_idx = XFW_PROG_TCP_SYNCOOKIES_FILTER,
+	.prog_array_name = MAP_XDP_PROG_ARRAY_STR,
+	.prog_array_idx = XFW_XDP_PROG_TCP_SYNCOOKIES_FILTER,
 };
 
 static const struct xfw_program *programs[] = {
@@ -427,7 +427,8 @@ detach_tc(const struct xfw_program *desc, const char *pin_root,
 
 static int
 register_tail_call_program(const struct bpf_program *prog,
-			   const char *pin_root, __u32 key)
+			   const char *pin_root, const char *prog_array_name,
+			   __u32 key)
 {
 	char prog_array_pin[PATH_MAX];
 	int prog_array_fd;
@@ -435,7 +436,7 @@ register_tail_call_program(const struct bpf_program *prog,
 	int err;
 
 	err = make_pin_path(prog_array_pin, sizeof(prog_array_pin),
-			    pin_root, MAP_PROG_ARRAY_STR);
+			    pin_root, prog_array_name);
 	if (err)
 		return err;
 
@@ -472,7 +473,7 @@ register_tail_call_program(const struct bpf_program *prog,
 
 static int
 unregister_tail_call_program(const struct xfw_program *desc,
-			     const char *pin_root)
+			     const char *pin_root,  const char *prog_array_name)
 {
 	char prog_array_pin[PATH_MAX];
 	__u32 key = desc->prog_array_idx;
@@ -480,7 +481,7 @@ unregister_tail_call_program(const struct xfw_program *desc,
 	int err;
 
 	err = make_pin_path(prog_array_pin, sizeof(prog_array_pin),
-			    pin_root, MAP_PROG_ARRAY_STR);
+			    pin_root, prog_array_name);
 	if (err)
 		return err;
 
@@ -607,8 +608,9 @@ load_program(const struct xfw_program *desc, const char *pin_root)
 	}
 	pinned = true;
 
-	if (desc->register_in_prog_array) {
+	if (desc->prog_array_name) {
 		err = register_tail_call_program(prog, pin_root,
+						 desc->prog_array_name,
 						 desc->prog_array_idx);
 		if (err)
 			goto out;
@@ -637,8 +639,9 @@ unload_program(const struct xfw_program *desc, const char *pin_root)
 	if (err)
 		return err;
 
-	if (desc->register_in_prog_array) {
-		err = unregister_tail_call_program(desc, pin_root);
+	if (desc->prog_array_name) {
+		err = unregister_tail_call_program(desc, pin_root,
+						   desc->prog_array_name);
 		if (err)
 			return err;
 	}

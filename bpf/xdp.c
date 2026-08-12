@@ -13,7 +13,6 @@
 
 #include "ctx.h"
 #include "dns.h"
-#include "dst.h"
 #include "filter.h"
 #include "filter_modules.h"
 #include "parsing_helpers.h"
@@ -449,11 +448,11 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	uint16_t cur_pos = (uint16_t)(ctx->hdr_cur.pos -
 		XFW_CTX_DATA_BGN(ctx->ctx));
 	if (ctx->cfg->rules.tcp_syn_drop.enabled)
-		CHAIN(tcp_syn_drop_filter, ctx);
+		CHAIN(xdp_tcp_syn_drop_module_filter, ctx);
 
 	/* If a SYN cookie was generated, processing stops immediately. */
 	if (ctx->cfg->rules.syncookie.enabled)
-		CHAIN(tcp_syncookies_filter, ctx);
+		CHAIN(xdp_tcp_syncookies_module_filter, ctx);
 
 	/*
 	 * Reinitialize packet cursor after `bpf_tail_call`, because the
@@ -503,7 +502,7 @@ tcp_rcv_ack_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 		XFW_CTX_DATA_BGN(ctx->ctx));
 
 	/* Perform SYN-cookie-specific ACK validation */
-	CHAIN(tcp_syncookies_filter, ctx);
+	CHAIN(xdp_tcp_syncookies_module_filter, ctx);
 	/*
 	 * Reinitialize packet cursor after `bpf_tail_call`, because the
 	 * verifier may lose packet-pointer types stored in the global
@@ -697,7 +696,7 @@ xfw_xdp_filter_chain(struct XfwGlobalCtx *ctx)
 	XfwIpLpmKey src_ip_key = {};
 	CHAIN_PASS_ALL(in_process_l3, ctx, &src_ip_key);
 	CHAIN_PASS_ALL(in_process_l4, ctx, &src_ip_key);
-	CHAIN_PASS_ALL(xfw_dst_filter, ctx);
+	CHAIN_PASS_ALL(xdp_dst_module_filter, ctx);
 
 pass:
 	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);

@@ -15,12 +15,12 @@
 
 #include "compiler.h"
 #include "filter.h"
+#include "filter_modules.h"
 #include "log.h"
 #include "metadata.h"
 #include "parsing_helpers.h"
 #include "syn_hash.h"
 #include "ctx.h"
-#include "dst.h"
 
 #include "../bpf_uapi/config.h"
 #include "../bpf_uapi/map_names.h"
@@ -454,7 +454,7 @@ static __always_inline int
 xfw_xdp_filter_chain(XfwGlobalCtx *ctx)
 {
 	CHAIN(xfw_tcp_syn_drop_filter, ctx);
-	CHAIN(xfw_dst_filter, ctx);
+	CHAIN(xdp_dst_module_filter, ctx);
 
 	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
 	return XFW_CTX_PASS;
