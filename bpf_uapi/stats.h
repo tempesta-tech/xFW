@@ -1,5 +1,7 @@
 /**
- *	Tempesta xFW common statistic structures for eBPF and user-space
+ *	Tempesta xFW common statistic structures for eBPF and user-space.
+ *
+ * This statistic is exported to Prometheus.
  *
  * See the rules for the declarations in types.h.
  *
@@ -35,17 +37,16 @@ typedef struct XfwPacketStats {
 } XfwPacketStats;
 
 /*
- * Per-CPU counters for PASS, TX, traffic and selected DROP statistics.
+ * Per-CPU counters for XDP_PASS and XDP_TX events and common traffic statistic.
  *
- * Blocking security events are maintained by the incident logging subsystem
- * and exported to ClickHouse. Feature-specific Prometheus counters may also
- * account for the same packet, as with failed SYN-cookie processing.
+ * DROP statistics are maintained separately by the incident logging
+ * subsystem to avoid duplicating accounting. Incident statistics are
+ * exported to ClickHouse.
  */
 typedef struct XfwPerCpuStats {
 	XfwPacketStats		pass[XFW_PASS_STAT_MAX];
 	XfwPacketStats		transmitted[XFW_TX_STAT_MAX];
 	XfwPacketStats		traffic[XFW_TRAFFIC_STAT_MAX];
-	XfwPacketStats		syncookie_failed;
 
 #ifdef __cplusplus
 	XfwPerCpuStats &
@@ -57,7 +58,6 @@ typedef struct XfwPerCpuStats {
 			transmitted[i] += other.transmitted[i];
 		for (size_t i = 0; i < XFW_TRAFFIC_STAT_MAX; ++i)
 			traffic[i] += other.traffic[i];
-		syncookie_failed += other.syncookie_failed;
 		return *this;
 	}
 #endif

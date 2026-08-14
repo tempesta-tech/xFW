@@ -168,11 +168,11 @@ tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr,
 
 	XfwTcpConnState *conn = tcp_auth_conn_lookup(addr);
 	if (likely(!(conn))) /* Fast path for unauthenticated flood traffic. */
-		return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_AUTH_FAILED);
+		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_AUTH_FAILED);
 
 	if (unlikely(tcp_auth_is_conn_outdated(ctx, (conn)))) {
 		tcp_auth_conn_delete(addr);
-		return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_AUTH_TIMEOUT);
+		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_AUTH_TIMEOUT);
 	}
 
 	switch (ev) {
