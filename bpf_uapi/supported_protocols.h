@@ -8,6 +8,7 @@
 #pragma once
 #ifdef BPF_PROGRAM
 #include "vmlinux.h"
+#include "../bpf/compiler.h"
 #else
 #include <cstdint>
 #endif
@@ -20,5 +21,9 @@ enum XfwSupportedProtocols : uint8_t {
 	XFW_L4_PROTO_UDP		= IPPROTO_UDP,
 	XFW_L4_PROTO_GRE		= IPPROTO_GRE,
 	XFW_L4_PROTO_ICMPV6		= IPPROTO_ICMPV6,
-	XFW_SUPPORTED_PROTOCOL_MAX
+	/*
+	 * The IPv4 Protocol and IPv6 Next Header fields are 8 bits wide
+	 * (RFC 791, RFC 8200), so there are 256 possible protocol values.
+	 */
+	XFW_SUPPORTED_PROTOCOL_MAX	= UINT8_MAX
 };
