@@ -229,7 +229,7 @@ process_ingress_dns_query(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
 		return XFW_CTX_CONTINUE;
 
 	if (rcode != RCODE_OK)
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_QRY_RCODE_NOT_OK,
+		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DROP_DNS_QRY_RCODE_NOT_OK,
 					     ": %u", rcode);
 
 	/*
@@ -242,14 +242,14 @@ process_ingress_dns_query(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
 
 	/* We don't support multiple DNS queries - it's quite rare case */
 	if (dh->qdcount != bpf_htons(1))
-		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_MULTIPLE_QUESTIONS);
+		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DROP_DNS_MULTIPLE_QUESTIONS);
 
 	dq = parse_single_dns_question(dns_ctx->ctx, &dns_ctx->hdr_cur, dh);
 	if (dq == NULL)
-		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_BAD_QUESTION);
+		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DROP_DNS_BAD_QUESTION);
 
 	if (unlikely(dh->nscount != 0))
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_ANS_OR_AUTHS_IN_QUERY,
+		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DROP_DNS_ANS_OR_AUTHS_IN_QUERY,
 					     ": nscount = %u",
 					     bpf_ntohs(dh->nscount));
 
@@ -263,7 +263,7 @@ process_ingress_dns_query(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
 	 * except for IXFR queries.
 	 */
 	if (unlikely(dh->ancount != 0))
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_ANS_OR_AUTHS_IN_QUERY,
+		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DROP_DNS_ANS_OR_AUTHS_IN_QUERY,
 					     ": ancount = %u",
 					     bpf_ntohs(dh->ancount));
 
@@ -272,7 +272,7 @@ process_ingress_dns_query(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
 	 * EDNS OPT RR, TSIG RR.
 	 */
 	if (bpf_ntohs(dh->arcount) > 2)
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_QRY_BAD_ARCOUNT,
+		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DROP_DNS_QRY_BAD_ARCOUNT,
 					     ": %u", bpf_ntohs(dh->arcount));
 
 	return XFW_CTX_CONTINUE;
@@ -308,34 +308,34 @@ process_ingress_dns_response(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
 	 * outgoing queries for.
 	 */
 	if (bpf_map_lookup_elem(&MAP_DNS_EGR_FD_REF, &dh->id) == NULL)
-		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_NOT_ASKED_RESPONSE);
+		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DROP_DNS_NOT_ASKED_RESPONSE);
 
 
 	if (unlikely(dns_ctx->pkt_sz > MAX_DNS_UDP_PACKET))
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_LARGE_RESPONSE,
+		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DROP_DNS_LARGE_RESPONSE,
 					     ": %u", dns_ctx->pkt_sz);
 
 	/* We don't support multiple DNS queries - it's quite rare case */
 	if (dh->qdcount != bpf_htons(1))
-		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_MULTIPLE_QUESTIONS);
+		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DROP_DNS_MULTIPLE_QUESTIONS);
 
 	if (parse_single_dns_question(dns_ctx->ctx, &dns_ctx->hdr_cur, dh) == NULL)
-		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_BAD_QUESTION);
+		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DROP_DNS_BAD_QUESTION);
 
 	uint16_t an_count = bpf_ntohs(dh->ancount);
 
 	if (an_count > MAX_ANCOUNT)
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_RESP_ANS_OVERLIMIT,
+		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DROP_DNS_RESP_ANS_OVERLIMIT,
 					     ": %u", an_count);
 
 	uint16_t i;
 	bpf_for (i, 0, an_count) {
 		XfwDnsRR *dr = parse_full_dns_rr(dns_ctx->ctx, &dns_ctx->hdr_cur);
 		if (dr == NULL)
-			return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_BAD_RR);
+			return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DROP_DNS_BAD_RR);
 
 		if (dr->ttl == 0 || bpf_ntohl(dr->ttl) > 604800)
-			return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_ANSWER_ANOMALY,
+			return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DROP_DNS_ANSWER_ANOMALY,
 						     ": %lu", bpf_ntohl(dr->ttl));
 	}
 
@@ -397,7 +397,7 @@ ingress_dns_filter_global(XfwMd *ctx, XfwPerCpuStats *global_stats)
 
 	XfwDnsHdr *dh = parse_dnshdr(&dns_ctx.hdr_cur);
 	if (unlikely(dh == NULL))
-		return XFW_MAKE_CTX_DROP(&dns_ctx, XFW_DNS_BADHDR_INGRESS);
+		return XFW_MAKE_CTX_DROP(&dns_ctx, XFW_DROP_DNS_BADHDR_INGRESS);
 
 	uint16_t hflags = bpf_ntohs(dh->flags);
 	uint8_t qr = (hflags >> 15) & 1;

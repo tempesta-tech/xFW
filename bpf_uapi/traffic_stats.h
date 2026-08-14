@@ -1,5 +1,5 @@
 /**
- *	Tempesta Bpf trafic statistic.
+ *	Tempesta xFW trafic statistic.
  *
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -30,6 +30,7 @@ enum XfwTrafficStat {
 	XFW_PASSED_DOWNSTREAM_EGRESS,
 	XFW_PASSED_UPSTREAM_EGRESS,
 	XFW_SYNCOOKIE_RECEIVED,
+	XFW_SYNCOOKIE_FAILED,
 
 	XFW_TRAFFIC_STAT_MAX
 };
@@ -88,7 +89,9 @@ static const struct XfwStatInfo xfw_traffic_stats[] = {
 	[XFW_PASSED_UPSTREAM_EGRESS]		= {"xfw_passed_upstream_egress",
 						   "Passed trafic from xFW to downstream"},
 	[XFW_SYNCOOKIE_RECEIVED]		= {"xfw_syncookie_received",
-						   "Received packet with valid syncookie"}
+						   "Received packet with valid syncookie"},
+	[XFW_SYNCOOKIE_FAILED]			= {"xfw_syncookie_failed",
+						   "Failed syncookie verification"},
 };
 XFW_STAT_ARRAY_ASSERT(xfw_traffic_stats, XFW_TRAFFIC_STAT_MAX);
 

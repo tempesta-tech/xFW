@@ -134,7 +134,7 @@ icmp_filter(const XfwGlobalCtx *ctx, const XfwIcmpKey *key)
 		XfwActionRule *default_rule = &ctx->cfg->rules.defaults[icmp_default];
 		switch (default_rule->action) {
 		case XFW_ACTION_BLOCK:
-			return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_DEFAULT_BLOCKED);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_ICMP_DEFAULT_BLOCKED);
 		case XFW_ACTION_ALLOW:
 			return XFW_CTX_CONTINUE;
 		default:
@@ -143,12 +143,12 @@ icmp_filter(const XfwGlobalCtx *ctx, const XfwIcmpKey *key)
 			if (xfw_is_allowed_by_rlimits(ctx, &default_rule->rlimit))
 				return XFW_CTX_CONTINUE;
 
-			return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_DEFAULT_RATE_LIMITED);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_ICMP_DEFAULT_RATE_LIMITED);
 		}
 	}
 
 	if (rule->action == XFW_ACTION_BLOCK)
-		return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_BLOCKED);
+		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_ICMP_BLOCKED);
 
 	if (rule->action == XFW_ACTION_ALLOW)
 		return XFW_CTX_CONTINUE;
@@ -157,7 +157,7 @@ icmp_filter(const XfwGlobalCtx *ctx, const XfwIcmpKey *key)
 	if (xfw_is_allowed_by_rlimits(ctx, &rule->rlimit))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_RATE_LIMITED);
+	return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_ICMP_RATE_LIMITED);
 }
 
 static __always_inline uint8_t
@@ -197,7 +197,7 @@ src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
 		XfwActionRule *default_rule = &ctx->cfg->rules.defaults[src_default];
 		switch (default_rule->action) {
 		case XFW_ACTION_BLOCK:
-			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_PORT_DEFAULT_BLOCKED,
+			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SRC_PORT_DEFAULT_BLOCKED,
 						     ": %u", bpf_ntohs(port));
 		case XFW_ACTION_ALLOW:
 			return XFW_CTX_CONTINUE;
@@ -215,12 +215,12 @@ src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
 			if (xfw_is_within_rlimit(ctx, &ctx->cfg->named_rates[idx], b))
 				return XFW_CTX_CONTINUE;
 
-			return XFW_MAKE_CTX_DROP(ctx, XFW_SRC_PORT_DEFAULT_RATE_LIMITED);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SRC_PORT_DEFAULT_RATE_LIMITED);
 		}
 	}
 
 	if (rule->action == XFW_ACTION_BLOCK)
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_PORT_BLOCKED,
+		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SRC_PORT_BLOCKED,
 					     ": %u", bpf_ntohs(port));
 
 	if (rule->action == XFW_ACTION_ALLOW)
@@ -236,7 +236,7 @@ src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
 	if (xfw_is_within_rlimit(ctx, &ctx->cfg->named_rates[rule->named_idx], b))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_PORT_RATE_LIMITED,
+	return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SRC_PORT_RATE_LIMITED,
 				     ": %u", bpf_ntohs(port));
 }
 
@@ -298,7 +298,7 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
 	if (rule) {
 		switch (rule->action) {
 		case XFW_ACTION_BLOCK:
-			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_IP_BLOCKED,
+			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SRC_IP_BLOCKED,
 						     ": %pI6", &ctx->ilog_addr.in6);
 
 		case XFW_ACTION_ALLOW:
@@ -319,14 +319,14 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
 						 &ctx->cfg->named_rates[rule->named_idx],
 						 b))
 				return XFW_CTX_CONTINUE;
-			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_IP_RATE_LIMITED,
+			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SRC_IP_RATE_LIMITED,
 						     ": %pI6", &ctx->ilog_addr.in6);
 		}
 	}
 
 	XfwActionRule *default_rule = &ctx->cfg->rules.defaults[src_default];
 	if (default_rule->action == XFW_ACTION_BLOCK)
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_IP_DEFAULT_BLOCKED,
+		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SRC_IP_DEFAULT_BLOCKED,
 					     ": %pI6", &ctx->ilog_addr.in6);
 
 	if (default_rule->action == XFW_ACTION_ALLOW)
@@ -345,7 +345,7 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
 	if (xfw_is_within_rlimit(ctx, &ctx->cfg->named_rates[idx], b))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_IP_DEFAULT_RATE_LIMITED,
+	return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SRC_IP_DEFAULT_RATE_LIMITED,
 				     ": %pI6", &ctx->ilog_addr.in6);
 }
 
@@ -374,7 +374,7 @@ rst_rlimit(XfwGlobalCtx *ctx)
 	if (xfw_is_allowed_by_rlimits(ctx, &rule->rlimit))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP(ctx, XFW_RST_RATE_LIMITED);
+	return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_RST_RATE_LIMITED);
 }
 
 static __always_inline int
@@ -388,7 +388,7 @@ syn_rlimit(XfwGlobalCtx *ctx)
 	if (xfw_is_allowed_by_rlimits(ctx, &rule->rlimit))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP(ctx, XFW_SYN_RATE_LIMITED);
+	return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_RATE_LIMITED);
 }
 
 static __always_inline int
@@ -399,11 +399,11 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		count_traffic_stat(ctx, XFW_IP4_TOTAL_INGRESS);
 		int proto = parse_iphdr(&ctx->hdr_cur, &ctx->iph4);
 		if (unlikely(proto < 0))
-			return XFW_MAKE_CTX_DROP(ctx, XFW_IP4_BADHDR_INGRESS);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_BADHDR_INGRESS);
 
 		/* Any MF bit or non-zero fragment offset means fragmented IPv4. */
 		if ((bpf_htons(ctx->iph4->frag_off) & 0x3fff) != 0)
-			return XFW_MAKE_CTX_DROP(ctx, XFW_IP4_FRAGMENTED_INGRESS);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_FRAGMENTED_INGRESS);
 
 		ctx->l4_proto = (u8)proto;
 		xfw_ipv4_to_ipv6_mapped(ctx->iph4->saddr, ctx->ilog_addr.addr32);
@@ -415,8 +415,8 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		int proto = parse_ip6hdr(&ctx->hdr_cur, &ctx->iph6);
 		if (unlikely(proto < 0)) {
 			if (proto == -EFBIG)
-				return XFW_MAKE_CTX_DROP(ctx, XFW_IP6_FRAGMENTED_INGRESS);
-			return XFW_MAKE_CTX_DROP(ctx, XFW_IP6_BADHDR_INGRESS);
+				return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_FRAGMENTED_INGRESS);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_BADHDR_INGRESS);
 		}
 
 		ctx->l4_proto = (u8)proto;
@@ -431,7 +431,7 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 	}
 	default : {
 		/* Unknown EtherTypes are not useful to the protected L3 services. */
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_L2_UNKNOWN_INGRESS,
+		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_L2_UNKNOWN_INGRESS,
 					     ": %x", bpf_htons(ctx->ipver));
 	}
 	}
@@ -588,7 +588,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 	if (!bpf_bitset64_test(ctx->cfg->rules.ip_proto.protocols.data,
 			       ctx->l4_proto))
 	{
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_L4_UNSUPPORTED_INGRESS,
+		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_L4_UNSUPPORTED_INGRESS,
 					     ": %u", ctx->l4_proto);
 	}
 
@@ -596,7 +596,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 	case XFW_L4_PROTO_TCP: {
 		count_traffic_stat(ctx, XFW_TCP_TOTAL_INGRESS);
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
-			return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_BADHDR_INGRESS);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_BADHDR_INGRESS);
 
 		CHAIN(tcp_anomaly_filter, ctx);
 
@@ -611,10 +611,10 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 	case XFW_L4_PROTO_UDP: {
 		count_traffic_stat(ctx, XFW_UDP_TOTAL_INGRESS);
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
-			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_BADHDR_INGRESS);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_UDP_BADHDR_INGRESS);
 
 		if (ctx->uh->source == 0 || ctx->uh->dest == 0)
-			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_ANOM_ZERO_PORT);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_UDP_ANOM_ZERO_PORT);
 
 		CHAIN(ingress_dns_filter, ctx);
 		return src_filter(ctx, ctx->uh->source, src_ip_key);
@@ -625,7 +625,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 
 		XfwICMPCommon *ih;
 		if (unlikely(parse_icmphdr_common(&ctx->hdr_cur, &ih) < 0))
-			return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_BADHDR_INGRESS);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_ICMP_BADHDR_INGRESS);
 
 		XFW_CTX_DBG("ICMP header parsed, type=%u", ih->type);
 
@@ -669,7 +669,7 @@ xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 
 	int ipver = parse_ethhdr(&ctx->hdr_cur, &ctx->eth);
 	if (unlikely(ipver < 0))
-		return XFW_MAKE_CTX_DROP(ctx, XFW_ETH_BADHDR_INGRESS);
+		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_ETH_BADHDR_INGRESS);
 	ctx->ipver = ipver;
 
 	int r;
