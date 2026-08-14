@@ -10,6 +10,7 @@ OBJECTS = $(patsubst %.c,$(OBJ_DIR)/%.o,$(wildcard *.c))
 
 DEPS = $(OBJECTS:.o=.d)
 
+CFLAGS += -DXFW_LIB_DIR=\"$(PREFIX)/lib\"
 LDFLAGS += -lbpf -lelf -lz
 
 INCLUDES += -I$(BUILD_INCLUDE)
@@ -20,7 +21,7 @@ build: $(OBJ_DIR)/xfw_bpf_loader
 
 $(OBJ_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CCFLAGS) -MMD -MP $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP $(INCLUDES) -c $< -o $@
 
 $(OBJ_DIR)/xfw_bpf_loader: $(OBJECTS)
 	$(CC) -o $@ $^ $(LDFLAGS)

@@ -32,7 +32,6 @@ declare project_path=""
 declare xfw_path="${TEMPESTA_XFW_PATH:-}"
 # 2) Default path
 declare default_path="/opt/tempesta"
-# TODO #10: move to /sys/fs/bpf/xfw
 declare -r xfw_bpf_path="/sys/fs/bpf/xfw"
 
 declare -r xfw_tmp_path="/tmp/tempesta/xfw"

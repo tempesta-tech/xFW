@@ -1,3 +1,13 @@
+/**
+ *      Tempesta Management custom libbpf loader
+ *
+ * Loads xFW XDP and TC programs with the required BPF program types and
+ * manages shared pinned maps between the program objects.
+ *
+ * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +23,12 @@
 #include <bpf/libbpf.h>
 
 #include "../bpf_uapi/map_names.h"
+
+#ifndef XFW_LIB_DIR
+#error "XFW_LIB_DIR is not defined; check the loader build configuration"
+#endif
+
+#define XFW_BPF_LIB_DIR XFW_LIB_DIR "/" "bpf"
 
 #define ARRAY_SIZE(array) \
 	(sizeof(array) / sizeof((array)[0]))
@@ -52,7 +68,7 @@ struct xfw_program {
 
 static const struct xfw_program main_xdp = {
 	.name = "xdp",
-	.obj_path = "/opt/tempesta/lib/bpf/xdp.o",
+	.obj_path = XFW_BPF_LIB_DIR "/" "xdp.o",
 	.prog_name = "xfw_xdp",
 	.prog_pin_name = "xdp",
 	.prog_type = BPF_PROG_TYPE_XDP,
@@ -79,7 +95,7 @@ static const struct map_desc tc_maps[] = {
 
 static const struct xfw_program main_tc = {
 	.name = "tc",
-	.obj_path = "/opt/tempesta/lib/bpf/tc.o",
+	.obj_path = XFW_BPF_LIB_DIR "/" "tc.o",
 	.prog_name = "xfw_tc",
 	.prog_pin_name = "tc",
 	.prog_type = BPF_PROG_TYPE_SCHED_CLS,
