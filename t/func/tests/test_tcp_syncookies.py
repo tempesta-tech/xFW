@@ -340,7 +340,7 @@ async def test_normal_connection(
 
 
 @pytest.mark.parametrize(
-    "tcp_options",
+    "tcp_options,expected_synack_option_names,expected_timestamp_bits",
     [
         pytest.param(
             [
@@ -350,22 +350,47 @@ async def test_normal_connection(
                 ("NOP", None),
                 ("WScale", 6),
             ],
+            ("MSS", "NOP", "WScale", "SAckOK", "Timestamp"),
+            0x16,
             id="full-house",
         ),
         pytest.param(
             [("MSS", 1460), ("SAckOK", b""), ("Timestamp", (4294693388, 0)), ("NOP", None)],
+            ("MSS", "NOP", "WScale", "SAckOK", "Timestamp"),
+            0x1F,
             id="mss+sackok+ts+nop",
         ),
         pytest.param(
-            [("MSS", 1460), ("SAckOK", b""), ("Timestamp", (4294693388, 0))], id="mss+sackok+ts"
+            [("MSS", 1460), ("SAckOK", b""), ("Timestamp", (4294693388, 0))],
+            ("MSS", "NOP", "WScale", "SAckOK", "NOP", "EOL"),
+            None,
+            id="mss+sackok+ts",
         ),
-        pytest.param([("MSS", 1460), ("SAckOK", b"")], id="mss+sackok"),
-        pytest.param([("MSS", 1460)], id="mss"),
-        pytest.param([], id="empty"),
+        pytest.param(
+            [("MSS", 1460), ("SAckOK", b"")],
+            ("MSS", "NOP", "WScale"),
+            None,
+            id="mss+sackok",
+        ),
+        pytest.param(
+            [("MSS", 1460)],
+            ("MSS",),
+            None,
+            id="mss",
+        ),
+        pytest.param(
+            [],
+            (),
+            None,
+            id="empty",
+        ),
     ],
 )
 async def test_syncookie_with_options(
     tcp_options: list[tuple],
+    expected_synack_option_names: tuple[str, ...],
+    expected_timestamp_bits: int | None,
+    ip_version: str,
     xfw_with_forced_syncookie: XFW,
     tcp_server: TcpServer,
     tcp_raw_client: TcpRawClient,
@@ -383,7 +408,38 @@ async def test_syncookie_with_options(
 
     async with xfw_with_forced_syncookie.metrics_diff(stats_counters, wait_softirq=True) as diff:
         stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
-        assert await tcp_raw_client.handshake(tcp_packet) is True
+        # Do not use handshake() method to analyze SYN-ACK options instead
+        # of dropping just silent drop of the packet.
+        await tcp_raw_client.send_packet(tcp_packet)
+        syn_ack = await tcp_raw_client.receive_packet()
+        assert syn_ack is not None, "Server did not reply"
+        assert tcp_raw_client.has_flag(
+            syn_ack, "SA"
+        ), f"Unexpected reply flags {syn_ack.flags}; expected SA"
+
+        assert tuple(name for name, _ in syn_ack.options) == expected_synack_option_names
+
+        syn_ack_options = dict(syn_ack.options)
+        if "MSS" in syn_ack_options:
+            # xFW hides the SYN options from bpf_tcp_gen_syncookie(), so the
+            # helper returns the RFC default MSS for the address family.
+            # tcp_get_syncookie_mss() defines the MSS as:
+            #   IPv4: TCP_MSS_DEFAULT = 536
+            #   IPv6: IPV6_MIN_MTU - 40-byte IPv6 header - 20-byte TCP header
+            #         = 1280 - 40 - 20 = 1220
+            expected_mss = 536 if ip_version == "ip4" else 1220
+            assert syn_ack_options["MSS"] == expected_mss
+        if "WScale" in syn_ack_options:
+            assert syn_ack_options["WScale"] == 7
+        if "SAckOK" in syn_ack_options:
+            assert syn_ack_options["SAckOK"] == b""
+        if "Timestamp" in syn_ack_options:
+            sent_timestamp = dict(tcp_packet.options)["Timestamp"][0]
+            timestamp, echoed_timestamp = syn_ack_options["Timestamp"]
+            assert echoed_timestamp == sent_timestamp
+            assert timestamp & 0x3F == expected_timestamp_bits
+
+        await tcp_raw_client.send_packet(TCP(flags="A"))
         assert await tcp_raw_client.close_connection() is True
         stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
