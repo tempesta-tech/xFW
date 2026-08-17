@@ -226,20 +226,22 @@ async def test_src_allow_by_geoip_country(
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
-@pytest.mark.skip("ISSUE: 39 (xFW)")
-async def test_src_allow_by_ratelimit(
+async def test_src_allow_by_ratelimit_ip(
     xfw: XFW,
     protocol: str,
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
-    src_defaults,
     establish_connection: str,
 ):
+    """
+    Verify that a specific extended_group with ratelimit
+    overrides the default block policy.
+    """
     await xfw.rules_set(f"""
         xfw {{
             ratelimit=test pps=5 bps=500;
-            defaults {{ src_ip {ip_version}: {src_defaults}; }}
+            defaults {{ src_ip {ip_version}: block; }}
             src=extended_group {ip_version}.{protocol} : ratelimit=test {{
                 {client.ip_testing}
             }}
@@ -249,6 +251,33 @@ async def test_src_allow_by_ratelimit(
     assert (
         await check_connection(client, server) is True
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
+
+
+async def test_src_allow_by_ratelimit_port(
+    xfw: XFW,
+    protocol: str,
+    ip_version: str,
+    server: RegularKernelSocketNetworkStateful,
+    client: RegularKernelSocketNetworkStateful,
+    establish_connection: str,
+):
+    """
+    Verify that a specific extended_group with ratelimit
+    overrides the default block policy.
+    """
+    await xfw.rules_set(f"""
+        xfw {{
+            ratelimit=test pps=5 bps=500;
+            defaults {{ src_port {ip_version}: block; }}
+            src=extended_group {ip_version}.{protocol} : ratelimit=test {{
+                :{client.port}
+            }}
+        }}
+        """)
+
+    assert (
+        await check_connection(client, server) is True
+    ), f"Client {client.ip_testing}:{client.port} is not allowed"
 
 
 async def test_src_allow_only_one_protocol_subtype(

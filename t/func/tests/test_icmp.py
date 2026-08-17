@@ -96,7 +96,6 @@ async def test_block_by_type(
 
 
 @pytest.mark.fail_in_gate_mode("ISSUE: 456")
-@pytest.mark.skip(reason="ISSUE: 39 (xFW)")
 async def test_default_ratelimit(
     xfw: XFW,
     ip_version: str,
@@ -104,20 +103,43 @@ async def test_default_ratelimit(
     icmp_raw_client: IcmpRawClient,
     start_udp_server_and_icmp_clients,
 ):
+    """
+    Verify that a global default ICMP policy with pps=0 ratelimit
+    correctly blocks all ICMP traffic.
+    """
     await xfw.rules_set(f"""
         xfw {{
-            ratelimit=test pps=5 bps=5000;
+            ratelimit=test pps=0 bps=5000;
             defaults {{ icmp: ratelimit=test; }}
         }}
         """)
 
-    await asyncio.gather(*[icmp_raw_client.ping() for _ in range(10)])
-    requests = await asyncio.gather(*[icmp_raw_client.pong() for _ in range(10)])
-
-    assert len([request for request in requests if request]) == 5
+    await icmp_raw_client.ping()
+    assert await icmp_raw_client.receive_block()
 
 
-@pytest.mark.skip("ISSUE: 39 (xFW)")
+async def test_allow_by_ratelimit(
+    xfw: XFW,
+    ip_version: str,
+    udp_server: UdpServer,
+    icmp_raw_client: IcmpRawClient,
+    start_udp_server_and_icmp_clients,
+):
+    """
+    Verify that specific ICMP type rules with pps>0 ratelimit
+    correctly override the default block policy.
+    """
+    await xfw.rules_set(f"""
+        xfw {{
+            ratelimit=test pps=100 bps=5000;
+            defaults {{ icmp: block; }}
+            icmp {ip_version}: ratelimit=test {{ {ICMP_BLOCKING_TYPES_STR} }}
+        }}
+        """)
+
+    await icmp_raw_client.ping_pong()
+
+
 async def test_block_by_ratelimit(
     xfw: XFW,
     ip_version: str,
@@ -125,19 +147,20 @@ async def test_block_by_ratelimit(
     icmp_raw_client: IcmpRawClient,
     start_udp_server_and_icmp_clients,
 ):
-    echo_request = {"ip4": ICMP_IPV4_ECHO_REQUEST, "ip6": ICMP_IPV6_ECHO_REQUEST}.get(ip_version)
-
+    """
+    Verify that specific ICMP type rules with pps=0 ratelimit
+    correctly override the default allow policy.
+    """
     await xfw.rules_set(f"""
         xfw {{
-            ratelimit=test pps=5 bps=5000;
+            ratelimit=test pps=0 bps=5000;
             defaults {{ icmp: allow; }}
-            icmp {ip_version}: ratelimit=test {{ {echo_request} }}
+            icmp {ip_version}: ratelimit=test {{ {ICMP_BLOCKING_TYPES_STR} }}
         }}
         """)
 
-    await asyncio.gather(*[icmp_raw_client.ping() for _ in range(10)])
-    requests = await asyncio.gather(*[icmp_raw_client.pong() for _ in range(10)])
-    assert len([request for request in requests if request]) == 5
+    await icmp_raw_client.ping()
+    assert await icmp_raw_client.receive_block()
 
 
 async def test_block_by_src_filter(

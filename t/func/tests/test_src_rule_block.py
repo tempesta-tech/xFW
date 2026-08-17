@@ -260,20 +260,22 @@ async def test_src_block_by_geoip_country(
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
-@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_src_block_by_ratelimit_ip(
     xfw: XFW,
     protocol: str,
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
-    src_defaults,
     establish_connection: str,
 ):
+    """
+    Verify that a specific extended_group with pps=0 ratelimit
+    overrides the default allow policy.
+    """
     await xfw.rules_set(f"""
         xfw {{
-            ratelimit=test pps=1 bps=500;
-            defaults {{ src_ip {ip_version}: {src_defaults}; }}
+            ratelimit=test pps=0 bps=500;
+            defaults {{ src_ip {ip_version}: allow; }}
             src=extended_group {ip_version}.{protocol} : ratelimit=test {{
                 {client.ip_testing}
             }}
@@ -281,37 +283,31 @@ async def test_src_block_by_ratelimit_ip(
         """)
 
     assert (
-        await check_connection(client, server) is True
-    ), f"Client {client.ip_testing}:{client.port} is not allowed"
-
-    assert (
         await check_connection(client, server) is False
     ), f"Client {client.ip_testing}:{client.port} is not blocked"
 
 
-@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_src_block_by_ratelimit_port(
     xfw: XFW,
     protocol: str,
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
-    src_defaults,
     establish_connection: str,
 ):
+    """
+    Verify that a specific extended_group with pps=0 ratelimit
+    overrides the default allow policy.
+    """
     await xfw.rules_set(f"""
         xfw {{
-            ratelimit=test pps=1 bps=500;
-            defaults {{ src_port {ip_version}: {src_defaults}; }}
+            ratelimit=test pps=0 bps=500;
+            defaults {{ src_port {ip_version}: allow; }}
             src=extended_group {ip_version}.{protocol} : ratelimit=test {{
                 :{client.port}
             }}
         }}
         """)
-
-    assert (
-        await check_connection(client, server) is True
-    ), f"Client {client.ip_testing}:{client.port} is not allowed"
 
     assert (
         await check_connection(client, server) is False

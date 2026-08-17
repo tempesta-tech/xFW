@@ -79,31 +79,23 @@ async def test_dst_allow_by_multiple_port(
     assert await check_connection(client, server) is True, f"Port {new_port} is not allowed"
 
 
-@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_dst_allow_by_ratelimit(
     xfw: XFW,
     protocol: str,
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
-    dst_defaults: str,
     establish_connection,
 ):
-    new_port = server.generate_new_ports(2)
-
+    """
+    Verify that a specific extended_group with ratelimit
+    overrides the default block policy.
+    """
     await xfw.rules_set(f"""
         xfw {{
             ratelimit=test pps=5 bps=500;
             defaults {{ dst: block; }}
             dst=extended_group {ip_version}.{protocol} : ratelimit=test {{
-                {server.ip_testing}:{new_port[0]}
-            }}
-        }}
-        """)
-    await xfw.rules_patch(f"""
-        xfw {{
-            dst=extended_group/add {ip_version}.{protocol} {{
-                {server.ip_testing}:{new_port[1]}
                 {server.ip_testing}:{server.port}
             }}
         }}

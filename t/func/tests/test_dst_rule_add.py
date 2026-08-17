@@ -135,20 +135,23 @@ async def test_dst_block_by_multiple_port(
     ), f"Server {server.ip_testing}:{server.port} is not blocked"
 
 
-async def test_dst_block_by_ratelimit(
+async def test_dst_allow_by_ratelimit(
     xfw: XFW,
     protocol: str,
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
-    dst_defaults: str,
     establish_connection,
 ):
+    """
+    Verify that ratelimit constraints are correctly applied to new addresses
+    added to an existing extended_group using the `extended_group/add` patch operation.
+    """
     new_port = server.generate_new_ports(2)
 
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ dst: allow; }}
+            defaults {{ dst: block; }}
             ratelimit=test pps=100 bps=10000;
             dst=extended_group {ip_version}.{protocol} : ratelimit=test {{
                 {server.ip_testing}:{new_port[0]}

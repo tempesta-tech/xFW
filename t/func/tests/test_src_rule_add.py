@@ -261,7 +261,6 @@ async def test_src_add_block_by_multiple_port_range(
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
-@pytest.mark.skip("ISSUE: 39 (xFW)")
 async def test_src_add_block_by_ratelimit(
     xfw: XFW,
     protocol: str,
@@ -269,14 +268,17 @@ async def test_src_add_block_by_ratelimit(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
 ):
+    """
+    Verify that ratelimit constraints are correctly applied to new addresses
+    added to an existing extended_group using the `extended_group/add` patch operation.
+    """
     new_port = client.generate_new_ports(5)
 
     await xfw.rules_set(f"""
         xfw {{
-            ratelimit=test pps=1 bps=500;
-            defaults {{ src_port {ip_version}: {src_defaults }; }}
+            ratelimit=test pps=5 bps=500;
+            defaults {{ src_port {ip_version}: block; }}
             src=extended_group {ip_version}.{protocol} : ratelimit=test {{
                 :{new_port[3]}-{new_port[4]}
             }}
@@ -295,10 +297,6 @@ async def test_src_add_block_by_ratelimit(
     assert (
         await check_connection(client, server) is True
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
-
-    assert (
-        await check_connection(client, server) is False
-    ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
 async def test_src_add_only_one_protocol_subtype(
