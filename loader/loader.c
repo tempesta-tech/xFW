@@ -33,11 +33,11 @@
 #define ARRAY_SIZE(array) \
 	(sizeof(array) / sizeof((array)[0]))
 
-struct map_desc {
+typedef struct MapDesc {
 	const char *name;
-};
+} MapDesc;
 
-struct xfw_program {
+typedef struct XfwProgram {
 	const char *name;
 	const char *obj_path;
 	const char *prog_name;
@@ -54,7 +54,7 @@ struct xfw_program {
 	 * This is intended for modules whose maps are not automatically
 	 * reused through LIBBPF_PIN_BY_NAME and pin_root_path.
 	 */
-	const struct map_desc *reuse_maps;
+	const MapDesc *reuse_maps;
 	size_t reuse_maps_cnt;
 
 	/*
@@ -64,9 +64,9 @@ struct xfw_program {
 	 * created or reused under pin_root.
 	 */
 	bool pin_maps;
-};
+} XfwProgram;
 
-static const struct xfw_program main_xdp = {
+static const XfwProgram main_xdp = {
 	.name = "xdp",
 	.obj_path = XFW_BPF_LIB_DIR "/" "xdp.o",
 	.prog_name = "xfw_xdp",
@@ -80,7 +80,7 @@ static const struct xfw_program main_xdp = {
 	.pin_maps = true,
 };
 
-static const struct map_desc tc_maps[] = {
+static const MapDesc tc_maps[] = {
 	{ .name = MAP_GLBL_STAT_STR },
 	{ .name = MAP_CFG_STR },
 	{ .name = MAP_LOG_ACTIVE_FD_STR },
@@ -93,7 +93,7 @@ static const struct map_desc tc_maps[] = {
 	{ .name = MAP_DST_STR(MAP_SECONDARY_IDX) },
 };
 
-static const struct xfw_program main_tc = {
+static const XfwProgram main_tc = {
 	.name = "tc",
 	.obj_path = XFW_BPF_LIB_DIR "/" "tc.o",
 	.prog_name = "xfw_tc",
@@ -108,7 +108,7 @@ static const struct xfw_program main_tc = {
 	.pin_maps = true,
 };
 
-static const struct xfw_program *programs[] = {
+static const XfwProgram *programs[] = {
 	&main_xdp,
 	&main_tc,
 };
@@ -138,7 +138,7 @@ usage(const char *prog)
 		prog, prog, prog, prog, prog, prog);
 }
 
-static const struct xfw_program *
+static const XfwProgram *
 find_program(const char *name)
 {
 	size_t i;
@@ -277,7 +277,7 @@ out:
 }
 
 static int
-attach_tc(const struct xfw_program *desc, const char *pin_root,
+attach_tc(const XfwProgram *desc, const char *pin_root,
 	  const char *device)
 {
 	LIBBPF_OPTS(bpf_link_create_opts, opts);
@@ -359,7 +359,7 @@ out:
 }
 
 static int
-detach_tc(const struct xfw_program *desc, const char *pin_root,
+detach_tc(const XfwProgram *desc, const char *pin_root,
 	  const char *device)
 {
 	char link_pin[PATH_MAX];
@@ -406,7 +406,7 @@ detach_tc(const struct xfw_program *desc, const char *pin_root,
  * maps declared with LIBBPF_PIN_BY_NAME under the specified directory.
  */
 static int
-load_program(const struct xfw_program *desc, const char *pin_root)
+load_program(const XfwProgram *desc, const char *pin_root)
 {
 	LIBBPF_OPTS(bpf_object_open_opts, opts);
 	struct bpf_object *obj = NULL;
@@ -504,7 +504,7 @@ out:
 }
 
 static int
-unload_program(const struct xfw_program *desc, const char *pin_root)
+unload_program(const XfwProgram *desc, const char *pin_root)
 {
 	char prog_pin[PATH_MAX];
 	int err;
@@ -531,7 +531,7 @@ unload_program(const struct xfw_program *desc, const char *pin_root)
 int
 main(int argc, char **argv)
 {
-	const struct xfw_program *desc;
+	const XfwProgram *desc;
 	const char *command;
 	const char *pin_root;
 	const char *device = NULL;
