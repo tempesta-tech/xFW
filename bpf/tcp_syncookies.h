@@ -235,6 +235,14 @@ tcp_parse_one_opt(uint64_t index, void *cb_data)
 	const uint64_t off = c->off, opt_len = c->opt_len;
 
 	/*
+	 * The options length must fit into the temporary options buffer.
+	 * Besides validating the invariant, this gives the verifier an explicit
+	 * upper bound for subsequent accesses to the stack-backed buffer.
+	 */
+	if (unlikely(opt_len > TCP_OPTS_BUF_SZ))
+		goto bad_opt;
+
+	/*
 	 * This is the normal loop termination condition.
 	 * We use 1 extra step in bpf_loop() exactly to call the callback last
 	 * time and return with zero error code on reaching end of data.
