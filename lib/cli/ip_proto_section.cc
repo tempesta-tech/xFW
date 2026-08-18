@@ -45,17 +45,9 @@ IpProtoSection::IpProtoSection::process_body()
 		return {false, nullptr};
 
 	const auto num = parsing_helpers::parse_as<uint32_t>(nv);
+	if (num > XFW_SUPPORTED_PROTOCOL_MAX)
+		throw Except("Unknown protocol {} in ip_proto section", num);
 	const auto e = static_cast<XfwSupportedProtocols>(num);
-	switch (e) {
-		case XfwSupportedProtocols::XFW_L4_PROTO_ICMP: break;
-		case XfwSupportedProtocols::XFW_L4_PROTO_TCP: break;
-		case XfwSupportedProtocols::XFW_L4_PROTO_UDP: break;
-		case XfwSupportedProtocols::XFW_L4_PROTO_GRE: break;
-		case XfwSupportedProtocols::XFW_L4_PROTO_ICMPV6: break;
-		default:
-			throw Except("Unknown protocol {} in ip_proto section", num);
-	}
-
 	if (!ip_proto_)
 		ip_proto_.emplace();
 

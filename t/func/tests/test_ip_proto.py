@@ -1,6 +1,11 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+from asyncio import gather
+
 import pytest
+from scapy.all import Raw
+from scapy.layers.inet import ETH_P_IP, IP, UDP
+from scapy.layers.l2 import Ether
 
 
 async def test_block_by_default_gre(
@@ -124,3 +129,48 @@ async def test_ignore_internal_packets(
     server_packet = getattr(gre_raw_server, packet_method)("pong")
     await gre_raw_server.send_packet(server_packet)
     await gre_raw_client.receive_expected_packet(server_packet)
+
+
+@pytest.mark.parametrize(
+    "protocol",
+    [
+        pytest.param(0, id="min"),
+        pytest.param(100, id="arbitrary"),
+        pytest.param(253, id="experimental"),
+        pytest.param(255, id="max"),
+    ],
+)
+async def test_allow_arbitrary_ip_protocol(
+    xfw,
+    ether_raw_client,
+    ether_raw_server,
+    flush_arp_cache,
+    protocol: int,
+):
+    """Verify that xFW allows arbitrary IPv4 protocol numbers in range 0..255."""
+    await ether_raw_server.start()
+    await ether_raw_client.start()
+
+    src_mac, dst_mac = await gather(
+        ether_raw_client.get_mac_address(),
+        ether_raw_server.get_mac_address(),
+    )
+
+    packet = (
+        Ether(dst=dst_mac, src=src_mac, type=ETH_P_IP)
+        / IP(
+            src=ether_raw_client.ip,
+            dst=ether_raw_server.ip,
+            proto=protocol,
+        )
+        / Raw(b"payload")
+    )
+
+    await xfw.rules_set(f"xfw {{ ip_proto {{ {protocol} }} }}")
+
+    await ether_raw_client.send_packet(packet)
+
+    received = await ether_raw_server.receive_packet()
+    assert received is not None
+    assert received[IP].proto == protocol
+    assert bytes(received[Raw].load) == b"payload"
