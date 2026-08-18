@@ -6,7 +6,8 @@ import hashlib
 import os.path
 import typing
 from contextlib import asynccontextmanager
-from typing import Optional
+from dataclasses import dataclass, fields
+from typing import Iterator, Optional
 
 import httpx
 
@@ -18,6 +19,24 @@ from framework.utils import (
     retry_on_failure,
     run_cmd,
 )
+
+
+@dataclass(slots=True, frozen=True)
+class XFWRatelimit:
+    name: str
+    pps: int
+    bps: int
+
+
+@dataclass(slots=True, frozen=True)
+class XFWRatelimits:
+    block: XFWRatelimit
+    high: XFWRatelimit
+    low_pps: XFWRatelimit
+    low_bps: XFWRatelimit
+
+    def __iter__(self) -> Iterator[XFWRatelimit]:
+        return (getattr(self, field.name) for field in fields(self))
 
 
 class XFW(NetworkStateful):
