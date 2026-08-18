@@ -10,6 +10,7 @@ import ipaddress
 import logging
 import socket
 import struct
+import time
 import typing
 
 from scapy.all import Packet
@@ -526,13 +527,32 @@ class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
         """
         return await self._receive() == self.ping_message
 
-    async def ping_pong(self) -> None:
+    async def ping_pong(self, msg: str = "") -> None:
         """
         Perform a full connection health check sequence (Ping-Pong).
         Sends a ping request and immediately validates the subsequent pong response.
         """
         await self.ping()
-        assert await self.pong(), "Ping-pong failed: Connection timeout"
+        assert await self.pong(), msg or "Ping-pong failed: Connection timeout"
+
+    async def generate_traffic(
+        self, messages_pps: int, duration: float, function: typing.Callable = None
+    ) -> list[None | AssertionError]:
+        """Sets messages_pps 0 to disable the traffic generation limit."""
+        if not duration:
+            return
+
+        tasks = []
+        started_at = time.time()
+        sleep_interval = 1 / messages_pps if messages_pps else 0
+
+        function_to_run = function or self.ping_pong
+
+        while time.time() - started_at < duration:
+            tasks.append(asyncio.create_task(function_to_run()))
+            await asyncio.sleep(sleep_interval)
+
+        return await asyncio.gather(*tasks, return_exceptions=True)
 
 
 class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful, abc.ABC):

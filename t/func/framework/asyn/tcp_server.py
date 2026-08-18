@@ -78,6 +78,17 @@ class TcpServer(BaseTcpStateful, ABC):
         self._transport = None
 
     @property
+    def echo_mode(self) -> bool:
+        return self._echo_mode
+
+    @echo_mode.setter
+    def echo_mode(self, value: bool) -> None:
+        self._echo_mode = value
+
+        for transport in self.transports:
+            transport.get_protocol().echo_mode = value
+
+    @property
     def req_n(self) -> int:
         return sum(transport.get_protocol().req_n for transport in self.transports)
 

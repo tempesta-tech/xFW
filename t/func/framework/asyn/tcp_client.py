@@ -3,9 +3,8 @@
 
 import asyncio
 import logging
-import time
 from abc import ABC
-from typing import Callable, Optional
+from typing import Optional
 
 from framework.asyn.tcp_base import BaseTcpStateful
 from framework.stateful import IP4Mixin, IP6Mixin
@@ -73,23 +72,6 @@ class TcpClient(BaseTcpStateful, ABC):
             ),
             timeout=self.timeout,
         )
-
-    async def generate_traffic(self, messages_pps: int, duration: float, function: Callable = None):
-        """Sets messages_pps 0 to disable the traffic generation limit."""
-        if not duration:
-            return
-
-        tasks = []
-        started_at = time.time()
-        sleep_interval = 1 / messages_pps if messages_pps else 0
-
-        function_to_run = function or self.ping_pong
-
-        while time.time() - started_at < duration:
-            tasks.append(asyncio.create_task(function_to_run()))
-            await asyncio.sleep(sleep_interval)
-
-        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 class TcpV4Client(TcpClient, IP4Mixin): ...
