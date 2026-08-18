@@ -22,14 +22,30 @@ class BaseUdpProtocol(asyncio.DatagramProtocol):
         self.logger: logging.Logger = logger
         self.messages = messages
         self.last_address = None
+        self.peer_name = None
+        self.transport = None
 
-    def datagram_received(self, data, addr):
+    def connection_made(self, transport: asyncio.BaseTransport) -> None:
+        self.peer_name = transport.get_extra_info("peername")
+        self.logger.debug(f"Connection initiated. Peername: {self.peer_name}")
+        self.transport = transport
+
+    def connection_lost(self, exc: Exception | None) -> None:
+        self.logger.debug("Connection closed")
+        self.messages.put_nowait(None)
+
+    def error_received(self, exc: Exception) -> None:
+        self.logger.warning(f"UDP error received: {exc}")
+        self.messages.put_nowait(exc)
+
+    def datagram_received(self, data: bytes, addr: tuple[str, int]):
         self.messages.put_nowait(data)
         self.last_address = addr
         self.logger.debug(f"received from {addr} : {data}")
 
 
 class BaseUdpStateful(RegularKernelSocketNetworkStateful, ABC):
+    protocol: BaseUdpProtocol
     socket_type = socket.SOCK_DGRAM
     socket_proto = socket.IPPROTO_UDP
     transmitting_protocol = BaseUdpProtocol

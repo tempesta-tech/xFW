@@ -58,7 +58,7 @@ async def tcp_ip6_server(
 @pytest.fixture
 async def tcp_ip6_raw_server(
     config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
-) -> TcpServer:
+) -> TcpRawServer:
     new_server = server_fabric(
         config=config,
         logging_level=logging_level,
@@ -132,7 +132,7 @@ def tcp_server(config: ConfigSettings, request: FixtureRequest, ip_version: str)
 
 
 @pytest.fixture
-def tcp_raw_server(request: FixtureRequest, ip_version) -> TcpServer:
+def tcp_raw_server(request: FixtureRequest, ip_version) -> TcpRawServer:
     return request.getfixturevalue(f"tcp_{ip_version}_raw_server")
 
 

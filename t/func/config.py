@@ -101,8 +101,13 @@ class ConfigSettings(BaseSettings):
     client_port: int = 50000
 
     timeout_sec: float = 0.1
+    load_duration: float = 5.0  # seconds
+    ratelimit_tolerance_factor: float = 1.2  # 20%
 
     tcpreplay_exec_file: str = "tcpreplay"
     tcprewrite_exec_file: str = "tcprewrite"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+
+settings = ConfigSettings()
