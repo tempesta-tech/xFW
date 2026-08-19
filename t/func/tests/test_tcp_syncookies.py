@@ -270,6 +270,7 @@ async def group_of_clients(
         pytest.param("flood_timer=2", id="flood"),
         pytest.param("passive_timer=2", id="passive"),
         pytest.param("flood_timer=1 passive_timer=0", id="always-passive"),
+        pytest.param("flood_timer=0 passive_timer=0", id="undefined"),
     ],
 )
 async def test_normal_connection(
