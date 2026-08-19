@@ -313,30 +313,51 @@ async def test_normal_connection(
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
 
     # STAGE 2: Send data
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
-    await tcp_raw_client.send_packet(TCP(flags="PA") / b"hello")
+    async with xfw_with_forced_syncookie.metrics_diff(stats_counters, wait_softirq=True) as diff:
+        stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
+        await tcp_raw_client.send_packet(TCP(flags="PA") / b"hello")
 
-    answer = await tcp_raw_client.receive_packet()
-    assert answer is not None
-    assert tcp_raw_client.has_flag(answer, "A")
+        answer = await tcp_raw_client.receive_packet()
+        assert answer is not None
+        assert tcp_raw_client.has_flag(answer, "A")
 
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
+        stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     # nothing changes
     assert stats_after[0] == stats_before[0]
     assert stats_after[1] == stats_before[1]
     assert stats_after[2] == stats_before[2]
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 0,
+            "xfw_syncookie_failed_packets": 0,
+            "xfw_syncookie_received_packets": 0,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
 
     # STAGE 3: Disconnecting
-    stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
-
-    assert await tcp_raw_client.close_connection() is True
-    stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
+    async with xfw_with_forced_syncookie.metrics_diff(stats_counters, wait_softirq=True) as diff:
+        stats_before = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
+        assert await tcp_raw_client.close_connection() is True
+        stats_after = await xfw_with_forced_syncookie.syncookies_read_kern_stats()
 
     # nothing changes
     assert stats_after[0] == stats_before[0]
     assert stats_after[1] == stats_before[1]
     assert stats_after[2] == stats_before[2]
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 0,
+            "xfw_syncookie_failed_packets": 0,
+            "xfw_syncookie_received_packets": 0,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
 
 
 @pytest.mark.parametrize(
