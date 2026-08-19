@@ -882,17 +882,42 @@ async def test_normal_connection_under_flood(
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
 
 
+# 2 flood clients * 1000 handshakes + 1 legitimate handshake
+_HANDSHAKE_FLOOD_GENERATED = 2001
+
+
 @pytest.mark.parametrize(
-    "option,handshakes,duration",
+    "option,handshakes,duration,expected_xfw",
     [
-        pytest.param("flood_timer=2 passive_timer=0", 1000, 40, id="flood"),
-        pytest.param("passive_timer=5 flood_timer=0", 1000, 40, id="passive"),
+        pytest.param(
+            "flood_timer=2 passive_timer=0",
+            1000,
+            40,
+            {
+                "xfw_syncookie_generated_packets": _HANDSHAKE_FLOOD_GENERATED,
+                "xfw_syncookie_received_packets": 1,
+                "xfw_syncookie_failed_packets": [1, 1],
+            },
+            id="flood",
+        ),
+        pytest.param(
+            "passive_timer=5 flood_timer=0",
+            1000,
+            40,
+            {
+                "xfw_syncookie_generated_packets": [1, _HANDSHAKE_FLOOD_GENERATED],
+                "xfw_syncookie_received_packets": [0, 2],
+                "xfw_syncookie_failed_packets": [0, 1],
+            },
+            id="passive",
+        ),
     ],
 )
 async def test_normal_connection_under_handshake_flood(
     option: str,
     handshakes: int,
     duration: int,
+    expected_xfw: dict,
     xfw_with_forced_syncookie: XFW,
     tcp_server: TcpServer,
     tcp_raw_client: TcpRawClient,
@@ -926,15 +951,23 @@ async def test_normal_connection_under_handshake_flood(
         flood_results = [task.result() for task in tasks]
         await xfw_with_forced_syncookie.wait_softirq()
 
-    expected_total = handshakes * len(group_of_clients)
     invalid_acks = sum(acknowledged for _, acknowledged in flood_results)
+    # failed [lo, hi] in params is a factor of invalid_acks: [1, 1] exact, [0, 1] any up to that.
+    failed_lo, failed_hi = expected_xfw["xfw_syncookie_failed_packets"]
+    expected = {
+        **expected_xfw,
+        "xfw_syncookie_failed_packets": [
+            failed_lo * invalid_acks,
+            failed_hi * invalid_acks + 1,
+        ],
+    }
     check_kern_rcv(conf_logger, kern_diff)
-    if option.startswith("flood_timer"):
-        check_xfw_stats(diff, (expected_total + 1, 1, invalid_acks))
-    else:
-        assert 0 < diff["xfw_syncookie_generated_packets"] < expected_total + 1
-        assert 0 <= diff["xfw_syncookie_failed_packets"] <= invalid_acks
-        assert diff["xfw_syncookie_received_packets"] in (0, 1)
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics=expected,
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
 
 
 async def test_artificial_flood_timer(
