@@ -232,6 +232,10 @@ async def xfw_with_forced_syncookie(xfw: XFW) -> AsyncGenerator[XFW, None]:
         }}""")
     await xfw.restart()
 
+    # We need to call metrics here to exclude syncookie statistics changes in the tests.
+    # We just make the first request to xfw immediately after the launch.
+    await xfw.metrics()
+
     yield xfw
 
     await xfw.stop()
