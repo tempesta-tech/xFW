@@ -22,15 +22,15 @@
 #include "../error.hh"
 
 struct Syncookie {
-	int	passive_timer_ = 1;
-	int	flood_timer_ = 1;
+	int	passive_timer_sec_ = 1;
+	int	flood_timer_sec_ = 1;
 };
 
 struct TcpSynDrop {
 	uint64_t	hash_salt_ = 0;
-	uint64_t	time_min_ = 0;
-	uint64_t	max_delay_ = 0;
-	uint64_t	block_timeout_ = 0;
+	uint64_t	time_min_ms_ = 0;
+	uint64_t	max_delay_ms_ = 0;
+	uint64_t	block_timeout_ms_ = 0;
 	uint32_t	retry_count_ = 0;
 };
 

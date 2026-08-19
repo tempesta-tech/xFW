@@ -331,9 +331,14 @@ BpfMapsManager::set_simple_rules(const XfwConfig &config)
 	cfg.rules.syncookie.enabled = config.syncookie_filter_.has_value();
 
 	if (cfg.rules.syncookie.enabled) {
+		auto secs_to_jiffies = [this](uint64_t secs) {
+			return secs * hz_;
+		};
 		const auto &data = config.syncookie_filter_.value();
-		cfg.rules.syncookie.flood_timer_jiff = data.flood_timer_ * hz_;
-		cfg.rules.syncookie.passive_timer_jiff = data.passive_timer_ * hz_;
+		cfg.rules.syncookie.flood_timer_jiff =
+			secs_to_jiffies(data.flood_timer_sec_);
+		cfg.rules.syncookie.passive_timer_jiff =
+			secs_to_jiffies(data.passive_timer_sec_);
 	}
 	cfg.rules.tcp_syn_drop.enabled = config.tcp_syn_drop_filter_.has_value();
 	if (cfg.rules.tcp_syn_drop.enabled) {
@@ -343,11 +348,11 @@ BpfMapsManager::set_simple_rules(const XfwConfig &config)
 		const auto &data = config.tcp_syn_drop_filter_.value();
 		cfg.rules.tcp_syn_drop.hash_salt = data.hash_salt_;
 		cfg.rules.tcp_syn_drop.time_min_jiff =
-			msecs_to_jiffies(data.time_min_);
+			msecs_to_jiffies(data.time_min_ms_);
 		cfg.rules.tcp_syn_drop.max_delay_jiff =
-			msecs_to_jiffies(data.max_delay_);
+			msecs_to_jiffies(data.max_delay_ms_);
 		cfg.rules.tcp_syn_drop.block_timeout_jiff =
-			msecs_to_jiffies(data.block_timeout_);
+			msecs_to_jiffies(data.block_timeout_ms_);
 		cfg.rules.tcp_syn_drop.retry_count = data.retry_count_;	
 	}
 
