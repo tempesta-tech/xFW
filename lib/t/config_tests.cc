@@ -89,16 +89,16 @@ TEST(ParsesFullConfig, HandlesMaximumData)
 
 	ASSERT_TRUE(conf->prvt->xfw_conf.has_value());
 	ASSERT_TRUE(conf->prvt->xfw_conf.value().syncookie_.has_value());
-	ASSERT_EQ(conf->prvt->xfw_conf.value().syncookie_.value().flood_timer_, 5);
-	ASSERT_EQ(conf->prvt->xfw_conf.value().syncookie_.value().passive_timer_, 1);
+	ASSERT_EQ(conf->prvt->xfw_conf.value().syncookie_.value().flood_timer_sec_, 5);
+	ASSERT_EQ(conf->prvt->xfw_conf.value().syncookie_.value().passive_timer_sec_, 1);
 
 	auto &tcp_syn_drop = conf->prvt->xfw_conf.value().tcp_syn_drop_;
 	ASSERT_TRUE(tcp_syn_drop.has_value());
 	ASSERT_EQ(tcp_syn_drop->hash_salt_, 12345);
-	ASSERT_EQ(tcp_syn_drop->time_min_, 500);
-	ASSERT_EQ(tcp_syn_drop->max_delay_, 3000);
+	ASSERT_EQ(tcp_syn_drop->time_min_ms_, 500);
+	ASSERT_EQ(tcp_syn_drop->max_delay_ms_, 3000);
 	ASSERT_EQ(tcp_syn_drop->retry_count_, 3);
-	ASSERT_EQ(tcp_syn_drop->block_timeout_, 0);
+	ASSERT_EQ(tcp_syn_drop->block_timeout_ms_, 0);
 
 	auto &cflags = conf->prvt->xfw_conf.value().flags_;
 	ASSERT_FALSE(cflags.test(XfwConf::Opt::TCP_AUTH_FILTER_ON));
@@ -346,6 +346,42 @@ TEST(ParsesXfwConfig, WithDeleteTcpSyncookies)
 	ASSERT_FALSE(conf->prvt->xfw_conf->syncookie_.has_value());
 }
 
+TEST(ParsesXfwConfig, TcpSyncookiesDefaultValues)
+{
+	std::string prog = "xfw {"
+		"tcp_syncookies passive_timer=3;"
+	"}";
+
+	std::unique_ptr<TlProgConf> conf1(tcl_parse_full_conf(prog.c_str(),
+							     prog.length()));
+
+	ASSERT_TRUE(conf1);
+	ASSERT_TRUE(conf1->prvt);
+	ASSERT_TRUE(conf1->prvt->xfw_conf.has_value());
+
+	auto &syncookie = conf1->prvt->xfw_conf->syncookie_;
+
+	ASSERT_TRUE(syncookie.has_value());
+	ASSERT_EQ(syncookie->passive_timer_sec_, 3);
+	ASSERT_EQ(syncookie->flood_timer_sec_, DEFAULT_FLOOD_TIMER_SEC);
+
+	prog = "xfw {"
+		"tcp_syncookies flood_timer=3;"
+	"}";
+
+	std::unique_ptr<TlProgConf> conf2(tcl_parse_full_conf(prog.c_str(),
+							      prog.length()));
+	ASSERT_TRUE(conf2);
+	ASSERT_TRUE(conf2->prvt);
+	ASSERT_TRUE(conf2->prvt->xfw_conf.has_value());
+
+	syncookie = conf2->prvt->xfw_conf->syncookie_;
+
+	ASSERT_TRUE(syncookie.has_value());
+	ASSERT_EQ(syncookie->passive_timer_sec_, DEFAULT_PASSIVE_TIMER_SEC);
+	ASSERT_EQ(syncookie->flood_timer_sec_, 3);
+}
+
 TEST(ParsesXfwConfig, WithDeleteTcpSynDrop)
 {
 	const std::string prog = "xfw{tcp_syn_drop/del;}";
@@ -375,15 +411,16 @@ TEST(ParsesXfwConfig, TcpSynDropUsesDefaultValues)
 
 	ASSERT_TRUE(tcp_syn_drop.has_value());
 	EXPECT_EQ(tcp_syn_drop->hash_salt_, 12345);
-	EXPECT_EQ(tcp_syn_drop->time_min_, TCP_SYN_DROP_DEFAULT_TIME_MIN);
-	EXPECT_EQ(tcp_syn_drop->max_delay_, TCP_SYN_DROP_DEFAULT_MAX_DELAY);
+	EXPECT_EQ(tcp_syn_drop->time_min_ms_, TCP_SYN_DROP_DEFAULT_MIN_DELAY_MS);
+	EXPECT_EQ(tcp_syn_drop->max_delay_ms_, TCP_SYN_DROP_DEFAULT_MAX_DELAY_MS);
 	EXPECT_EQ(tcp_syn_drop->retry_count_, 3);
 
 	/*
 	 * Zero means unlimited blocking until the corresponding
 	 * LRU map entry is evicted.
 	 */
-	EXPECT_EQ(tcp_syn_drop->block_timeout_, TCP_SYN_DROP_DEFAULT_BLOCK_TIMEOUT);
+	EXPECT_EQ(tcp_syn_drop->block_timeout_ms_,
+		  TCP_SYN_DROP_DEFAULT_BLOCK_TIMEOUT_MS);
 }
 
 TEST(ParsesXfwConfig, TcpSynDropAcceptsEqualWindowBounds)
@@ -402,8 +439,8 @@ TEST(ParsesXfwConfig, TcpSynDropAcceptsEqualWindowBounds)
 		conf->prvt->xfw_conf->tcp_syn_drop_;
 
 	ASSERT_TRUE(tcp_syn_drop.has_value());
-	EXPECT_EQ(tcp_syn_drop->time_min_, 500);
-	EXPECT_EQ(tcp_syn_drop->max_delay_, 500);
+	EXPECT_EQ(tcp_syn_drop->time_min_ms_, 500);
+	EXPECT_EQ(tcp_syn_drop->max_delay_ms_, 500);
 }
 
 class RejectsInvalidTcpSynDrop
