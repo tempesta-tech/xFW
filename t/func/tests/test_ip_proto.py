@@ -131,19 +131,6 @@ async def test_ignore_internal_packets(
     await gre_raw_client.receive_expected_packet(server_packet)
 
 
-async def receive_ipv4_packet(server, src, dst):
-    while True:
-        packet = await server.receive_packet()
-        if packet is None:
-            return None
-
-        if IP not in packet:
-            continue
-
-        if packet[IP].src == src and packet[IP].dst == dst:
-            return packet
-
-
 @pytest.mark.parametrize(
     "protocol",
     [
@@ -183,11 +170,7 @@ async def test_allow_arbitrary_ip_protocol(
 
     await ether_raw_client.send_packet(packet)
 
-    received = await receive_ipv4_packet(
-        ether_raw_server,
-        ether_raw_client.ip,
-        ether_raw_server.ip,
-    )
+    received = await ether_raw_server.receive_packet()
     assert received is not None
     assert received[IP].proto == protocol
     assert bytes(received[Raw].load) == b"payload"
