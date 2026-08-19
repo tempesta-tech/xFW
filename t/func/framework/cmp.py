@@ -4,7 +4,7 @@
 import asyncio
 from typing import Callable, Optional
 
-from config import settings
+from config import ConfigSettings
 from framework.stateful import SocketBaseNetworkStateful
 from framework.xfw import XFWRatelimit
 
@@ -34,35 +34,40 @@ async def check_connection(
         return False
 
 
-async def check_pps_ratelimit(
-    client: SocketBaseNetworkStateful,
-    limit: XFWRatelimit,
-    function: Optional[Callable] = None,
-) -> None:
-    """
-    The method generates traffic using the network client and asserts that
-    the number of successfully completed messages falls within the expected
-    limit, accounting for a warmup period and a margin of error.
-    """
-    messages_pps = limit.pps * 5
-    duration = settings.load_duration
+class RatelimitChecker:
+    def __init__(self, config: ConfigSettings):
+        self._config = config
 
-    assert duration > 1, "The value for duration is too small. Testing is not possible."
+    async def check_pps_ratelimit(
+        self,
+        client: SocketBaseNetworkStateful,
+        limit: XFWRatelimit,
+        function: Optional[Callable] = None,
+    ) -> None:
+        """
+        The method generates traffic using the network client and asserts that
+        the number of successfully completed messages falls within the expected
+        limit, accounting for a warmup period and a margin of error.
+        """
+        messages_pps = limit.pps * 5
+        duration = self._config.load_duration
 
-    function = function or client.ping_pong
-    await function("Client and server cannot establish a connection.")
+        assert duration > 1, "The value for duration is too small. Testing is not possible."
 
-    results = await client.generate_traffic(
-        messages_pps=messages_pps,
-        duration=duration,
-        function=function,
-    )
+        function = function or client.ping_pong
+        await function("Client and server cannot establish a connection.")
 
-    completed_n = results.count(None)
-    expected_min_completed_n = limit.pps * (duration - 1)  # The client has 1 second to warm up.
-    expected_max_completed_n = messages_pps * settings.ratelimit_tolerance_factor
+        results = await client.generate_traffic(
+            messages_pps=messages_pps,
+            duration=duration,
+            function=function,
+        )
 
-    assert expected_min_completed_n <= completed_n <= expected_max_completed_n, (
-        "The limit does not work as expected. "
-        + f"{expected_min_completed_n = }, {completed_n = }, {expected_max_completed_n = }"
-    )
+        completed_n = results.count(None)
+        expected_min_completed_n = limit.pps * (duration - 1)  # The client has 1 second to warm up.
+        expected_max_completed_n = messages_pps * self._config.ratelimit_tolerance_factor
+
+        assert expected_min_completed_n <= completed_n <= expected_max_completed_n, (
+            "The limit does not work as expected. "
+            + f"{expected_min_completed_n = }, {completed_n = }, {expected_max_completed_n = }"
+        )

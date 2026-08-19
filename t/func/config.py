@@ -108,6 +108,3 @@ class ConfigSettings(BaseSettings):
     tcprewrite_exec_file: str = "tcprewrite"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
-
-
-settings = ConfigSettings()
