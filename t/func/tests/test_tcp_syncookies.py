@@ -274,7 +274,9 @@ async def group_of_clients(
         pytest.param(
             "flood_timer=0 passive_timer=0",
             id="no-received-syncookies",
-            marks=pytest.mark.xfail("No received SynCookies"),
+            marks=pytest.mark.xfail(
+                reason="No received SynCookies. This case is not forbidden because of debuggin propose while app development"
+            ),
         ),
     ],
 )
@@ -309,8 +311,8 @@ async def test_normal_connection(
         all_metrics=diff,
         diff_metrics={
             "xfw_syncookie_generated_packets": 1,
-            "xfw_syncookie_failed_packets": 0,
             "xfw_syncookie_received_packets": 1,
+            "xfw_syncookie_failed_packets": 0,
         },
     )
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
@@ -321,10 +323,10 @@ async def test_normal_connection(
         xfw_with_forced_syncookie.syncookies_kern_stats_diff() as kern_diff,
     ):
         await tcp_raw_client.send_packet(TCP(flags="PA") / b"hello")
-
         answer = await tcp_raw_client.receive_packet()
-        assert answer is not None
-        assert tcp_raw_client.has_flag(answer, "A")
+
+    assert answer is not None
+    assert tcp_raw_client.has_flag(answer, "A")
 
     # nothing changes
     assert kern_diff == [0, 0, 0]
@@ -333,8 +335,8 @@ async def test_normal_connection(
         all_metrics=diff,
         diff_metrics={
             "xfw_syncookie_generated_packets": 0,
-            "xfw_syncookie_failed_packets": 0,
             "xfw_syncookie_received_packets": 0,
+            "xfw_syncookie_failed_packets": 0,
         },
     )
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
@@ -353,8 +355,8 @@ async def test_normal_connection(
         all_metrics=diff,
         diff_metrics={
             "xfw_syncookie_generated_packets": 0,
-            "xfw_syncookie_failed_packets": 0,
             "xfw_syncookie_received_packets": 0,
+            "xfw_syncookie_failed_packets": 0,
         },
     )
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
@@ -604,6 +606,7 @@ async def test_flood_mode(
     ):
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
+
     assert kern_diff == [0, 1, 0]
     check_xfw_stats(diff, (1, 1, 0))
 
@@ -619,6 +622,7 @@ async def test_flood_mode(
     ):
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
+
     assert kern_diff == [0, 1, 0]
     check_xfw_stats(diff, (1, 1, 0))
 
@@ -634,6 +638,7 @@ async def test_flood_mode(
     ):
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
+
     assert kern_diff == [0, 0, 0]
     check_xfw_stats(diff, (0, 0, 0))
 
@@ -648,6 +653,7 @@ async def test_flood_mode(
     ):
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
+
     assert kern_diff == [0, 1, 0]
     check_xfw_stats(diff, (1, 1, 0))
 
@@ -684,6 +690,7 @@ async def test_passive_mode(
     ):
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
+
     assert kern_diff == [0, 0, 0]
     check_xfw_stats(diff, (0, 0, 0))
 
@@ -699,6 +706,7 @@ async def test_passive_mode(
     ):
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
+
     assert kern_diff == [0, 0, 0]
     check_xfw_stats(diff, (0, 0, 0))
 
@@ -715,6 +723,7 @@ async def test_passive_mode(
     ):
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
+
     assert kern_diff == [0, 1, 0]
     check_xfw_stats(diff, (1, 1, 0))
 
@@ -729,6 +738,7 @@ async def test_passive_mode(
     ):
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
+
     assert kern_diff == [0, 0, 0]
     check_xfw_stats(diff, (0, 0, 0))
 
