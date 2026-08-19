@@ -21,6 +21,7 @@
 #include "tempesta_client.hh" // for extern "C" API
 #include "tcl_private.hh"
 #include "tcp_anomaly_section.hh"
+#include "tcp_syn_drop_section.hh"
 #include "line_consumer.hh"
 #include "log.hh"
 #include "section.hh"
@@ -279,32 +280,8 @@ protected:
 
 	private:
 		XfwConf				&xfw_conf_;
-		std::optional<uint32_t>		f_timer_;
-		std::optional<uint32_t>		p_timer_;
-	};
-
-	struct TcpSynDropSection final: public Section {
-	public:
-		TcpSynDropSection(XfwConf &conf)
-			: Section("tcp_syn_drop", std::unique_ptr<ActionProcessor>(),
-				  std::make_unique<EditProcessor>())
-			, xfw_conf_(conf)
-		{}
-
-		virtual ~TcpSynDropSection() override {}
-
-	private:
-		virtual bool process_attributes() override;
-
-		virtual void commit() override;
-
-	private:
-		XfwConf				&xfw_conf_;
-		std::optional<uint64_t>		hash_salt_;
-		std::optional<uint64_t>		time_min_;
-		std::optional<uint64_t>		max_delay_;
-		std::optional<uint64_t>		block_timeout_;
-		std::optional<uint32_t>		retry_count_;
+		std::optional<uint32_t>		f_timer_sec_;
+		std::optional<uint32_t>		p_timer_sec_;
 	};
 
 	class RatelimitSection final: public Section
@@ -1190,11 +1167,11 @@ XfwSection::TcpSyncookieSection::process_attributes()
 
 	auto name = peek_until_delimeters();
 	if (name == "passive_timer") {
-		p_timer_ = consume_typed_assignment<uint32_t>(name);
+		p_timer_sec_ = consume_typed_assignment<uint32_t>(name);
 		return true;
 	}
 	else if (name == "flood_timer") {
-		f_timer_ = consume_typed_assignment<uint32_t>(name);
+		f_timer_sec_ = consume_typed_assignment<uint32_t>(name);
 		return true;
 	}
 
@@ -1214,115 +1191,12 @@ XfwSection::TcpSyncookieSection::commit()
 		return;
 	}
 
-	if (!f_timer_.has_value() && !p_timer_.has_value()) {
+	if (!f_timer_sec_.has_value() && !p_timer_sec_.has_value()) {
 		throw Except("Section must contain at least one "
 			     "of 'passive_timer' or 'flood_timer'.");
 	}
-	xfw_conf_.syncookie_.emplace(p_timer_.value_or(1),
-		f_timer_.value_or(1));
-}
-
-/*
- * ------------------------------------------------------------------------
- *	XfwSection::TcpSynDropSection section parsing
- * ------------------------------------------------------------------------
- */
-bool
-XfwSection::TcpSynDropSection::process_attributes()
-{
-	using namespace std::literals;
-
-	auto name = peek_until_delimeters();
-	if (name == "hash_salt") {
-		hash_salt_ = consume_typed_assignment<uint64_t>(name);
-		return true;
-	}
-	else if (name == "time_min") {
-		time_min_ = consume_typed_assignment<uint64_t>(name);
-		return true;
-	}
-	else if (name == "max_delay") {
-		max_delay_ = consume_typed_assignment<uint64_t>(name);
-		return true;
-	}
-	else if (name == "retry_count") {
-		retry_count_ = consume_typed_assignment<uint32_t>(name);
-		return true;
-	}
-	else if (name == "block_timeout") {
-		block_timeout_ = consume_typed_assignment<uint64_t>(name);
-		return true;
-	}
-
-	return false;
-}
-
-void
-XfwSection::TcpSynDropSection::commit()
-{
-	assert(!!edit_processor_);
-	auto edit_action = edit_processor_->get_result();
-	if (edit_action.has_value()) {
-		if (*edit_action != EditProcessor::EditType::DELETE)
-			throw Except("Operation '{}' is not allowed with tcp_syn_drop",
-				     EditProcessor::to_string(edit_action.value()));
-		xfw_conf_.flags_.set(XfwConf::Opt::TCP_SYN_DROP_FILTER_OFF);
-		return;
-	}
-
-	/*
-	 * The salt cannot safely have a generic default because it is part of
-	 * the protection against predictable hash collisions.
-	 */
-	if (!hash_salt_.has_value()) {
-		throw Except(
-			"tcp_syn_drop requires the 'hash_salt' parameter."
-		);
-	}
-
-	/*
-	 * The design does not specify a default retry count, so it must be
-	 * explicitly configured.
-	 */
-	if (!retry_count_.has_value()) {
-		throw Except(
-			"tcp_syn_drop requires the 'retry_count' parameter."
-		);
-	}
-
-	if (!retry_count_.value()) {
-		throw Except(
-			"tcp_syn_drop: 'retry_count' must be greater than zero."
-		);
-	}
-
-	const uint64_t time_min =
-		time_min_.value_or(TCP_SYN_DROP_DEFAULT_TIME_MIN);
-
-	const uint64_t max_delay =
-		max_delay_.value_or(TCP_SYN_DROP_DEFAULT_MAX_DELAY);
-
-	const uint64_t block_timeout =
-		block_timeout_.value_or(TCP_SYN_DROP_DEFAULT_BLOCK_TIMEOUT);
-
-	/*
-	 * The valid retransmission window is defined as:
-	 *
-	 *     stored_time + time_min <= now <= stored_time + max_delay
-	 *
-	 * Therefore, time_min must not exceed max_delay, otherwise no
-	 * retransmission could ever satisfy the condition.
-	 */
-	if (time_min > max_delay) {
-		throw Except(
-			"tcp_syn_drop: 'time_min' ({}) must not exceed "
-			"'max_delay' ({}).", time_min, max_delay
-		);
-	}
-
-	xfw_conf_.tcp_syn_drop_.emplace(hash_salt_.value(),
-					time_min, max_delay, block_timeout,
-					retry_count_.value());
+	xfw_conf_.syncookie_.emplace(p_timer_sec_.value_or(DEFAULT_PASSIVE_TIMER_SEC),
+				     f_timer_sec_.value_or(DEFAULT_FLOOD_TIMER_SEC));
 }
 
 /*

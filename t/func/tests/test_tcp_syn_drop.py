@@ -452,13 +452,13 @@ async def test_syn_ratelimit_with_syn_drop(
     tcp_raw_server: TcpRawServer,
     start_tcp_raw_server_and_raw_clients,
 ):
-    time_min = 10
+    time_min = 1
     max_delay = 5000
     seq = random.randrange(1, 2**31)
 
     await xfw.rules_set(f"""
         xfw {{
-            ratelimit=test pps=1 bps=1000000;
+            ratelimit=test pps=2 bps=1000000;
 
             tcp_flags syn : ratelimit=test;
 
@@ -485,10 +485,28 @@ async def test_syn_ratelimit_with_syn_drop(
     assert await tcp_raw_server.receive_packet() is None
 
     #
+    # Consume the second SYN allowed by the rate limit using a different
+    # TCP tuple. This must not affect the pending tcp_syn_drop entry above.
+    # (ratelimit is not accuracy, so we need to send several SYNs to be sure
+    #  that it will be exhausted).
+    #
+    fillers = [
+        TCP(
+            flags="S",
+            seq=seq + i + 1,
+            window=64240,
+            options=(("MSS", 1460),),
+        )
+        for i in range(3)
+    ]
+
+    await asyncio.gather(*(tcp_syn_drop_client.send_packet(packet) for packet in fillers))
+
+    #
     # Send the retransmission while the SYN rate limit is still exhausted.
     # It must be dropped by tcp_flags before tcp_syn_drop sees it.
     #
-    await asyncio.sleep(time_min / 1000 + 0.05)
+    await asyncio.sleep(0.005)
 
     await tcp_syn_drop_client.send_packet(packet)
     assert await tcp_raw_server.receive_packet() is None

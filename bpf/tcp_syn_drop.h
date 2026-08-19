@@ -13,15 +13,8 @@
 #define BANNER "syn_drop"
 #include "log.h"
 
-#include "vmlinux.h"
-
-#include <bpf/bpf_helpers.h>
-#include <bpf/bpf_endian.h>
-
-#include "compiler.h"
 #include "filter.h"
 #include "syn_hash.h"
-#include "ctx.h"
 
 #define XFW_SYN_PENDING_MAX_ENTRIES	10000000
 #define XFW_SYN_RETRY_MAX_ENTRIES	1000000
@@ -40,6 +33,24 @@ typedef struct XfwSynPending {
 /*
  * The second map stores tuples which have already passed the first timing
  * check and whose following SYN retransmissions are being tracked.
+ *
+ * Once retry_count is exhausted, the entry is kept in the map and marked
+ * as blocked instead of being removed. Keeping the entry prevents a
+ * subsequent SYN for the same tuple from starting the authentication
+ * sequence again and thus bypassing the retry limit.
+ *
+ * While blocked is set, all matching SYNs are dropped. For a finite block
+ * timeout, blocked_until contains the timestamp at which the tuple may
+ * start authentication again. Once that time is reached, the blocked entry
+ * is removed and a following SYN can create a new authentication state.
+ * With an unlimited block timeout, the entry remains blocked until it is
+ * evicted from the LRU map.
+ *
+ * blocked and blocked_until deliberately represent state and expiration
+ * separately. Encoding both in blocked_until would require sentinel values
+ * (e.g. 0 for unblocked and UINT64_MAX for indefinitely blocked), making
+ * the state less explicit and coupling timestamp semantics to special
+ * values.
  */
 typedef struct XfwSynRetry {
 	uint64_t	jtxtstamp;
@@ -79,7 +90,11 @@ struct {
 static __always_inline bool
 xfw_is_valid_initial_syn(const struct tcphdr *th)
 {
-	return th->syn && !th->ack && !th->rst && !th->fin;
+	const uint8_t tcp_flags = (uint8_t)((tcp_flag_word(th) >> 8) & 0xFF);
+	const uint8_t mask =
+		XFW_BIT_SYN | XFW_BIT_ACK | XFW_BIT_RST | XFW_BIT_FIN;
+
+	return (tcp_flags & mask) == XFW_BIT_SYN;
 }
 
 static __always_inline void
@@ -144,7 +159,7 @@ xfw_promote_syn(uint64_t hash, uint64_t now,
 	return XFW_CTX_CONTINUE;
 }
 
-/**
+/*
  * Process a SYN tuple stored in the pending map.
  *
  * A pending-map entry represents a tuple for which the first SYN has
@@ -187,8 +202,8 @@ xfw_promote_syn(uint64_t hash, uint64_t now,
  * so that such drops are registered as tcp_syn_drop incidents.
  */
 static __always_inline int
-xfw_process_pending(XfwGlobalCtx *ctx, uint64_t hash, XfwSynPending *entry,
-		    uint64_t now, const XfwRulesCfgTcpSynDrop *cfg)
+xfw_process_pending_filter(const XfwGlobalCtx *ctx, XfwSynPending *entry,
+			   uint64_t hash, uint64_t now)
 {
 	if (entry->blocked)
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
@@ -199,14 +214,15 @@ xfw_process_pending(XfwGlobalCtx *ctx, uint64_t hash, XfwSynPending *entry,
 	 *
 	 * Any SYN outside the window blocks the tuple until LRU eviction.
 	 */
-	if (entry->jtxtstamp + cfg->time_min_jiff > now
-	    || now > entry->jtxtstamp + cfg->max_delay_jiff)
+	const XfwRulesCfgTcpSynDrop *syn_cfg = &ctx->cfg->rules.tcp_syn_drop;
+	if (entry->jtxtstamp + syn_cfg->time_min_jiff > now
+	    || now > entry->jtxtstamp + syn_cfg->max_delay_jiff)
 	{
 		entry->blocked = true;
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
 
-	return xfw_promote_syn(hash, now, cfg);
+	return xfw_promote_syn(hash, now, syn_cfg);
 }
 
 static __always_inline bool
@@ -230,7 +246,7 @@ xfw_start_validation(uint64_t hash, uint64_t now)
 	return true;
 }
 
-/**
+/*
  * Process a SYN tuple which has already passed the initial retransmission
  * validation and was promoted from the pending map to the retry map.
  *
@@ -310,8 +326,8 @@ xfw_start_validation(uint64_t hash, uint64_t now)
  * so that such drops are registered as tcp_syn_drop incidents.
  */
 static __always_inline int
-xfw_process_retry(XfwGlobalCtx *ctx, uint64_t hash, XfwSynRetry *entry,
-		  uint64_t now, const XfwRulesCfgTcpSynDrop *cfg)
+xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
+			 uint64_t hash, uint64_t now)
 {
 	/*
 	 * A timing violation blocks the tuple indefinitely, until LRU
@@ -332,8 +348,11 @@ xfw_process_retry(XfwGlobalCtx *ctx, uint64_t hash, XfwSynRetry *entry,
 
 		/*
 		 * The finite block has expired. Treat this SYN as the first SYN
-		 * of a new validation cycle. Remove the retry state only after
-		 * successfully inserting the tuple into the pending map.
+		 * of a new validation cycle.
+		 * Keep the retry entry until the new pending entry is
+		 * successfully created. If insertion into the pending map fails,
+		 * deleting the retry entry would lose all state for this tuple
+		 * and allow the next SYN to start validation from scratch.
 		 */
 		if (xfw_start_validation(hash, now))
 			bpf_map_delete_elem(&MAP_SYN_RETRY_REF, &hash);
@@ -341,7 +360,8 @@ xfw_process_retry(XfwGlobalCtx *ctx, uint64_t hash, XfwSynRetry *entry,
 		return XDP_DROP;
 	}
 
-	if (entry->jtxtstamp + cfg->time_min_jiff > now
+	const XfwRulesCfgTcpSynDrop *syn_cfg = &ctx->cfg->rules.tcp_syn_drop;
+	if (entry->jtxtstamp + syn_cfg->time_min_jiff > now
 	    || now > entry->jtxtstamp + entry->max_delay)
 	{
 	    	/*
@@ -361,12 +381,12 @@ xfw_process_retry(XfwGlobalCtx *ctx, uint64_t hash, XfwSynRetry *entry,
 	 * retry_count++ again.
 	 *
 	 * Therefore, for a valid retry-map entry `retry_count` cannot grow past
-	 * cfg->retry_count.
+	 * syn_cfg->retry_count.
 	 */
-	if (entry->retry_count == cfg->retry_count) {
-		if (cfg->block_timeout_jiff) {
+	if (entry->retry_count == syn_cfg->retry_count) {
+		if (syn_cfg->block_timeout_jiff) {
 			entry->blocked_until =
-				now + cfg->block_timeout_jiff;
+				now + syn_cfg->block_timeout_jiff;
 		} else {
 			entry->blocked = true;	
 		}
@@ -388,24 +408,24 @@ xfw_process_retry(XfwGlobalCtx *ctx, uint64_t hash, XfwSynRetry *entry,
 static __always_inline int
 tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
-	const XfwRulesCfgTcpSynDrop *syn_cfg = &ctx->cfg->rules.tcp_syn_drop;
 	XfwSynPending *pending;
 	XfwSynRetry *retry;
-	uint64_t hash;
+	uint64_t hash, hash_salt;
 	
 	if (!xfw_is_valid_initial_syn(th))
 		return XFW_CTX_CONTINUE;
 
+	hash_salt = ctx->cfg->rules.tcp_syn_drop.hash_salt;
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		struct iphdr *iph4 =
 			XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr);
 		XFW_ASSERT((void *)(iph4 + 1) <= ctx->hdr_cur.end);
-		xfw_hash_ipv4_syn(iph4, th, syn_cfg->hash_salt, &hash);
+		xfw_hash_ipv4_syn(iph4, th, hash_salt, &hash);
 	} else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
 		struct ipv6hdr *iph6 =
 			XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
 		XFW_ASSERT((void *)(iph6 + 1) <= ctx->hdr_cur.end);
-		xfw_hash_ipv6_syn(iph6, th, syn_cfg->hash_salt, &hash);
+		xfw_hash_ipv6_syn(iph6, th, hash_salt, &hash);
 	} else {
 		return XFW_CTX_CONTINUE;
 	}
@@ -418,18 +438,29 @@ tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	 * smaller map.
  	 *
  	 * This map therefore contains legitimate TCP connection attempts that
- 	 * are already in the retransmission tracking stage. It has higher
- 	 * priority than the pending map because an entry must never exist in
- 	 * both maps at the same time.
-	 *
+ 	 * are already in the retransmission tracking stage.
+ 	 *
 	 * If the tuple is found here, all further processing (timing
 	 * validation, retry counting and blocking) is performed by
-	 * `xfw_process_retry`.
+	 * `xfw_process_retry_filter`.
+	 *
+	 * Updates of the pending and retry maps are not atomic. The same
+	 * SYN-drop key may be seen more than once due to SYN retransmissions
+	 * or duplicated packets: a retransmitted SYN keeps the same addresses,
+	 * ports and initial sequence number.
+	 *
+	 * If such SYNs are processed concurrently on different CPUs, one CPU
+	 * may insert the tuple into the retry map while another still observes
+	 * its pending entry. The tuple may therefore be transiently visible in
+	 * both maps.
+	 *
+	 * Prefer the retry entry in this case, since it represents the more
+	 * advanced validation state and avoids processing a stale pending
+	 * entry.
 	 */
 	retry = bpf_map_lookup_elem(&MAP_SYN_RETRY_REF, &hash);
 	if (retry)
-		return xfw_process_retry(ctx, hash, retry, ctx->ts_jiff,
-					 syn_cfg);
+		return xfw_process_retry_filter(ctx, retry, hash, ctx->ts_jiff);
 	
 	/*
 	 * The tuple was not found in the retry map, therefore either this is
@@ -443,8 +474,8 @@ tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	 */
 	pending = bpf_map_lookup_elem(&MAP_SYN_PENDING_REF, &hash);
 	if (pending)
-		return xfw_process_pending(ctx, hash, pending, ctx->ts_jiff,
-					   syn_cfg);
+		return xfw_process_pending_filter(ctx, pending, hash,
+						  ctx->ts_jiff);
 
 	xfw_start_validation(hash, ctx->ts_jiff);
 

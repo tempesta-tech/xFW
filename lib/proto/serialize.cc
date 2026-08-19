@@ -34,8 +34,8 @@ serialize(flatbuffers::grpc::MessageBuilder &builder, const XfwConf &xfw)
 	flatbuffers::Offset<TempestaRPC::Syncookie> syncookie;
 	if (xfw.syncookie_.has_value()) {
 		syncookie = CreateSyncookie(builder,
-					    xfw.syncookie_.value().passive_timer_,
-					    xfw.syncookie_.value().flood_timer_);
+					    xfw.syncookie_.value().passive_timer_sec_,
+					    xfw.syncookie_.value().flood_timer_sec_);
 	}
 
 	flatbuffers::Offset<TempestaRPC::TcpSynDrop> tcp_syn_drop;
@@ -43,9 +43,9 @@ serialize(flatbuffers::grpc::MessageBuilder &builder, const XfwConf &xfw)
 		tcp_syn_drop = CreateTcpSynDrop(
 			builder,
 			xfw.tcp_syn_drop_.value().hash_salt_,
-			xfw.tcp_syn_drop_.value().time_min_,
-			xfw.tcp_syn_drop_.value().max_delay_,
-			xfw.tcp_syn_drop_.value().block_timeout_,
+			xfw.tcp_syn_drop_.value().time_min_ms_,
+			xfw.tcp_syn_drop_.value().max_delay_ms_,
+			xfw.tcp_syn_drop_.value().block_timeout_ms_,
 			xfw.tcp_syn_drop_.value().retry_count_
 		);
 	}
