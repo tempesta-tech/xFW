@@ -414,6 +414,18 @@ class XFW(NetworkStateful):
 
         return tuple((int(stat.strip()) for stat in stats.split(" ")))
 
+    @asynccontextmanager
+    async def syncookies_kern_stats_diff(self) -> AsyncGenerator[list[int], None]:
+        """
+        Yield the kernel SyncookieSent, SyncookieRecv, SyncookieFailed delta.
+        """
+        stats_before = await self.syncookies_read_kern_stats()
+        diff = [0, 0, 0]
+        yield diff
+
+        stats_after = await self.syncookies_read_kern_stats()
+        diff[:] = [after - before for after, before in zip(stats_after, stats_before)]
+
     async def syncookies_value_get(self) -> int:
         code, stdout, stderr = await run_cmd(
             cmd="sysctl -n net.ipv4.tcp_syncookies",
