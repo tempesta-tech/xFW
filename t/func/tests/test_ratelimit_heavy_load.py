@@ -3,7 +3,7 @@
 
 import pytest
 
-from framework.cmp import check_pps_ratelimit
+from framework.cmp import RatelimitChecker
 from framework.xfw import XFW, XFWRatelimit, XFWRatelimits
 
 ICMP_IPV4_ECHO_REQUEST = 8
@@ -71,6 +71,11 @@ async def xfw_with_ratelimits(xfw: XFW, xfw_ratelimits: XFWRatelimits) -> XFW:
     yield xfw
 
 
+@pytest.fixture
+def ratelimit_checker(config) -> RatelimitChecker:
+    return RatelimitChecker(config)
+
+
 @pytest.mark.fail_in_gate_mode("ISSUE: 456")
 async def test_icmp_default_ratelimit(
     xfw_with_ratelimits,
@@ -79,6 +84,7 @@ async def test_icmp_default_ratelimit(
     icmp_raw_client,
     start_udp_server_and_icmp_clients,
     xfw_low_pps_ratelimit,
+    ratelimit_checker,
 ):
     """
     Verify ICMP ratelimit enforcement under load
@@ -91,7 +97,7 @@ async def test_icmp_default_ratelimit(
         }}
         """)
 
-    await check_pps_ratelimit(
+    await ratelimit_checker.check_pps_ratelimit(
         client=icmp_raw_client,
         limit=xfw_low_pps_ratelimit,
     )
@@ -104,6 +110,7 @@ async def test_icmp_ratelimit_override_default_rule(
     icmp_raw_client,
     start_udp_server_and_icmp_clients,
     xfw_low_pps_ratelimit,
+    ratelimit_checker,
 ):
     """
     Verify that the ratelimit overrides the default action and restricts traffic.
@@ -117,7 +124,7 @@ async def test_icmp_ratelimit_override_default_rule(
         }}
         """)
 
-    await check_pps_ratelimit(
+    await ratelimit_checker.check_pps_ratelimit(
         client=icmp_raw_client,
         limit=xfw_low_pps_ratelimit,
     )
@@ -132,6 +139,7 @@ async def test_dst_ratelimit(
     client,
     establish_connection,
     xfw_low_pps_ratelimit,
+    ratelimit_checker,
 ):
     """
     Verify that the destination-based ratelimit restricts TCP/UDP
@@ -147,7 +155,7 @@ async def test_dst_ratelimit(
         }}
         """)
 
-    await check_pps_ratelimit(
+    await ratelimit_checker.check_pps_ratelimit(
         client=client,
         limit=xfw_low_pps_ratelimit,
     )
@@ -162,6 +170,7 @@ async def test_src_ratelimit_by_ip(
     client,
     establish_connection,
     xfw_low_pps_ratelimit,
+    ratelimit_checker,
 ):
     """
     Verify that the source-based ratelimit by IP restricts TCP/UDP
@@ -177,7 +186,7 @@ async def test_src_ratelimit_by_ip(
         }}
         """)
 
-    await check_pps_ratelimit(
+    await ratelimit_checker.check_pps_ratelimit(
         client=client,
         limit=xfw_low_pps_ratelimit,
     )
@@ -192,6 +201,7 @@ async def test_src_ratelimit_by_port(
     client,
     establish_connection,
     xfw_low_pps_ratelimit,
+    ratelimit_checker,
 ):
     """
     Verify that the source-based ratelimit by port restricts TCP/UDP
@@ -207,7 +217,7 @@ async def test_src_ratelimit_by_port(
         }}
         """)
 
-    await check_pps_ratelimit(
+    await ratelimit_checker.check_pps_ratelimit(
         client=client,
         limit=xfw_low_pps_ratelimit,
     )
@@ -219,6 +229,7 @@ async def test_block_tcp_syn_flood_by_ratelimit(
     tcp_raw_client,
     start_tcp_raw_server_and_raw_clients,
     xfw_low_pps_ratelimit,
+    ratelimit_checker,
 ):
     """
     Verify that TCP SYN flood traffic is restricted according to the ratelimit rule.
@@ -235,7 +246,7 @@ async def test_block_tcp_syn_flood_by_ratelimit(
         assert packet is not None, msg
         assert tcp_raw_server.has_flag(packet, "S"), msg
 
-    await check_pps_ratelimit(
+    await ratelimit_checker.check_pps_ratelimit(
         client=tcp_raw_client, limit=xfw_low_pps_ratelimit, function=send_and_check_tcp_syn
     )
 
@@ -246,6 +257,7 @@ async def test_block_tcp_rst_flood_by_ratelimit(
     tcp_raw_client,
     start_tcp_raw_server_and_raw_clients,
     xfw_low_pps_ratelimit,
+    ratelimit_checker,
 ):
     """
     Verify that TCP RST flood traffic is restricted according to the ratelimit rule.
@@ -262,6 +274,6 @@ async def test_block_tcp_rst_flood_by_ratelimit(
         assert packet is not None, msg
         assert tcp_raw_server.has_flag(packet, "R"), msg
 
-    await check_pps_ratelimit(
+    await ratelimit_checker.check_pps_ratelimit(
         client=tcp_raw_client, limit=xfw_low_pps_ratelimit, function=send_and_check_tcp_rst
     )
