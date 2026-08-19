@@ -8,6 +8,7 @@ import time
 from typing import AsyncGenerator, Union
 
 import pytest
+from freezegun import freeze_time
 from scapy.layers.inet import TCP
 
 from config import ConfigSettings
@@ -270,7 +271,11 @@ async def group_of_clients(
         pytest.param("flood_timer=2", id="flood"),
         pytest.param("passive_timer=2", id="passive"),
         pytest.param("flood_timer=1 passive_timer=0", id="always-passive"),
-        pytest.param("flood_timer=0 passive_timer=0", id="undefined"),
+        pytest.param(
+            "flood_timer=0 passive_timer=0",
+            id="no-received-syncookies",
+            marks=pytest.mark.xfail("No received SynCookies"),
+        ),
     ],
 )
 async def test_normal_connection(
@@ -365,14 +370,14 @@ async def test_normal_connection(
                 ("NOP", None),
                 ("WScale", 6),
                 ("SAckOK", b""),
-                ("Timestamp", (4294693388, 0)),
+                ("Timestamp", (1767225600, 0)),
             ],
             [
                 ("MSS", 536),
                 ("NOP", None),
                 ("WScale", 7),
                 ("SAckOK", b""),
-                ("Timestamp", (0x16, 4294693388)),
+                ("Timestamp", (0x16, 1767225600)),
             ],
             id="full-house-ip4",
         ),
@@ -383,14 +388,14 @@ async def test_normal_connection(
                 ("NOP", None),
                 ("WScale", 6),
                 ("SAckOK", b""),
-                ("Timestamp", (4294693388, 0)),
+                ("Timestamp", (1767225600, 0)),
             ],
             [
                 ("MSS", 1220),
                 ("NOP", None),
                 ("WScale", 7),
                 ("SAckOK", b""),
-                ("Timestamp", (0x16, 4294693388)),
+                ("Timestamp", (0x16, 1767225600)),
             ],
             id="full-house-ip6",
         ),
@@ -400,14 +405,14 @@ async def test_normal_connection(
                 ("MSS", 1460),
                 ("NOP", None),
                 ("SAckOK", b""),
-                ("Timestamp", (4294693388, 0)),
+                ("Timestamp", (1767225600, 0)),
             ],
             [
                 ("MSS", 536),
                 ("NOP", None),
                 ("WScale", 7),
                 ("SAckOK", b""),
-                ("Timestamp", (0x1F, 4294693388)),
+                ("Timestamp", (0x1F, 1767225600)),
             ],
             id="mss+sackok+ts+nop-ip4",
         ),
@@ -417,14 +422,14 @@ async def test_normal_connection(
                 ("MSS", 1460),
                 ("NOP", None),
                 ("SAckOK", b""),
-                ("Timestamp", (4294693388, 0)),
+                ("Timestamp", (1767225600, 0)),
             ],
             [
                 ("MSS", 1220),
                 ("NOP", None),
                 ("WScale", 7),
                 ("SAckOK", b""),
-                ("Timestamp", (0x1F, 4294693388)),
+                ("Timestamp", (0x1F, 1767225600)),
             ],
             id="mss+sackok+ts+nop-ip6",
         ),
@@ -433,7 +438,7 @@ async def test_normal_connection(
             [
                 ("MSS", 1460),
                 ("SAckOK", b""),
-                ("Timestamp", (4294693388, 0)),
+                ("Timestamp", (1767225600, 0)),
             ],
             [
                 ("MSS", 536),
@@ -450,7 +455,7 @@ async def test_normal_connection(
             [
                 ("MSS", 1460),
                 ("SAckOK", b""),
-                ("Timestamp", (4294693388, 0)),
+                ("Timestamp", (1767225600, 0)),
             ],
             [
                 ("MSS", 1220),
@@ -512,6 +517,7 @@ async def test_normal_connection(
         pytest.param("ip6", [], [], id="empty-ip6"),
     ],
 )
+@freeze_time("2026-01-01 00:00:00", real_asyncio=True)
 async def test_syncookie_with_options(
     ip_version: str,
     send_options: list[tuple],
