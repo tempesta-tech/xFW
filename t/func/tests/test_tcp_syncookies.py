@@ -356,63 +356,179 @@ async def test_normal_connection(
 
 
 @pytest.mark.parametrize(
-    "tcp_options,expected_synack_option_names,expected_timestamp_bits",
+    "ip_version,send_options,expected_options",
     [
         pytest.param(
+            "ip4",
+            [
+                ("MSS", 1460),
+                ("NOP", None),
+                ("WScale", 6),
+                ("SAckOK", b""),
+                ("Timestamp", (4294693388, 0)),
+            ],
+            [
+                ("MSS", 536),
+                ("NOP", None),
+                ("WScale", 7),
+                ("SAckOK", b""),
+                ("Timestamp", (0x16, 4294693388)),
+            ],
+            id="full-house-ip4",
+        ),
+        pytest.param(
+            "ip6",
+            [
+                ("MSS", 1460),
+                ("NOP", None),
+                ("WScale", 6),
+                ("SAckOK", b""),
+                ("Timestamp", (4294693388, 0)),
+            ],
+            [
+                ("MSS", 1220),
+                ("NOP", None),
+                ("WScale", 7),
+                ("SAckOK", b""),
+                ("Timestamp", (0x16, 4294693388)),
+            ],
+            id="full-house-ip6",
+        ),
+        pytest.param(
+            "ip4",
+            [
+                ("MSS", 1460),
+                ("NOP", None),
+                ("SAckOK", b""),
+                ("Timestamp", (4294693388, 0)),
+            ],
+            [
+                ("MSS", 536),
+                ("NOP", None),
+                ("WScale", 7),
+                ("SAckOK", b""),
+                ("Timestamp", (0x1F, 4294693388)),
+            ],
+            id="mss+sackok+ts+nop-ip4",
+        ),
+        pytest.param(
+            "ip6",
+            [
+                ("MSS", 1460),
+                ("NOP", None),
+                ("SAckOK", b""),
+                ("Timestamp", (4294693388, 0)),
+            ],
+            [
+                ("MSS", 1220),
+                ("NOP", None),
+                ("WScale", 7),
+                ("SAckOK", b""),
+                ("Timestamp", (0x1F, 4294693388)),
+            ],
+            id="mss+sackok+ts+nop-ip6",
+        ),
+        pytest.param(
+            "ip4",
             [
                 ("MSS", 1460),
                 ("SAckOK", b""),
                 ("Timestamp", (4294693388, 0)),
-                ("NOP", None),
-                ("WScale", 6),
             ],
-            ("MSS", "NOP", "WScale", "SAckOK", "Timestamp"),
-            0x16,
-            id="full-house",
+            [
+                ("MSS", 536),
+                ("NOP", None),
+                ("WScale", 7),
+                ("SAckOK", b""),
+                ("NOP", None),
+                ("EOL", None),
+            ],
+            id="mss+sackok+ts-ip4",
         ),
         pytest.param(
-            [("MSS", 1460), ("SAckOK", b""), ("Timestamp", (4294693388, 0)), ("NOP", None)],
-            ("MSS", "NOP", "WScale", "SAckOK", "Timestamp"),
-            0x1F,
-            id="mss+sackok+ts+nop",
+            "ip6",
+            [
+                ("MSS", 1460),
+                ("SAckOK", b""),
+                ("Timestamp", (4294693388, 0)),
+            ],
+            [
+                ("MSS", 1220),
+                ("NOP", None),
+                ("WScale", 7),
+                ("SAckOK", b""),
+                ("NOP", None),
+                ("EOL", None),
+            ],
+            id="mss+sackok+ts-ip6",
         ),
         pytest.param(
-            [("MSS", 1460), ("SAckOK", b""), ("Timestamp", (4294693388, 0))],
-            ("MSS", "NOP", "WScale", "SAckOK", "NOP", "EOL"),
-            None,
-            id="mss+sackok+ts",
+            "ip4",
+            [
+                ("MSS", 1460),
+                ("SAckOK", b""),
+            ],
+            [
+                ("MSS", 536),
+                ("NOP", None),
+                ("WScale", 7),
+            ],
+            id="mss+sackok-ip4",
         ),
         pytest.param(
-            [("MSS", 1460), ("SAckOK", b"")],
-            ("MSS", "NOP", "WScale"),
-            None,
-            id="mss+sackok",
+            "ip6",
+            [
+                ("MSS", 1460),
+                ("SAckOK", b""),
+            ],
+            [
+                ("MSS", 1220),
+                ("NOP", None),
+                ("WScale", 7),
+            ],
+            id="mss+sackok-ip6",
         ),
         pytest.param(
-            [("MSS", 1460)],
-            ("MSS",),
-            None,
-            id="mss",
+            "ip4",
+            [
+                ("MSS", 1460),
+            ],
+            [
+                ("MSS", 536),
+            ],
+            id="mss-ip4",
         ),
         pytest.param(
-            [],
-            (),
-            None,
-            id="empty",
+            "ip6",
+            [
+                ("MSS", 1460),
+            ],
+            [
+                ("MSS", 1220),
+            ],
+            id="mss-ip6",
         ),
+        pytest.param("ip4", [], [], id="empty-ip4"),
+        pytest.param("ip6", [], [], id="empty-ip6"),
     ],
 )
 async def test_syncookie_with_options(
-    tcp_options: list[tuple],
-    expected_synack_option_names: tuple[str, ...],
-    expected_timestamp_bits: int | None,
     ip_version: str,
+    send_options: list[tuple],
+    expected_options: list[tuple],
     xfw_with_forced_syncookie: XFW,
-    tcp_server: TcpServer,
-    tcp_raw_client: TcpRawClient,
-    start_tcp_server_and_raw_clients,
+    tcp_ip4_server: TcpServer,
+    tcp_ip6_server: TcpServer,
+    tcp_ip4_raw_client: TcpRawClient,
+    tcp_ip6_raw_client: TcpRawClient,
 ):
-    tcp_packet = get_tcp_packet(flag="S", options=tcp_options)
+    tcp_server = locals()[f"tcp_{ip_version}_server"]
+    tcp_raw_client = locals()[f"tcp_{ip_version}_raw_client"]
+
+    await tcp_server.start()
+    await tcp_raw_client.start()
+
+    tcp_packet = get_tcp_packet(flag="S", options=send_options)
 
     # Use zero passive timer to try to generate a cookie for each SYN.
     await xfw_with_forced_syncookie.rules_set(
@@ -435,31 +551,15 @@ async def test_syncookie_with_options(
             syn_ack, "SA"
         ), f"Unexpected reply flags {syn_ack.flags}; expected SA"
 
-        assert tuple(name for name, _ in syn_ack.options) == expected_synack_option_names
-
-        syn_ack_options = dict(syn_ack.options)
-        if "MSS" in syn_ack_options:
-            # xFW hides the SYN options from bpf_tcp_gen_syncookie(), so the
-            # helper returns the RFC default MSS for the address family.
-            # tcp_get_syncookie_mss() defines the MSS as:
-            #   IPv4: TCP_MSS_DEFAULT = 536
-            #   IPv6: IPV6_MIN_MTU - 40-byte IPv6 header - 20-byte TCP header
-            #         = 1280 - 40 - 20 = 1220
-            expected_mss = 536 if ip_version == "ip4" else 1220
-            assert syn_ack_options["MSS"] == expected_mss
-        if "WScale" in syn_ack_options:
-            assert syn_ack_options["WScale"] == 7
-        if "SAckOK" in syn_ack_options:
-            assert syn_ack_options["SAckOK"] == b""
-        if "Timestamp" in syn_ack_options:
-            sent_timestamp = dict(tcp_packet.options)["Timestamp"][0]
-            timestamp, echoed_timestamp = syn_ack_options["Timestamp"]
-            assert echoed_timestamp == sent_timestamp
-            assert timestamp & 0x3F == expected_timestamp_bits
-
         await tcp_raw_client.send_packet(TCP(flags="A"))
         assert await tcp_raw_client.close_connection() is True
 
+    # TSval high bits are the TCP clock; expected lists only cookie flags in the low 6 bits.
+    received_options = [
+        (name, (value[0] & 0x3F, value[1]) if name == "Timestamp" else value)
+        for name, value in syn_ack.options
+    ]
+    assert expected_options == received_options
     # xFW generates the cookie, while the kernel accepts the final ACK.
     assert kern_diff == [0, 1, 0]
     check_xfw_stats(diff, (1, 1, 0))
@@ -627,19 +727,109 @@ async def test_passive_mode(
     check_xfw_stats(diff, (0, 0, 0))
 
 
+# 2 flood clients * 2000 SYNs + 1 handshake
+_FLOOD_GENERATED = 4001
+
+
 @pytest.mark.parametrize(
-    "option,packets_amount,duration,packet",
+    "option,packets_amount,duration,packet,expected_xfw",
     [
-        pytest.param("flood_timer=1 passive_timer=0", 2000, 20, bad_packet, id="flood-bad"),
-        pytest.param("flood_timer=1 passive_timer=0", 2000, 20, ok_packet, id="flood-ok-1"),
-        pytest.param("flood_timer=15 passive_timer=0", 2000, 20, ok_packet, id="flood-ok-15"),
-        pytest.param("flood_timer=1000 passive_timer=0", 2000, 20, ok_packet, id="flood-ok-1000"),
-        # Options not starting with "flood_timer" test non-zero passive timer.
-        # These tests are not deterministic and we assert their results with rough ranges.
-        pytest.param("passive_timer=1 flood_timer=0", 2000, 20, bad_packet, id="passive-bad"),
-        pytest.param("passive_timer=1 flood_timer=0", 2000, 20, ok_packet, id="passive-ok-1"),
-        pytest.param("passive_timer=15 flood_timer=0", 2000, 20, ok_packet, id="passive-ok-15"),
-        pytest.param("passive_timer=1000 flood_timer=0", 2000, 20, ok_packet, id="passive-ok-1000"),
+        pytest.param(
+            "flood_timer=1 passive_timer=0",
+            2000,
+            20,
+            bad_packet,
+            {
+                "xfw_syncookie_generated_packets": _FLOOD_GENERATED,
+                "xfw_syncookie_received_packets": 1,
+                "xfw_syncookie_failed_packets": 0,
+            },
+            id="flood-bad",
+        ),
+        pytest.param(
+            "flood_timer=1 passive_timer=0",
+            2000,
+            20,
+            ok_packet,
+            {
+                "xfw_syncookie_generated_packets": _FLOOD_GENERATED,
+                "xfw_syncookie_received_packets": 1,
+                "xfw_syncookie_failed_packets": 0,
+            },
+            id="flood-ok-1",
+        ),
+        pytest.param(
+            "flood_timer=15 passive_timer=0",
+            2000,
+            20,
+            ok_packet,
+            {
+                "xfw_syncookie_generated_packets": _FLOOD_GENERATED,
+                "xfw_syncookie_received_packets": 1,
+                "xfw_syncookie_failed_packets": 0,
+            },
+            id="flood-ok-15",
+        ),
+        pytest.param(
+            "flood_timer=1000 passive_timer=0",
+            2000,
+            20,
+            ok_packet,
+            {
+                "xfw_syncookie_generated_packets": _FLOOD_GENERATED,
+                "xfw_syncookie_received_packets": 1,
+                "xfw_syncookie_failed_packets": 0,
+            },
+            id="flood-ok-1000",
+        ),
+        pytest.param(
+            "passive_timer=1 flood_timer=0",
+            2000,
+            20,
+            bad_packet,
+            {
+                "xfw_syncookie_generated_packets": [1, _FLOOD_GENERATED],
+                "xfw_syncookie_received_packets": [0, 2],
+                "xfw_syncookie_failed_packets": 0,
+            },
+            id="passive-bad",
+        ),
+        pytest.param(
+            "passive_timer=1 flood_timer=0",
+            2000,
+            20,
+            ok_packet,
+            {
+                "xfw_syncookie_generated_packets": [1, _FLOOD_GENERATED],
+                "xfw_syncookie_received_packets": [0, 2],
+                "xfw_syncookie_failed_packets": 0,
+            },
+            id="passive-ok-1",
+        ),
+        pytest.param(
+            "passive_timer=15 flood_timer=0",
+            2000,
+            20,
+            ok_packet,
+            {
+                "xfw_syncookie_generated_packets": [1, _FLOOD_GENERATED],
+                "xfw_syncookie_received_packets": [0, 2],
+                "xfw_syncookie_failed_packets": 0,
+            },
+            id="passive-ok-15",
+        ),
+        pytest.param(
+            "passive_timer=1000 flood_timer=0",
+            2000,
+            20,
+            ok_packet,
+            {
+                "xfw_syncookie_generated_packets": [1, _FLOOD_GENERATED],
+                "xfw_syncookie_received_packets": [0, 2],
+                "xfw_syncookie_failed_packets": 0,
+            },
+            id="passive-ok-1000",
+        ),
     ],
 )
 async def test_normal_connection_under_flood(
@@ -647,6 +837,7 @@ async def test_normal_connection_under_flood(
     packets_amount: int,
     duration: float,
     packet: TCP,
+    expected_xfw: dict,
     xfw_with_forced_syncookie: XFW,
     tcp_server: TcpServer,
     tcp_raw_client: TcpRawClient,
@@ -682,16 +873,17 @@ async def test_normal_connection_under_flood(
         assert all(sent == packets_amount for sent, _ in flood_results)
         await xfw_with_forced_syncookie.wait_softirq()
 
-    expected_total = packets_amount * len(group_of_clients) + 1
     check_kern_rcv(conf_logger, kern_diff)
-    if option.startswith("flood_timer"):
-        check_xfw_stats(diff, (expected_total, 1, 0))
-    else:
-        # The kernel Sent/Failed counters are namespace-global and cannot be
-        # combined with xFW metrics. Check xFW's share of passive-mode traffic.
-        assert 0 < diff["xfw_syncookie_generated_packets"] < expected_total
-        assert diff["xfw_syncookie_received_packets"] in (0, 1)
-        assert diff["xfw_syncookie_failed_packets"] == 0
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics=expected_xfw,
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+
+# 2 flood clients * 1000 handshakes + 1 legitimate handshake
+_HANDSHAKE_FLOOD_GENERATED = 2001
 
 
 @pytest.mark.parametrize(
