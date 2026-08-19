@@ -847,15 +847,15 @@ async def test_normal_connection_under_flood(
 ):
     await xfw_with_forced_syncookie.rules_set(f"xfw {{ tcp_syncookies {option}; }}")
 
+    coroutines = [
+        client.flood(packet=packet, amount=packets_amount, duration=duration)
+        for client in group_of_clients
+    ]
+
     async with (
         xfw_with_forced_syncookie.metrics_diff(stats_counters) as diff,
         xfw_with_forced_syncookie.syncookies_kern_stats_diff() as kern_diff,
     ):
-        coroutines = [
-            client.flood(packet=packet, amount=packets_amount, duration=duration)
-            for client in group_of_clients
-        ]
-
         async with run_in_background(coroutines) as tasks:
             # wait the middle of attack
             await asyncio.sleep(duration / 2)
@@ -880,10 +880,6 @@ async def test_normal_connection_under_flood(
         diff_metrics=expected_xfw,
     )
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
-
-
-# 2 flood clients * 1000 handshakes + 1 legitimate handshake
-_HANDSHAKE_FLOOD_GENERATED = 2001
 
 
 @pytest.mark.parametrize(
@@ -960,18 +956,17 @@ async def test_artificial_flood_timer(
         f"xfw {{ tcp_syncookies passive_timer={passive_timer} flood_timer={flood_timer}; }}"
     )
     expected_total = handshakes_amount * len(group_of_clients)
+    coroutines = [
+        client.flood_handshake(amount=handshakes_amount, duration=duration_sec)
+        for client in group_of_clients
+    ]
+    tasks = [asyncio.create_task(coro) for coro in coroutines]
 
     async with (
         xfw_with_forced_syncookie.metrics_diff(stats_counters) as flood_diff,
         xfw_with_forced_syncookie.syncookies_kern_stats_diff() as kern_diff,
     ):
         start_time = time.monotonic()
-        coroutines = [
-            client.flood_handshake(amount=handshakes_amount, duration=duration_sec)
-            for client in group_of_clients
-        ]
-        tasks = [asyncio.create_task(coro) for coro in coroutines]
-
         await asyncio.sleep(duration_sec / 2)
 
         # We must check that cookies, xfw issued, are correct (i.e. accepted by kernel)
