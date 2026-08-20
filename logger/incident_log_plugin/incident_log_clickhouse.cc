@@ -66,17 +66,14 @@ IncidentLogClickhouse::IncidentLogClickhouse(
 
 void
 IncidentLogClickhouse::append_event(
-	const IncidentKey &key, const IncidentLogStat &value, uint64_t drop_cnt)
+	const in6_addr &key, const IncidentLogStat &value, uint64_t drop_cnt)
 try {
 	// timestamp
 	auto cur_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
 		std::chrono::system_clock::now().time_since_epoch()).count();
 	block_[0]->As<TfwFieldType<TfwFields[0].code>::type>()->Append(cur_time_ms);
 
-	static_assert(sizeof(key.addr) == sizeof(in6_addr), "Key.addr must be 16 bytes");
-
-	const in6_addr& ip6 = reinterpret_cast<const in6_addr&>(key.addr);
-	block_[1]->As<TfwFieldType<TfwFields[1].code>::type>()->Append(ip6);
+	block_[1]->As<TfwFieldType<TfwFields[1].code>::type>()->Append(key);
 
 	block_[2]->As<TfwFieldType<TfwFields[2].code>::type>()->Append(value.reason);
 	block_[3]->As<TfwFieldType<TfwFields[3].code>::type>()->Append(value.packets);

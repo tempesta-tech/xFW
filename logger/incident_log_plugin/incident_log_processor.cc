@@ -17,15 +17,6 @@ using namespace std::chrono;
 using namespace std::chrono_literals;
 using namespace std::literals;
 
-template<>
-struct std::hash<IncidentKey> {
-	std::size_t operator()(const IncidentKey &k) const
-	{
-		return std::hash<std::string_view>()(
-			{ reinterpret_cast<const char *>(k.addr), sizeof(k.addr) });
-	}
-};
-
 IncidentLogProcessor::IncidentLogProcessor(unsigned cpu,
 	std::unique_ptr<IClickhouse> client, const char* table_name, size_t max_events)
 	: cpu_(cpu)
@@ -141,7 +132,7 @@ IncidentLogProcessor::create_incident_map(size_t cpu, bool active)
 	LIBBPF_OPTS(bpf_map_create_opts, opts, .map_flags = 0);
 	FdGuard fd(bpf_map_create(BPF_MAP_TYPE_HASH,
 		map_name.c_str(),
-		sizeof(IncidentKey),
+		sizeof(in6_addr),
 		sizeof(IncidentLogStat),
 		MAX_INCIDENTS_PER_CPU,
 		&opts),
@@ -188,7 +179,7 @@ IncidentLogProcessor::read_and_clear_inactive_map(uint64_t drop_cnt) noexcept
 		      "total is too small to hold MAX_INCIDENTS_PER_CPU");
 
 	int err = inactive_map_->drain_by_batch(
-		[&](std::span<const IncidentKey> keys,
+		[&](std::span<const in6_addr> keys,
 		    std::span<const IncidentLogStat> values)
 		{
 			for (size_t i = 0; i < keys.size(); ++i)

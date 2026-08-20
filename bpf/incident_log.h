@@ -82,12 +82,6 @@ update_drop_cnt()
 	ev->drop_cnt += 1;
 }
 
-static __always_inline void
-populate_incident_key(const XfwIp* ilog_addr, IncidentKey *key)
-{
-	__builtin_memcpy(key->addr, ilog_addr->addr32, sizeof(key->addr));
-}
-
 static __always_inline bool
 ilog_addr_presented(const XfwIp *addr)
 {
@@ -138,9 +132,6 @@ register_incident(const XfwIp* ilog_addr, uint32_t pkt_sz, enum XfwDropStat reas
 		return;
 	}
 
-	IncidentKey key;
-	populate_incident_key(ilog_addr, &key);
-
 	const u32 cpu = bpf_get_smp_processor_id();
 	void *incident_map = bpf_map_lookup_elem(&MAP_LOG_ACTIVE_FD_REF, &cpu);
 	if (unlikely(!incident_map)) {
@@ -149,7 +140,7 @@ register_incident(const XfwIp* ilog_addr, uint32_t pkt_sz, enum XfwDropStat reas
 		return;
 	}
 
-	IncidentLogStat *stat = bpf_map_lookup_elem(incident_map, &key);
+	IncidentLogStat *stat = bpf_map_lookup_elem(incident_map, &ilog_addr->in6);
 	if (stat) {
 		stat->reason |= (IncidentLogReasons)1 << reason;
 		stat->packets++;
@@ -162,7 +153,8 @@ register_incident(const XfwIp* ilog_addr, uint32_t pkt_sz, enum XfwDropStat reas
 		.packets = 1,
 		.bytes = pkt_sz
 	};
-	long ret = bpf_map_update_elem(incident_map, &key, &new_stat, BPF_NOEXIST);
+	long ret = bpf_map_update_elem(incident_map, &ilog_addr->in6, &new_stat,
+				       BPF_NOEXIST);
 	if (likely(ret >= 0)) {
 		const uint64_t new_size = update_map_info((uint64_t)incident_map);
 		if (new_size >= INCIDENT_FLUSH_THRESHOLD)

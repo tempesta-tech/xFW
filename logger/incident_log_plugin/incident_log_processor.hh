@@ -8,6 +8,7 @@
  */
 #pragma once
 #include <chrono>
+#include <netinet/in.h>
 
 #include <clickhouse/client.h>
 
@@ -42,7 +43,7 @@ public:
 	virtual std::string_view name() const noexcept override;
 
 private:
-	using BpfIncidentLogMap = BpfHashMap<IncidentKey, IncidentLogStat>;
+	using BpfIncidentLogMap = BpfHashMap<in6_addr, IncidentLogStat>;
 
 	static std::unique_ptr<BpfIncidentLogMap>
 	create_incident_map(size_t cpu, bool active);

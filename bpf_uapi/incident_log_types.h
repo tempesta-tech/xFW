@@ -34,10 +34,6 @@
 #define INCIDENT_FLUSH_THRESHOLD	(MAX_INCIDENTS_PER_CPU * 4 / 5) /* 80% */
 #define MAX_INCIDENT_CPU		128
 
-typedef struct IncidentKey {
-	__be32			addr[4]; /* IPv4 occupies one word; remaining words are zero. */
-} IncidentKey;
-
 typedef uint64_t	IncidentLogReasons;
 
 /*
