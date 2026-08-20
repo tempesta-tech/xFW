@@ -7,7 +7,7 @@ import os.path
 import typing
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, fields
-from typing import Iterator, Optional, AsyncGenerator
+from typing import AsyncGenerator, Iterator, Optional
 
 import httpx
 
@@ -411,16 +411,18 @@ class XFW(NetworkStateful):
         return tuple((int(stat.strip()) for stat in stats.split(" ")))
 
     @asynccontextmanager
-    async def syncookies_kern_stats_diff(self) -> AsyncGenerator[list[int], None]:
+    async def syncookies_kern_stats_diff(self) -> AsyncGenerator[dict[str, int], None]:
         """
         Yield the kernel SyncookieSent, SyncookieRecv, SyncookieFailed delta.
         """
-        stats_before = await self.syncookies_read_kern_stats()
-        diff = [0, 0, 0]
+        sent, received, failed = await self.syncookies_read_kern_stats()
+        diff = {"SyncookieSent": 0, "SyncookieRecv": 0, "SyncookieFailed": 0}
         yield diff
 
-        stats_after = await self.syncookies_read_kern_stats()
-        diff[:] = [after - before for after, before in zip(stats_after, stats_before)]
+        sent_after, received_after, failed_after = await self.syncookies_read_kern_stats()
+        diff["SyncookieSent"] = sent_after - sent
+        diff["SyncookieRecv"] = received_after - received
+        diff["SyncookieFailed"] = failed_after - failed
 
     async def syncookies_value_get(self) -> int:
         code, stdout, stderr = await run_cmd(
