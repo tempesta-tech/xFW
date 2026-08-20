@@ -41,6 +41,9 @@ def cmp_stats(value: int, expected: StatExpectation) -> bool:
 
     return expected[0] <= value <= expected[1]
 
+# Reference https://tempesta-tech.com/tempesta-escudo/knowledge-base/TCP-SYN-Cookies/#statistics
+# for the description of the Linux kernel and xFW SYN cookie statistic counters
+# and their relation.
 
 def check_kern_rcv(logger: logging.Logger, kern_diff: list[int]) -> None:
     """
