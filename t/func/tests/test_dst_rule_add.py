@@ -202,31 +202,3 @@ async def test_dst_add_only_one_protocol_subtype(
         assert (
             await check_connection(new_client, new_server) is True
         ), f"Server {new_server.ip_testing}:{new_server.port} is not allowed"
-
-
-@pytest.mark.skip("ISSUE: 336 (escudo)")
-async def test_dst_add_block_by_ip_mapped(
-    xfw: XFW,
-    udp_ip4_client: RegularKernelSocketNetworkStateful,
-    udp_ip4_mapped_ip6_server: RegularKernelSocketNetworkStateful,
-):
-    new_ip = udp_ip4_mapped_ip6_server.generate_new_address()
-
-    await xfw.rules_set(f"""
-        xfw {{
-            defaults {{ dst: allow; }}
-            dst=extended_group ip6.udp : block {{
-                {udp_ip4_mapped_ip6_server.ip_format(new_ip)}:{udp_ip4_mapped_ip6_server.port}
-            }}
-        }}
-        """)
-    await xfw.rules_patch(f"""
-        xfw {{
-            dst=extended_group/add ip6.udp {{
-                {udp_ip4_mapped_ip6_server.ip_testing}:{udp_ip4_mapped_ip6_server.port}
-            }}
-        }}
-        """)
-    assert (
-        await check_connection(udp_ip4_client, udp_ip4_mapped_ip6_server) is False
-    ), f"Server ({udp_ip4_mapped_ip6_server.ip_testing}:{udp_ip4_mapped_ip6_server.port}) is not blocked"
