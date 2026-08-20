@@ -32,7 +32,7 @@ typedef struct XfwIpv4LpmKey {
 typedef struct XfwIpv6LpmKey {
 	uint32_t	prefixlen;
 	__be32		addr[4];
-	
+
 #ifdef __cplusplus
 	bool operator==(const XfwIpv6LpmKey&) const = default;
 #endif
@@ -86,7 +86,7 @@ typedef struct XfwDstKey {
 		, proto(l4_proto)
 		, port(port)
 	{
-		xfw_ipv4_to_ipv6_mapped(ip, addr.addr32);
+		xfw_assign_ip4_addr(ip, addr.addr32);
 	}
 
 	explicit XfwDstKey(uint8_t ipver, uint8_t l4_proto, __be16 port,
