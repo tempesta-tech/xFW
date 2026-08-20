@@ -6,9 +6,16 @@ import socket
 from typing import Optional
 
 from scapy.all import Raw
-from scapy.layers.l2 import Ether
+from scapy.layers.inet6 import ICMPv6ND_NA, ICMPv6ND_NS
+from scapy.layers.l2 import ARP, Ether
 
 from framework.stateful import SocketBaseNetworkStateful
+
+_SYSTEM_LAYERS = (
+    ARP,  # IPv4 ARP
+    ICMPv6ND_NS,  # IPv6 Neighbor Solicitation
+    ICMPv6ND_NA,  # IPv6 Neighbor Advertisement
+)
 
 
 class EtherRawClient(SocketBaseNetworkStateful):
@@ -52,14 +59,21 @@ class EtherRawClient(SocketBaseNetworkStateful):
         Receive raw network data and reconstruct it into a Scapy packet.
 
         Retrieves raw binary data from the network using the internal low-level
-        `_receive` method.
+        `_receive` method
+
+        Skip system packets.
         """
         raw_data = await self._receive()
 
         if raw_data is None:
             return None
 
-        return self.decode_data(raw_data)
+        packet = self.decode_data(raw_data)
+
+        # we should skip system packets like ARP for ICMP
+        if any(packet.haslayer(layer) for layer in _SYSTEM_LAYERS):
+            return await self.receive_packet()
+        return packet
 
     async def set_sock_proto(self, proto: int):
         self.socket_proto = proto
