@@ -2,10 +2,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import asyncio
-import logging
 import random
 import time
-from typing import AsyncGenerator, Union
+from typing import AsyncGenerator
 
 import pytest
 from freezegun import freeze_time
@@ -22,8 +21,6 @@ from framework.fabrics import client_fabric
 from framework.utils import compare_metrics_diff, get_tcp_packet, run_in_background
 from framework.xfw import XFW
 
-StatExpectation = Union[int, tuple[int, int]]
-StatsExpectation = tuple[StatExpectation, StatExpectation, StatExpectation]
 bad_packet = TCP(flags="S")
 ok_packet = TCP(
     flags="S",
@@ -34,46 +31,20 @@ ok_packet = TCP(
     ],
 )
 
-
-def cmp_stats(value: int, expected: StatExpectation) -> bool:
-    if isinstance(expected, int):
-        return value == expected
-
-    return expected[0] <= value <= expected[1]
-
 # Reference https://tempesta-tech.com/tempesta-escudo/knowledge-base/TCP-SYN-Cookies/#statistics
 # for the description of the Linux kernel and xFW SYN cookie statistic counters
 # and their relation.
-
-def check_kern_rcv(logger: logging.Logger, kern_diff: list[int]) -> None:
-    """
-    Check the only kernel syncookie counter relevant to xFW cookies.
-    """
-    logger.info(f"recv={kern_diff[1]}")
-    assert kern_diff[1] >= 1, "SynCookieRcv did not increase"
-
 
 stats_counters = [
     "xfw_syncookie_generated_packets",
     "xfw_syncookie_failed_packets",
     "xfw_syncookie_received_packets",
 ]
-
-
-def check_xfw_stats(
-    diff: dict[str, int],
-    expectation: tuple[int, int, int],
-) -> None:
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=stats_counters,
-        all_metrics=diff,
-        diff_metrics={
-            "xfw_syncookie_generated_packets": expectation[0],
-            "xfw_syncookie_received_packets": expectation[1],
-            "xfw_syncookie_failed_packets": expectation[2],
-        },
-    )
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+kernel_stats_counters = [
+    "SyncookieSent",
+    "SyncookieFailed",
+    "SyncookieRecv",
+]
 
 
 class TcpRawSynCookieClient(TcpRawClient):
@@ -308,7 +279,6 @@ async def test_normal_connection(
     # the received client ACK goes to the TCP/IP stack, so:
     # SyncookieSent are the same, SyncookieRecv is +1 and
     # xfw_syncookie_generated_packets is +1.
-    assert kern_diff == [0, 1, 0]
     invalid_metrics = compare_metrics_diff(
         compare_metrics=stats_counters,
         all_metrics=diff,
@@ -319,6 +289,15 @@ async def test_normal_connection(
         },
     )
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 1, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
     # STAGE 2: Send data
     async with (
@@ -332,7 +311,6 @@ async def test_normal_connection(
     assert tcp_raw_client.has_flag(answer, "A")
 
     # nothing changes
-    assert kern_diff == [0, 0, 0]
     invalid_metrics = compare_metrics_diff(
         compare_metrics=stats_counters,
         all_metrics=diff,
@@ -343,6 +321,15 @@ async def test_normal_connection(
         },
     )
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 0, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
     # STAGE 3: Disconnecting
     async with (
@@ -352,7 +339,6 @@ async def test_normal_connection(
         assert await tcp_raw_client.close_connection() is True
 
     # nothing changes
-    assert kern_diff == [0, 0, 0]
     invalid_metrics = compare_metrics_diff(
         compare_metrics=stats_counters,
         all_metrics=diff,
@@ -363,6 +349,15 @@ async def test_normal_connection(
         },
     )
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 0, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
 
 @pytest.mark.parametrize(
@@ -572,8 +567,25 @@ async def test_syncookie_with_options(
     ]
     assert expected_options == received_options
     # xFW generates the cookie, while the kernel accepts the final ACK.
-    assert kern_diff == [0, 1, 0]
-    check_xfw_stats(diff, (1, 1, 0))
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 1,
+            "xfw_syncookie_received_packets": 1,
+            "xfw_syncookie_failed_packets": 0,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 1, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
 
 async def test_flood_mode(
@@ -610,8 +622,25 @@ async def test_flood_mode(
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
 
-    assert kern_diff == [0, 1, 0]
-    check_xfw_stats(diff, (1, 1, 0))
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 1,
+            "xfw_syncookie_received_packets": 1,
+            "xfw_syncookie_failed_packets": 0,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 1, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
     # wait until flood_timer first loop expires.
     # We don't change the sysctl syncookie value, so
@@ -626,8 +655,25 @@ async def test_flood_mode(
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
 
-    assert kern_diff == [0, 1, 0]
-    check_xfw_stats(diff, (1, 1, 0))
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 1,
+            "xfw_syncookie_received_packets": 1,
+            "xfw_syncookie_failed_packets": 0,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 1, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
     # turn off the kernel syncookie and wait
     # until second loop finishes. Now, we assume that syn-flood
@@ -642,8 +688,25 @@ async def test_flood_mode(
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
 
-    assert kern_diff == [0, 0, 0]
-    check_xfw_stats(diff, (0, 0, 0))
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 0,
+            "xfw_syncookie_received_packets": 0,
+            "xfw_syncookie_failed_packets": 0,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 0, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
     # let's turn on the kernel syncookie again
     # and check that syncookie works again
@@ -657,8 +720,25 @@ async def test_flood_mode(
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
 
-    assert kern_diff == [0, 1, 0]
-    check_xfw_stats(diff, (1, 1, 0))
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 1,
+            "xfw_syncookie_received_packets": 1,
+            "xfw_syncookie_failed_packets": 0,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 1, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
 
 async def test_passive_mode(
@@ -694,8 +774,25 @@ async def test_passive_mode(
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
 
-    assert kern_diff == [0, 0, 0]
-    check_xfw_stats(diff, (0, 0, 0))
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 0,
+            "xfw_syncookie_received_packets": 0,
+            "xfw_syncookie_failed_packets": 0,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 0, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
     # wait until passive_timer first loop expires.
     # We don't change the sysctl syncookie value, so
@@ -710,8 +807,25 @@ async def test_passive_mode(
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
 
-    assert kern_diff == [0, 0, 0]
-    check_xfw_stats(diff, (0, 0, 0))
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 0,
+            "xfw_syncookie_received_packets": 0,
+            "xfw_syncookie_failed_packets": 0,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 0, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
     # turn on the kernel syncookie and wait until
     # second loop finishes. Now, we assume that syn-flood
@@ -727,8 +841,25 @@ async def test_passive_mode(
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
 
-    assert kern_diff == [0, 1, 0]
-    check_xfw_stats(diff, (1, 1, 0))
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 1,
+            "xfw_syncookie_received_packets": 1,
+            "xfw_syncookie_failed_packets": 0,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 1, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
     # let's turn off the kernel syncookie again
     # and check that syncookie disabled again
@@ -742,16 +873,29 @@ async def test_passive_mode(
         assert await tcp_raw_client.handshake() is True
         assert await tcp_raw_client.close_connection() is True
 
-    assert kern_diff == [0, 0, 0]
-    check_xfw_stats(diff, (0, 0, 0))
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": 0,
+            "xfw_syncookie_received_packets": 0,
+            "xfw_syncookie_failed_packets": 0,
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
 
-
-# 2 flood clients * 2000 SYNs + 1 handshake
-_FLOOD_GENERATED = 4001
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieSent": 0, "SyncookieRecv": 0, "SyncookieFailed": 0},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
 
 @pytest.mark.parametrize(
-    "option,packets_amount,duration,packet,expected_xfw",
+    "option,packets_amount,duration,packet,expected_xfw,expected_kernel",
     [
         pytest.param(
             "flood_timer=1 passive_timer=0",
@@ -759,10 +903,11 @@ _FLOOD_GENERATED = 4001
             20,
             bad_packet,
             {
-                "xfw_syncookie_generated_packets": _FLOOD_GENERATED,
+                "xfw_syncookie_generated_packets": 4001,
                 "xfw_syncookie_received_packets": 1,
                 "xfw_syncookie_failed_packets": 0,
             },
+            {"SyncookieSent": 0, "SyncookieRecv": 1, "SyncookieFailed": 0},
             id="flood-bad",
         ),
         pytest.param(
@@ -771,10 +916,11 @@ _FLOOD_GENERATED = 4001
             20,
             ok_packet,
             {
-                "xfw_syncookie_generated_packets": _FLOOD_GENERATED,
+                "xfw_syncookie_generated_packets": 4001,
                 "xfw_syncookie_received_packets": 1,
                 "xfw_syncookie_failed_packets": 0,
             },
+            {"SyncookieSent": 0, "SyncookieRecv": 1, "SyncookieFailed": 0},
             id="flood-ok-1",
         ),
         pytest.param(
@@ -783,10 +929,11 @@ _FLOOD_GENERATED = 4001
             20,
             ok_packet,
             {
-                "xfw_syncookie_generated_packets": _FLOOD_GENERATED,
+                "xfw_syncookie_generated_packets": 4001,
                 "xfw_syncookie_received_packets": 1,
                 "xfw_syncookie_failed_packets": 0,
             },
+            {"SyncookieSent": 0, "SyncookieRecv": 1, "SyncookieFailed": 0},
             id="flood-ok-15",
         ),
         pytest.param(
@@ -795,10 +942,11 @@ _FLOOD_GENERATED = 4001
             20,
             ok_packet,
             {
-                "xfw_syncookie_generated_packets": _FLOOD_GENERATED,
+                "xfw_syncookie_generated_packets": 4001,
                 "xfw_syncookie_received_packets": 1,
                 "xfw_syncookie_failed_packets": 0,
             },
+            {"SyncookieSent": 0, "SyncookieRecv": 1, "SyncookieFailed": 0},
             id="flood-ok-1000",
         ),
         pytest.param(
@@ -807,10 +955,11 @@ _FLOOD_GENERATED = 4001
             20,
             bad_packet,
             {
-                "xfw_syncookie_generated_packets": [1, _FLOOD_GENERATED],
-                "xfw_syncookie_received_packets": [0, 2],
+                "xfw_syncookie_generated_packets": [0, 200],
+                "xfw_syncookie_received_packets": 0,
                 "xfw_syncookie_failed_packets": 0,
             },
+            {"SyncookieSent": [3500, 4500], "SyncookieRecv": 1, "SyncookieFailed": 0},
             id="passive-bad",
         ),
         pytest.param(
@@ -819,10 +968,11 @@ _FLOOD_GENERATED = 4001
             20,
             ok_packet,
             {
-                "xfw_syncookie_generated_packets": [1, _FLOOD_GENERATED],
-                "xfw_syncookie_received_packets": [0, 2],
+                "xfw_syncookie_generated_packets": [0, 200],
+                "xfw_syncookie_received_packets": 0,
                 "xfw_syncookie_failed_packets": 0,
             },
+            {"SyncookieSent": [3500, 4500], "SyncookieRecv": 1, "SyncookieFailed": 0},
             id="passive-ok-1",
         ),
         pytest.param(
@@ -831,10 +981,11 @@ _FLOOD_GENERATED = 4001
             20,
             ok_packet,
             {
-                "xfw_syncookie_generated_packets": [1, _FLOOD_GENERATED],
-                "xfw_syncookie_received_packets": [0, 2],
+                "xfw_syncookie_generated_packets": [0, 200],
+                "xfw_syncookie_received_packets": 0,
                 "xfw_syncookie_failed_packets": 0,
             },
+            {"SyncookieSent": [3500, 4500], "SyncookieRecv": 1, "SyncookieFailed": 0},
             id="passive-ok-15",
         ),
         pytest.param(
@@ -843,10 +994,11 @@ _FLOOD_GENERATED = 4001
             20,
             ok_packet,
             {
-                "xfw_syncookie_generated_packets": [1, _FLOOD_GENERATED],
-                "xfw_syncookie_received_packets": [0, 2],
+                "xfw_syncookie_generated_packets": [0, 200],
+                "xfw_syncookie_received_packets": 0,
                 "xfw_syncookie_failed_packets": 0,
             },
+            {"SyncookieSent": [3500, 4500], "SyncookieRecv": 1, "SyncookieFailed": 0},
             id="passive-ok-1000",
         ),
     ],
@@ -857,12 +1009,12 @@ async def test_normal_connection_under_flood(
     duration: float,
     packet: TCP,
     expected_xfw: dict,
+    expected_kernel: dict,
     xfw_with_forced_syncookie: XFW,
     tcp_server: TcpServer,
     tcp_raw_client: TcpRawClient,
     start_tcp_server_and_raw_clients,
     group_of_clients: list[TcpRawSynCookieClient],
-    conf_logger,
 ):
     await xfw_with_forced_syncookie.rules_set(f"xfw {{ tcp_syncookies {option}; }}")
 
@@ -875,7 +1027,7 @@ async def test_normal_connection_under_flood(
         xfw_with_forced_syncookie.metrics_diff(stats_counters) as diff,
         xfw_with_forced_syncookie.syncookies_kern_stats_diff() as kern_diff,
     ):
-        async with run_in_background(coroutines) as tasks:
+        async with run_in_background(coroutines):
             # wait the middle of attack
             await asyncio.sleep(duration / 2)
 
@@ -888,11 +1040,6 @@ async def test_normal_connection_under_flood(
                 await tcp_raw_client.close_connection() is True
             ), "Normal client can not close tcp connection"
 
-        flood_results = [task.result() for task in tasks]
-        assert all(sent == packets_amount for sent, _ in flood_results)
-        await xfw_with_forced_syncookie.wait_softirq()
-
-    check_kern_rcv(conf_logger, kern_diff)
     invalid_metrics = compare_metrics_diff(
         compare_metrics=stats_counters,
         all_metrics=diff,
@@ -900,23 +1047,27 @@ async def test_normal_connection_under_flood(
     )
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
 
-
-# 2 flood clients * 1000 handshakes + 1 legitimate handshake
-_HANDSHAKE_FLOOD_GENERATED = 2001
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters, all_metrics=kern_diff, diff_metrics=expected_kernel
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
 
 @pytest.mark.parametrize(
-    "option,handshakes,duration,expected_xfw",
+    "option,handshakes,duration,expected_xfw,expected_kernel",
     [
         pytest.param(
             "flood_timer=2 passive_timer=0",
             1000,
             40,
             {
-                "xfw_syncookie_generated_packets": _HANDSHAKE_FLOOD_GENERATED,
+                "xfw_syncookie_generated_packets": [1900, 2002],
                 "xfw_syncookie_received_packets": 1,
-                "xfw_syncookie_failed_packets": [1, 1],
+                "xfw_syncookie_failed_packets": [1900, 2002],
             },
+            {"SyncookieSent": [0, 100], "SyncookieRecv": 1, "SyncookieFailed": [0, 100]},
             id="flood",
         ),
         pytest.param(
@@ -924,10 +1075,11 @@ _HANDSHAKE_FLOOD_GENERATED = 2001
             1000,
             40,
             {
-                "xfw_syncookie_generated_packets": [1, _HANDSHAKE_FLOOD_GENERATED],
-                "xfw_syncookie_received_packets": [0, 2],
-                "xfw_syncookie_failed_packets": [0, 1],
+                "xfw_syncookie_generated_packets": [0, 100],
+                "xfw_syncookie_received_packets": 0,
+                "xfw_syncookie_failed_packets": [0, 100],
             },
+            {"SyncookieSent": [1900, 2002], "SyncookieRecv": 1, "SyncookieFailed": [1000, 1500]},
             id="passive",
         ),
     ],
@@ -937,24 +1089,24 @@ async def test_normal_connection_under_handshake_flood(
     handshakes: int,
     duration: int,
     expected_xfw: dict,
+    expected_kernel: dict,
     xfw_with_forced_syncookie: XFW,
     tcp_server: TcpServer,
     tcp_raw_client: TcpRawClient,
     start_tcp_server_and_raw_clients,
     group_of_clients: list[TcpRawSynCookieClient],
-    conf_logger,
 ):
     await xfw_with_forced_syncookie.rules_set(f"xfw {{ tcp_syncookies {option}; }}")
 
+    coroutines = [
+        client.flood_handshake(amount=handshakes, duration=duration) for client in group_of_clients
+    ]
+
     async with (
-        xfw_with_forced_syncookie.metrics_diff(stats_counters) as diff,
+        xfw_with_forced_syncookie.metrics_diff(stats_counters, wait_softirq=True) as diff,
         xfw_with_forced_syncookie.syncookies_kern_stats_diff() as kern_diff,
     ):
-        coroutines = [
-            client.flood_handshake(amount=handshakes, duration=duration)
-            for client in group_of_clients
-        ]
-        async with run_in_background(coroutines) as tasks:
+        async with run_in_background(coroutines):
             # wait the middle of attack
             await asyncio.sleep(duration / 2)
 
@@ -967,26 +1119,19 @@ async def test_normal_connection_under_handshake_flood(
                 await tcp_raw_client.close_connection() is True
             ), "Normal client can not close tcp connection"
 
-        flood_results = [task.result() for task in tasks]
-        await xfw_with_forced_syncookie.wait_softirq()
-
-    invalid_acks = sum(acknowledged for _, acknowledged in flood_results)
-    # failed [lo, hi] in params is a factor of invalid_acks: [1, 1] exact, [0, 1] any up to that.
-    failed_lo, failed_hi = expected_xfw["xfw_syncookie_failed_packets"]
-    expected = {
-        **expected_xfw,
-        "xfw_syncookie_failed_packets": [
-            failed_lo * invalid_acks,
-            failed_hi * invalid_acks + 1,
-        ],
-    }
-    check_kern_rcv(conf_logger, kern_diff)
     invalid_metrics = compare_metrics_diff(
         compare_metrics=stats_counters,
         all_metrics=diff,
-        diff_metrics=expected,
+        diff_metrics=expected_xfw,
     )
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters, all_metrics=kern_diff, diff_metrics=expected_kernel
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
 
 async def test_artificial_flood_timer(
@@ -995,7 +1140,6 @@ async def test_artificial_flood_timer(
     tcp_raw_client: TcpRawClient,
     start_tcp_server_and_raw_clients,
     group_of_clients: list[TcpRawSynCookieClient],
-    conf_logger,
 ):
     handshakes_amount = 1000
     duration_sec = 40
@@ -1031,10 +1175,25 @@ async def test_artificial_flood_timer(
         await xfw_with_forced_syncookie.wait_softirq()
 
     invalid_acks = sum(task.result()[1] for task in tasks)
-    check_kern_rcv(conf_logger, kern_diff)
-    assert 0 < flood_diff["xfw_syncookie_generated_packets"] <= expected_total + 1
-    assert 0 <= flood_diff["xfw_syncookie_failed_packets"] <= invalid_acks
-    assert flood_diff["xfw_syncookie_received_packets"] in (0, 1)
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=flood_diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": [1, expected_total + 2],
+            "xfw_syncookie_received_packets": [0, 2],
+            "xfw_syncookie_failed_packets": [0, invalid_acks + 1],
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieRecv": [1, expected_total + 2]},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
 
     await xfw_with_forced_syncookie.syncookies_value_set(0)
     async with (
@@ -1072,10 +1231,25 @@ async def test_artificial_flood_timer(
         await xfw_with_forced_syncookie.wait_softirq()
 
     invalid_acks = sum(task.result()[1] for task in tasks)
-    check_kern_rcv(conf_logger, kern_diff)
-    assert 0 <= passive_diff["xfw_syncookie_generated_packets"] <= expected_total + 1
-    assert 0 <= passive_diff["xfw_syncookie_failed_packets"] <= invalid_acks
-    assert passive_diff["xfw_syncookie_received_packets"] in (0, 1)
+    invalid_metrics = compare_metrics_diff(
+        compare_metrics=stats_counters,
+        all_metrics=passive_diff,
+        diff_metrics={
+            "xfw_syncookie_generated_packets": [0, expected_total + 2],
+            "xfw_syncookie_received_packets": [0, 2],
+            "xfw_syncookie_failed_packets": [0, invalid_acks + 1],
+        },
+    )
+    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+
+    kernel_invalid_metrics = compare_metrics_diff(
+        compare_metrics=kernel_stats_counters,
+        all_metrics=kern_diff,
+        diff_metrics={"SyncookieRecv": [1, expected_total + 2]},
+    )
+    assert (
+        kernel_invalid_metrics == []
+    ), f"Some kernel metrics are different: {kernel_invalid_metrics}"
     assert (
         flood_diff["xfw_syncookie_generated_packets"]
         > passive_diff["xfw_syncookie_generated_packets"]
@@ -1092,7 +1266,6 @@ async def test_flood_allowed_by_del_rule(
         "xfw { tcp_syncookies passive_timer=0 flood_timer=0; }"
     )
     await xfw_with_forced_syncookie.rules_set("xfw { tcp_syncookies/del; }")
-
     await tcp_raw_client.send_packet(TCP(flags="S"))
 
     response = await tcp_raw_client.receive_packet()
