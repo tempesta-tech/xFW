@@ -37,7 +37,7 @@ populate_dst_info(const XfwGlobalCtx *ctx, XfwDstKey *key, __u8 *default_idx)
 	key->proto = (uint8_t)ctx->l4_proto;
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		key->ipver = XFW_IP_VER_4;
-		xfw_ipv4_to_ipv6_mapped(ctx->iph4->daddr, key->addr.addr32);
+		xfw_assign_ip4_addr(ctx->iph4->daddr, key->addr.addr32);
 		if (ctx->l4_proto == XFW_L4_PROTO_TCP) {
 			key->port = ctx->th->dest;
 			*default_idx = XFW_DEFAULT_DST_TCP_IP4;

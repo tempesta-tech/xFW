@@ -46,3 +46,12 @@ xfw_ipv6_addr_cpy(__be32 *dst, const struct in6_addr *src)
 	memcpy(dst, src->s6_addr, sizeof(__be32) * 4);
 #endif
 }
+
+static __always_inline void
+xfw_assign_ip4_addr(__be32 ipv4, __be32 addr[4])
+{
+	addr[0] = 0;
+	addr[1] = 0;
+	addr[2] = 0;
+	addr[3] = ipv4;
+}
