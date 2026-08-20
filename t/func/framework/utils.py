@@ -9,7 +9,16 @@ import enum
 import functools
 import logging
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional, Protocol, Type, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Coroutine,
+    Optional,
+    Protocol,
+    Type,
+    Union,
+)
 
 import backoff
 from scapy.layers.inet import TCP
@@ -96,9 +105,7 @@ async def run_cmd(
 
 
 @asynccontextmanager
-async def run_in_background(
-    coroutines: list[Coroutine[Any, Any, Any]], timeout: int = 60
-):
+async def run_in_background(coroutines: list[Coroutine[Any, Any, Any]], timeout: int = 60):
     tasks = [asyncio.create_task(coroutine) for coroutine in coroutines]
 
     yield tasks
