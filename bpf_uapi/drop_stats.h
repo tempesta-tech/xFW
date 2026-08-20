@@ -103,8 +103,8 @@ static const struct XfwStatInfo xfw_drop_stats[] = {
 						   "Blocked by 'defaults/src_port: "
 						   "block' rule"},
 	[XFW_DROP_SRC_PORT_DEFAULT_RATE_LIMITED] = {"xfw_src_port_default_rate_limited",
-						   "Blocked by 'defaults/src_port: "
-						   "ratelimit' rule"},
+						    "Blocked by 'defaults/src_port: "
+						    "ratelimit' rule"},
 	[XFW_DROP_SRC_IP_BLOCKED]		= {"xfw_src_ip_blocked",
 						   "Blocked by 'src_ip: block' rule"},
 	[XFW_DROP_SRC_IP_RATE_LIMITED]		= {"xfw_src_ip_rate_limited",
