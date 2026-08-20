@@ -172,5 +172,6 @@ async def test_allow_arbitrary_ip_protocol(
 
     received = await ether_raw_server.receive_packet()
     assert received is not None
+    assert received.haslayer(IP), received
     assert received[IP].proto == protocol
     assert bytes(received[Raw].load) == b"payload"
