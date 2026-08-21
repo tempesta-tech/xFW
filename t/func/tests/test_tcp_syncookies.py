@@ -837,7 +837,12 @@ async def test_normal_connection_under_flood(
 
 # 2 flood clients * 1000 handshakes + 1 legitimate handshake
 _HANDSHAKE_FLOOD_GENERATED = 2001
-_HANDSHAKE_FLOOD_DELTA = 500
+
+# The packet flood delta is large because kernel results have a wide
+# range. The optimal range is 200 for XFW metrics and
+# 500 for the kernel. However, tests on VIRTIO have shown
+# a difference of 630
+_HANDSHAKE_FLOOD_DELTA = 700
 _HANDSHAKE_FLOOD_GENERATED_MAX_VALUE = [
     _HANDSHAKE_FLOOD_GENERATED - _HANDSHAKE_FLOOD_DELTA,
     _HANDSHAKE_FLOOD_GENERATED + _HANDSHAKE_FLOOD_DELTA,
