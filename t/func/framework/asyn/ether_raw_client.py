@@ -6,7 +6,14 @@ import socket
 from typing import Optional
 
 from scapy.all import Raw
-from scapy.layers.inet6 import ICMPv6ND_NA, ICMPv6ND_NS
+from scapy.layers.inet6 import (
+    ICMPv6MLReport,
+    ICMPv6MLReport2,
+    ICMPv6ND_NA,
+    ICMPv6ND_NS,
+    ICMPv6ND_RA,
+    ICMPv6ND_RS,
+)
 from scapy.layers.l2 import ARP, Ether
 
 from framework.stateful import SocketBaseNetworkStateful
@@ -15,6 +22,10 @@ _SYSTEM_LAYERS = (
     ARP,  # IPv4 ARP
     ICMPv6ND_NS,  # IPv6 Neighbor Solicitation
     ICMPv6ND_NA,  # IPv6 Neighbor Advertisement
+    ICMPv6ND_RS,
+    ICMPv6ND_RA,
+    ICMPv6MLReport,
+    ICMPv6MLReport2,
 )
 
 
