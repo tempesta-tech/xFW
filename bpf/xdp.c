@@ -91,25 +91,6 @@ create_metadata(XfwGlobalCtx *ctx, struct xdp_md *xdp)
 	return XFW_CTX_CONTINUE;
 }
 
-/* Rewrite IPv4-mapped IPv6 LPM keys so IPv4 source rules can handle them. */
-static __always_inline int
-try_convert_ipv6_to_ipv4(XfwIpLpmKey *key)
-{
-	if (key->addr6.addr[0] == 0 && key->addr6.addr[1] == 0
-	    && (key->addr6.addr[2] == 0
-		|| key->addr6.addr[2] == bpf_htonl(0xffff)))
-	{
-		__be32 ip4 = key->addr6.addr[3];
-		key->addr4.prefixlen = key->addr6.prefixlen - 96;
-		key->addr4.addr = ip4;
-
-		XFW_CTX_DBG("IPv4-mapped source key matched the IPv4 rule tree");
-
-		return 0;
-	}
-	return -1;
-}
-
 static __always_inline uint8_t
 icmp_default_by_proto(uint8_t l4_proto)
 {
@@ -244,14 +225,7 @@ static __always_inline void
 populate_src_info(const XfwGlobalCtx *ctx, void **src_ip_map,
 		  XfwIpLpmKey *ip_lpm, uint8_t *src_default)
 {
-	/*
-	 * Handle special case of IPv6 address with embedded IPv4.
-	 * This was firstly introduced for geoip matching.
-	 * src filter treats those ipv6 addresses as ipv4.
-	 * So for consistency we use ipv4 defaults in this case.
-	 */
-	if (ctx->ipver == bpf_htons(ETH_P_IPV6)
-	    && try_convert_ipv6_to_ipv4(ip_lpm) < 0)
+	if (ctx->ipver == bpf_htons(ETH_P_IPV6))
 	{
 		if (ctx->l4_proto == XFW_L4_PROTO_UDP) {
 			*src_default = XFW_DEFAULT_SRC_IP_UDP_IP6;
@@ -530,7 +504,7 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
  * - SYN flood protection is enforced when required (xdp.c),
  * - connections using SYN cookies are correctly validated and added to the
  * trusted set in XDP.
- * 
+ *
  * TODO #19: It may be necessary to move some authentication logic to a separate
  * xdp.c for upstream connections.
  */
@@ -601,7 +575,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		CHAIN(tcp_anomaly_filter, ctx);
 
 		CHAIN(src_filter, ctx, ctx->th->source, src_ip_key);
-		
+
 		const XfwSockAddr addr = {
 			.addr = ctx->ilog_addr,
 			.port = ctx->th->source
