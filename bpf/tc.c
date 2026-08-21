@@ -38,7 +38,8 @@ SHADOW_MAP(MAP_NET_IP6_BASENAME, BPF_MAP_TYPE_LPM_TRIE, XFW_MAX_PROTECTED_NET_RU
  * Parsing function, should not drop packets!
  */
 static __always_inline int
-out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map)
+out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map,
+	       XfwTcpConnKey *key)
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
@@ -48,7 +49,8 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP4_BADHDR_EGRESS);
 
 		ctx->l4_proto = (u8)proto;
-		xfw_ipv4_to_ipv6_mapped(ctx->iph4->daddr, ctx->ilog_addr.addr32);
+		xfw_ipv4_to_ipv6_mapped(ctx->iph4->daddr, key->src_addr.addr32);
+		xfw_ipv4_to_ipv6_mapped(ctx->iph4->saddr, key->dst_addr.addr32);
 		ipv4_populate_lpm_key(ctx->iph4->daddr, &prot_net_key->addr4);
 		*prot_net_map = SELECT_SHADOW_MAP(MAP_NET_IP4_BASENAME,
 						   ctx->cfg->amap_prot_net);
@@ -62,7 +64,8 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP6_BADHDR_EGRESS);
 
 		ctx->l4_proto = (u8)proto;
-		ctx->ilog_addr.in6 = ctx->iph6->daddr;
+		key->src_addr.in6 = ctx->iph6->daddr;
+		key->dst_addr.in6 = ctx->iph6->saddr;
 		ipv6_populate_lpm_key(&ctx->iph6->daddr, &prot_net_key->addr6);
 		*prot_net_map = SELECT_SHADOW_MAP(MAP_NET_IP6_BASENAME,
 						   ctx->cfg->amap_prot_net);
@@ -80,7 +83,7 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
  * Parsing function, should not drop packets!
  */
 static __always_inline int
-out_process_l4(XfwGlobalCtx *ctx)
+out_process_l4(XfwGlobalCtx *ctx, XfwTcpConnKey *key)
 {
 	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
@@ -88,6 +91,8 @@ out_process_l4(XfwGlobalCtx *ctx)
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_TCP_BADHDR_EGRESS);
 
+		key->src_port = ctx->th->dest;
+		key->dst_port = ctx->th->source;
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
 	}
@@ -109,10 +114,10 @@ out_process_l4(XfwGlobalCtx *ctx)
 }
 
 static __always_inline int
-process_downstream_egress(const XfwGlobalCtx *ctx)
+process_downstream_egress(const XfwGlobalCtx *ctx, const XfwTcpConnKey *key)
 {
 	/* Traffic still heading toward protected services must pass dst policy. */
-	CHAIN(xfw_dst_filter, ctx);
+	CHAIN(xfw_dst_filter, ctx, key);
 
 	return XFW_CTX_CONTINUE;
 }
@@ -154,21 +159,22 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 		return XFW_MAKE_CTX_PASS(ctx, XFW_ETH_BADHDR_EGRESS);
 	ctx->ipver = ipver;
 
+	XfwTcpConnKey key;
 	/* Build map lookup keys before policy evaluation. */
-	CHAIN(out_process_l3, ctx, &prot_net_key, &prot_net_map);
-	CHAIN(out_process_l4, ctx);
+	CHAIN(out_process_l3, ctx, &prot_net_key, &prot_net_map, &key);
+	CHAIN(out_process_l4, ctx, &key);
 	/* Parsing is complete; start policy checks. */
 
 	*is_upstream_egress = (bpf_map_lookup_elem(prot_net_map, &prot_net_key) == NULL);
 	if (!*is_upstream_egress) /* Packets going to upstream. */
-		CHAIN(process_downstream_egress, ctx);
+		CHAIN(process_downstream_egress, ctx, &key);
 	
 	/* 
 	 * Still needs to be called when rules are not loaded. TCP AUTH filter is
 	 * atomatically inactive at that time.
 	 */
 	if (ctx->l4_proto == XFW_L4_PROTO_TCP)
-		tcp_auth_conn_egress_learning(ctx);
+		tcp_auth_conn_egress_learning(ctx, &key);
 
 	return XFW_CTX_PASS;
 }

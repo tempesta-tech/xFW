@@ -122,19 +122,21 @@ icmp_default_by_proto(uint8_t l4_proto)
 }
 
 static __always_inline int
-icmp_filter(const XfwGlobalCtx *ctx, const XfwIcmpKey *key)
+icmp_filter(const XfwGlobalCtx *ctx, const XfwTcpConnKey *key,
+	    const XfwIcmpKey *icmp_key)
 {
 	XfwActionRule *rule;
 
 	rule = bpf_map_lookup_elem(
-		SELECT_SHADOW_MAP(MAP_ICMP_BASENAME, ctx->cfg->amap_icmp), key);
+		SELECT_SHADOW_MAP(MAP_ICMP_BASENAME, ctx->cfg->amap_icmp), icmp_key);
 	if (!rule) {
-		uint8_t icmp_default = icmp_default_by_proto(key->proto);
+		uint8_t icmp_default = icmp_default_by_proto(icmp_key->proto);
 
 		XfwActionRule *default_rule = &ctx->cfg->rules.defaults[icmp_default];
 		switch (default_rule->action) {
 		case XFW_ACTION_BLOCK:
-			return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_DEFAULT_BLOCKED);
+			return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+					     XFW_ICMP_DEFAULT_BLOCKED);
 		case XFW_ACTION_ALLOW:
 			return XFW_CTX_CONTINUE;
 		default:
@@ -143,12 +145,14 @@ icmp_filter(const XfwGlobalCtx *ctx, const XfwIcmpKey *key)
 			if (xfw_is_allowed_by_rlimits(ctx, &default_rule->rlimit))
 				return XFW_CTX_CONTINUE;
 
-			return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_DEFAULT_RATE_LIMITED);
+			return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+					     XFW_ICMP_DEFAULT_RATE_LIMITED);
 		}
 	}
 
 	if (rule->action == XFW_ACTION_BLOCK)
-		return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_BLOCKED);
+		return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+				     XFW_ICMP_BLOCKED);
 
 	if (rule->action == XFW_ACTION_ALLOW)
 		return XFW_CTX_CONTINUE;
@@ -157,7 +161,8 @@ icmp_filter(const XfwGlobalCtx *ctx, const XfwIcmpKey *key)
 	if (xfw_is_allowed_by_rlimits(ctx, &rule->rlimit))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_RATE_LIMITED);
+	return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+			     XFW_ICMP_RATE_LIMITED);
 }
 
 static __always_inline uint8_t
@@ -182,7 +187,8 @@ src_port_default_by_protos(uint16_t ipver, uint8_t l4_proto)
 }
 
 static __always_inline int
-src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
+src_filter_port(const XfwGlobalCtx *ctx, const XfwTcpConnKey *key,
+		XfwPort port)
 {
 	XfwSrcRule *rule;
 	if (ctx->l4_proto == XFW_L4_PROTO_UDP)
@@ -193,20 +199,24 @@ src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
 			SELECT_SHADOW_MAP(MAP_SRC_P_TCP_BASENAME, ctx->cfg->amap_src), &port);
 
 	if (!rule) {
-		uint8_t src_default = src_port_default_by_protos(ctx->ipver, ctx->l4_proto);
-		XfwActionRule *default_rule = &ctx->cfg->rules.defaults[src_default];
+		uint8_t src_default =
+			src_port_default_by_protos(ctx->ipver, ctx->l4_proto);
+		XfwActionRule *default_rule =
+			&ctx->cfg->rules.defaults[src_default];
 		switch (default_rule->action) {
 		case XFW_ACTION_BLOCK:
-			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_PORT_DEFAULT_BLOCKED,
-						     ": %u", bpf_ntohs(port));
+			return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+						 XFW_SRC_PORT_DEFAULT_BLOCKED,
+						 ": %u", bpf_ntohs(port));
 		case XFW_ACTION_ALLOW:
 			return XFW_CTX_CONTINUE;
 		default:
 			/* XFW_ACTION_RATE_LIMIT */
 			XFW_ASSERT(default_rule->action == XFW_ACTION_RATE_LIMIT);
 
-			XfwRLimitSlidingWindow *b = XFW_MAP_LOOKUP_OR_INIT(
-				&MAP_SRC_PORT_RL_REF, &port, XfwRLimitSlidingWindow);
+			XfwRLimitSlidingWindow *b =
+				XFW_MAP_LOOKUP_OR_INIT(&MAP_SRC_PORT_RL_REF, &port,
+						       XfwRLimitSlidingWindow);
 			XFW_ASSERT(b);
 
 			const XfwRLimitIdx idx = default_rule->rlimit.named_idx;
@@ -215,13 +225,15 @@ src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
 			if (xfw_is_within_rlimit(ctx, &ctx->cfg->named_rates[idx], b))
 				return XFW_CTX_CONTINUE;
 
-			return XFW_MAKE_CTX_DROP(ctx, XFW_SRC_PORT_DEFAULT_RATE_LIMITED);
+			return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+					     XFW_SRC_PORT_DEFAULT_RATE_LIMITED);
 		}
 	}
 
 	if (rule->action == XFW_ACTION_BLOCK)
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_PORT_BLOCKED,
-					     ": %u", bpf_ntohs(port));
+		return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+					 XFW_SRC_PORT_BLOCKED,
+					 ": %u", bpf_ntohs(port));
 
 	if (rule->action == XFW_ACTION_ALLOW)
 		return XFW_MAKE_CTX_PASS_EXT(ctx, XFW_SRC_PORT_ALLOWED,
@@ -236,8 +248,9 @@ src_filter_port(const XfwGlobalCtx *ctx, XfwPort port)
 	if (xfw_is_within_rlimit(ctx, &ctx->cfg->named_rates[rule->named_idx], b))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_PORT_RATE_LIMITED,
-				     ": %u", bpf_ntohs(port));
+	return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+				 XFW_SRC_PORT_RATE_LIMITED,
+				 ": %u", bpf_ntohs(port));
 }
 
 static __always_inline void
@@ -287,7 +300,8 @@ populate_src_info(const XfwGlobalCtx *ctx, void **src_ip_map,
  * information) in addition to the IP address.
  */
 static __always_inline int
-src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
+src_filter_ip(const XfwGlobalCtx *ctx, const XfwTcpConnKey *key,
+	      XfwIpLpmKey *ip_lpm)
 {
 	uint8_t src_default;
 	void *src_ip_map;
@@ -298,19 +312,22 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
 	if (rule) {
 		switch (rule->action) {
 		case XFW_ACTION_BLOCK:
-			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_IP_BLOCKED,
-						     ": %pI6", &ctx->ilog_addr.in6);
+			return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+						 XFW_SRC_IP_BLOCKED,
+						 ": %pI6",
+						 &key->src_addr.in6);
 
 		case XFW_ACTION_ALLOW:
 			return XFW_MAKE_CTX_PASS_EXT(ctx, XFW_SRC_IP_ALLOWED,
-						     ": %pI6", &ctx->ilog_addr.in6);
+						     ": %pI6",
+						     &key->src_addr.in6);
 		default:
 			/* XFW_ACTION_RATE_LIMIT */
 			XFW_ASSERT(rule->action == XFW_ACTION_RATE_LIMIT);
 
 			XfwRLimitSlidingWindow *b = XFW_MAP_LOOKUP_OR_INIT(
 							&MAP_SRC_RATELIM_REF,
-							&ctx->ilog_addr.in6,
+							&key->src_addr.in6,
 							XfwRLimitSlidingWindow);
 			XFW_ASSERT(b);
 
@@ -319,24 +336,27 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
 						 &ctx->cfg->named_rates[rule->named_idx],
 						 b))
 				return XFW_CTX_CONTINUE;
-			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_IP_RATE_LIMITED,
-						     ": %pI6", &ctx->ilog_addr.in6);
+			return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+						 XFW_SRC_IP_RATE_LIMITED,
+						 ": %pI6", &key->src_addr.in6);
 		}
 	}
 
 	XfwActionRule *default_rule = &ctx->cfg->rules.defaults[src_default];
 	if (default_rule->action == XFW_ACTION_BLOCK)
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_IP_DEFAULT_BLOCKED,
-					     ": %pI6", &ctx->ilog_addr.in6);
+		return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+					 XFW_SRC_IP_DEFAULT_BLOCKED,
+					 ": %pI6", &key->src_addr.in6);
 
 	if (default_rule->action == XFW_ACTION_ALLOW)
 		return XFW_CTX_CONTINUE;
 
 	XFW_ASSERT(default_rule->action == XFW_ACTION_RATE_LIMIT);
 
-	XfwRLimitSlidingWindow *b = XFW_MAP_LOOKUP_OR_INIT(&MAP_SRC_RATELIM_REF,
-						       &ctx->ilog_addr.in6,
-						       XfwRLimitSlidingWindow);
+	XfwRLimitSlidingWindow *b =
+		XFW_MAP_LOOKUP_OR_INIT(&MAP_SRC_RATELIM_REF,
+				       &key->src_addr.in6,
+				       XfwRLimitSlidingWindow);
 	XFW_ASSERT(b);
 
 	const XfwRLimitIdx idx = default_rule->rlimit.named_idx;
@@ -345,8 +365,9 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
 	if (xfw_is_within_rlimit(ctx, &ctx->cfg->named_rates[idx], b))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SRC_IP_DEFAULT_RATE_LIMITED,
-				     ": %pI6", &ctx->ilog_addr.in6);
+	return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+				 XFW_SRC_IP_DEFAULT_RATE_LIMITED,
+				 ": %pI6", &key->src_addr.in6);
 }
 
 /**
@@ -356,16 +377,17 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
  * We need to change the configuration to be able to split the layers.
  */
 static __always_inline int
-src_filter(const XfwGlobalCtx *ctx, XfwPort src_port, XfwIpLpmKey* src_ip_key)
+src_filter(const XfwGlobalCtx *ctx, const XfwTcpConnKey *key,
+	   XfwPort src_port, XfwIpLpmKey* src_ip_key)
 {
-	CHAIN(src_filter_ip, ctx, src_ip_key);
-	CHAIN(src_filter_port, ctx, src_port);
+	CHAIN(src_filter_ip, ctx, key, src_ip_key);
+	CHAIN(src_filter_port, ctx, key, src_port);
 
 	return XFW_CTX_CONTINUE;
 }
 
 static __always_inline int
-rst_rlimit(XfwGlobalCtx *ctx)
+rst_rlimit(XfwGlobalCtx *ctx, const XfwTcpConnKey *key)
 {
 	XfwActionRule *rule = &ctx->cfg->rules.tcp_flags[XFW_FLAGS_FILTER_RST];
 	if (rule->action != XFW_ACTION_RATE_LIMIT)
@@ -374,11 +396,12 @@ rst_rlimit(XfwGlobalCtx *ctx)
 	if (xfw_is_allowed_by_rlimits(ctx, &rule->rlimit))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP(ctx, XFW_RST_RATE_LIMITED);
+	return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+			     XFW_RST_RATE_LIMITED);
 }
 
 static __always_inline int
-syn_rlimit(XfwGlobalCtx *ctx)
+syn_rlimit(XfwGlobalCtx *ctx, const XfwTcpConnKey *key)
 {
 	XfwActionRule *rule = &ctx->cfg->rules.tcp_flags[XFW_FLAGS_FILTER_SYN];
 	if (rule->action != XFW_ACTION_RATE_LIMIT)
@@ -388,25 +411,30 @@ syn_rlimit(XfwGlobalCtx *ctx)
 	if (xfw_is_allowed_by_rlimits(ctx, &rule->rlimit))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP(ctx, XFW_SYN_RATE_LIMITED);
+	return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+			     XFW_SYN_RATE_LIMITED);
 }
 
 static __always_inline int
-in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
+in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key,
+	      XfwTcpConnKey *key)
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
 		count_traffic_stat(ctx, XFW_IP4_TOTAL_INGRESS);
 		int proto = parse_iphdr(&ctx->hdr_cur, &ctx->iph4);
 		if (unlikely(proto < 0))
-			return XFW_MAKE_CTX_DROP(ctx, XFW_IP4_BADHDR_INGRESS);
+			return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+					     XFW_IP4_BADHDR_INGRESS);
 
 		/* Any MF bit or non-zero fragment offset means fragmented IPv4. */
 		if ((bpf_htons(ctx->iph4->frag_off) & 0x3fff) != 0)
-			return XFW_MAKE_CTX_DROP(ctx, XFW_IP4_FRAGMENTED_INGRESS);
+			return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+					     XFW_IP4_FRAGMENTED_INGRESS);
 
 		ctx->l4_proto = (u8)proto;
-		xfw_ipv4_to_ipv6_mapped(ctx->iph4->saddr, ctx->ilog_addr.addr32);
+		xfw_ipv4_to_ipv6_mapped(ctx->iph4->saddr, key->src_addr.addr32);
+		xfw_ipv4_to_ipv6_mapped(ctx->iph4->daddr, key->dst_addr.addr32);
 		ipv4_populate_lpm_key(ctx->iph4->saddr, &src_ip_key->addr4);
 		return XFW_CTX_CONTINUE;
 	}
@@ -415,12 +443,15 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		int proto = parse_ip6hdr(&ctx->hdr_cur, &ctx->iph6);
 		if (unlikely(proto < 0)) {
 			if (proto == -EFBIG)
-				return XFW_MAKE_CTX_DROP(ctx, XFW_IP6_FRAGMENTED_INGRESS);
-			return XFW_MAKE_CTX_DROP(ctx, XFW_IP6_BADHDR_INGRESS);
+				return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+						     XFW_IP6_FRAGMENTED_INGRESS);
+			return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+					     XFW_IP6_BADHDR_INGRESS);
 		}
 
 		ctx->l4_proto = (u8)proto;
-		ctx->ilog_addr.in6 = ctx->iph6->saddr;
+		key->src_addr.in6 = ctx->iph6->saddr;
+		key->dst_addr.in6 = ctx->iph6->daddr;
 		ipv6_populate_lpm_key(&ctx->iph6->saddr, &src_ip_key->addr6);
 
 		return XFW_CTX_CONTINUE;
@@ -431,8 +462,9 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 	}
 	default : {
 		/* Unknown EtherTypes are not useful to the protected L3 services. */
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_L2_UNKNOWN_INGRESS,
-					     ": %x", bpf_htons(ctx->ipver));
+		return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+					 XFW_L2_UNKNOWN_INGRESS,
+					 ": %x", bpf_htons(ctx->ipver));
 	}
 	}
 }
@@ -442,13 +474,13 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
  * connection trusted.
  */
 static __always_inline int
-tcp_rcv_syn_filter(XfwGlobalCtx *ctx)
+tcp_rcv_syn_filter(XfwGlobalCtx *ctx, const XfwTcpConnKey *key)
 {
 	/* If a SYN cookie was generated, processing stops immediately. */
 	if (ctx->cfg->rules.syncookie.enabled)
-		CHAIN(tcp_syncookies_syn_filter, ctx);
+		CHAIN(tcp_syncookies_syn_filter, ctx, key);
 
-	CHAIN(syn_rlimit, ctx);
+	CHAIN(syn_rlimit, ctx, key);
 
 	/* We do not add the connection to the trusted set here.
 	 * The trusted entry will be created later in tc.c, which is less
@@ -467,25 +499,28 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx)
  * 4. If valid, trust the connection on ingress side.
  */
 static __always_inline int
-tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
+tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwTcpConnKey *key)
 {
 	/* Fast path - no SYN cookies. */
 	if (!ctx->cfg->rules.syncookie.enabled)
-		return tcp_auth_conn_ingress_filter(ctx, addr, TCP_AUTH_EVENT_NORMAL);
+		return tcp_auth_conn_ingress_filter(ctx, key,
+						    TCP_AUTH_EVENT_NORMAL);
 
 	XfwTcpSynCookieTs *ts = __tcp_get_tcp_syncookie_ts();
 	XFW_ASSERT(ts);
 
 	/* Fast path - syncookies flood mode is inactive. */
 	if (!tcp_syncookies_flood_mode(ctx, ts))
-		return tcp_auth_conn_ingress_filter(ctx, addr, TCP_AUTH_EVENT_NORMAL);
+		return tcp_auth_conn_ingress_filter(ctx, key,
+						    TCP_AUTH_EVENT_NORMAL);
 
 	/* Can rely only on connections that are up-to-date */
-	if (ctx->cfg->rules.tcp_auth.enabled && tcp_auth_has_conn_trusted(ctx, addr))
+	if (ctx->cfg->rules.tcp_auth.enabled
+	    && tcp_auth_has_conn_trusted(ctx, key))
 		return XFW_CTX_CONTINUE;
 
 	/* Perform SYN-cookie-specific ACK validation */
-	CHAIN(tcp_syncookies_ack_filter, ctx);
+	CHAIN(tcp_syncookies_ack_filter, ctx, key);
 
 	/*
 	 * This is the scenario where a SYN cookie was issued and successfully
@@ -497,7 +532,7 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 	 * generated and sent directly by xdp.c, bypassing tc.c. This ensures
 	 * the connection is correctly tracked without relying on tc.c.
 	 */
-	tcp_auth_conn_add(addr);
+	tcp_auth_conn_add(key);
 	return XFW_CTX_CONTINUE;
 }
 
@@ -535,23 +570,23 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
  * xdp.c for upstream connections.
  */
 static __always_inline int
-tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
+tcp_flags_filter(XfwGlobalCtx *ctx, const XfwTcpConnKey *key)
 {
 	const struct tcphdr *th = ctx->th;
 
 	/* FIN: track connection for closing. */
 	if (th->fin) {
 		count_traffic_stat(ctx, XFW_FIN);
-		return tcp_auth_conn_ingress_filter(ctx, addr,
+		return tcp_auth_conn_ingress_filter(ctx, key,
 						    TCP_AUTH_EVENT_FIN);
 	}
 
 	/* RST: clear connection state and apply rate-limiting. */
 	if (th->rst) {
 		count_traffic_stat(ctx, XFW_RST);
-		CHAIN(tcp_auth_conn_ingress_filter, ctx, addr,
+		CHAIN(tcp_auth_conn_ingress_filter, ctx, key,
 		      TCP_AUTH_EVENT_RST);
-		return rst_rlimit(ctx);
+		return rst_rlimit(ctx, key);
 	}
 
 	/*
@@ -562,62 +597,65 @@ tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 	 */
 	if (th->syn && th->ack) {
 		count_traffic_stat(ctx, XFW_SYNACK);
-		return tcp_auth_conn_ingress_filter(ctx, addr,
+		return tcp_auth_conn_ingress_filter(ctx, key,
 						    TCP_AUTH_EVENT_NORMAL);
 	}
 
 	/* SYN-only. Authenticate the connection if all checks pass. */
 	if (th->syn) {
 		count_traffic_stat(ctx, XFW_SYN);
-		return tcp_rcv_syn_filter(ctx);
+		return tcp_rcv_syn_filter(ctx, key);
 	}
 
 	/* ACK-only: validate SYN-ACK cookies or authenticate normally.*/
 	if (th->ack) {
 		count_traffic_stat(ctx, XFW_ACK);
-		return tcp_rcv_ack_filter(ctx, addr);
+		return tcp_rcv_ack_filter(ctx, key);
 	}
 
 	/* Default: authenticate any remaining TCP packets. */
-	return tcp_auth_conn_ingress_filter(ctx, addr, TCP_AUTH_EVENT_NORMAL);
+	return tcp_auth_conn_ingress_filter(ctx, key, TCP_AUTH_EVENT_NORMAL);
 }
 
 static __always_inline int
-in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
+in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key, XfwTcpConnKey *key)
 {
 	if (!bpf_bitset64_test(ctx->cfg->rules.ip_proto.protocols.data,
 			       ctx->l4_proto))
 	{
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_L4_UNSUPPORTED_INGRESS,
-					     ": %u", ctx->l4_proto);
+		return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+					 XFW_L4_UNSUPPORTED_INGRESS,
+					 ": %u", ctx->l4_proto);
 	}
 
 	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
 		count_traffic_stat(ctx, XFW_TCP_TOTAL_INGRESS);
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
-			return XFW_MAKE_CTX_DROP(ctx, XFW_TCP_BADHDR_INGRESS);
+			return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+					     XFW_TCP_BADHDR_INGRESS);
 
-		CHAIN(tcp_anomaly_filter, ctx);
+		key->src_port = ctx->th->source;
+		key->dst_port = ctx->th->dest;
 
-		CHAIN(src_filter, ctx, ctx->th->source, src_ip_key);
-		
-		const XfwSockAddr addr = {
-			.addr = ctx->ilog_addr,
-			.port = ctx->th->source
-		};
-		return tcp_flags_filter(ctx, &addr);
+		CHAIN(tcp_anomaly_filter, ctx, key);
+
+		CHAIN(src_filter, ctx, key, ctx->th->source, src_ip_key);
+
+		return tcp_flags_filter(ctx, key);
 	}
 	case XFW_L4_PROTO_UDP: {
 		count_traffic_stat(ctx, XFW_UDP_TOTAL_INGRESS);
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
-			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_BADHDR_INGRESS);
+			return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+					     XFW_UDP_BADHDR_INGRESS);
 
 		if (ctx->uh->source == 0 || ctx->uh->dest == 0)
-			return XFW_MAKE_CTX_DROP(ctx, XFW_UDP_ANOM_ZERO_PORT);
+			return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+					     XFW_UDP_ANOM_ZERO_PORT);
 
-		CHAIN(ingress_dns_filter, ctx);
-		return src_filter(ctx, ctx->uh->source, src_ip_key);
+		CHAIN(ingress_dns_filter, ctx, key);
+		return src_filter(ctx, key, ctx->uh->source, src_ip_key);
 	};
 	case XFW_L4_PROTO_ICMP:
 	case XFW_L4_PROTO_ICMPV6: {
@@ -625,16 +663,17 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 
 		XfwICMPCommon *ih;
 		if (unlikely(parse_icmphdr_common(&ctx->hdr_cur, &ih) < 0))
-			return XFW_MAKE_CTX_DROP(ctx, XFW_ICMP_BADHDR_INGRESS);
+			return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+					     XFW_ICMP_BADHDR_INGRESS);
 
 		XFW_CTX_DBG("ICMP header parsed, type=%u", ih->type);
 
-		const XfwIcmpKey key = {
+		const XfwIcmpKey icmp_key = {
 			.proto = ctx->l4_proto,
 			.type = ih->type
 		};
-		CHAIN(icmp_filter, ctx, &key);
-		CHAIN(src_filter_ip, ctx, src_ip_key);
+		CHAIN(icmp_filter, ctx, key, &icmp_key);
+		CHAIN(src_filter_ip, ctx, key, src_ip_key);
 		/* ICMP has no destination port, so dst rules cannot refine this path. */
 		return XFW_CTX_PASS;
 	};
@@ -667,17 +706,19 @@ xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 		return XFW_MAKE_CTX_PASS(ctx, XFW_PRELOAD_INGRESS);
 	}
 
+	XfwTcpConnKey key = {};
 	int ipver = parse_ethhdr(&ctx->hdr_cur, &ctx->eth);
 	if (unlikely(ipver < 0))
-		return XFW_MAKE_CTX_DROP(ctx, XFW_ETH_BADHDR_INGRESS);
+		return XFW_MAKE_DROP(&key.src_addr, ctx->pkt_sz,
+				     XFW_ETH_BADHDR_INGRESS);
 	ctx->ipver = ipver;
 
 	int r;
 	/* Helper structure for src filter, filled on L3, used on L4. */
 	XfwIpLpmKey src_ip_key = {};
-	CHAIN_PASS_ALL(in_process_l3, ctx, &src_ip_key);
-	CHAIN_PASS_ALL(in_process_l4, ctx, &src_ip_key);
-	CHAIN_PASS_ALL(xfw_dst_filter, ctx);
+	CHAIN_PASS_ALL(in_process_l3, ctx, &src_ip_key, &key);
+	CHAIN_PASS_ALL(in_process_l4, ctx, &src_ip_key, &key);
+	CHAIN_PASS_ALL(xfw_dst_filter, ctx, &key);
 
 pass:
 	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);

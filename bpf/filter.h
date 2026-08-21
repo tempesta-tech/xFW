@@ -35,6 +35,25 @@
 #endif
 
 /*
+ * TCP connection tracking key.
+ *
+ * The full TCP 4-tuple is used to uniquely identify a connection and keep
+ * connections sharing the same endpoint in separate authentication states.
+ *
+ * The key is always normalized to the client-to-server direction regardless
+ * of the packet direction. For ingress traffic, source and destination are
+ * used as-is. For egress traffic, they are reversed so that packets in both
+ * directions of the same connection resolve to the same map entry.
+ */
+typedef struct XfwTcpConnKey {
+	XfwIp		src_addr; /* IPv4 uses the low 32 bits; the rest stays zero. */
+	XfwIp		dst_addr;
+	XfwPort		src_port;
+	XfwPort		dst_port;
+} XfwTcpConnKey;
+STATIC_ASSERT(sizeof(XfwTcpConnKey) == 36, "Invalid XfwTcpConnKey size");
+
+/*
  * Read-only for eBPF.
  * Keys are taken from XfwRLimitRule.bucket_idx.
  */
@@ -103,16 +122,16 @@ count_tx_stat(const XfwGlobalCtx *ctx, enum XfwTxStat reason)
  * Avoid returning DROP codes directly without using these 2 functions, as it is
  * easy to forget updating the dropped packet statistics.
  */
-#define XFW_MAKE_CTX_DROP_EXT(ctx, reason_idx, postfix, args...)	\
+#define XFW_MAKE_DROP_EXT(ilog_addr, pkt_sz, reason_idx, postfix, args...) \
 ({									\
-	REGISTER_INCIDENT(ctx, reason_idx);				\
+	register_incident(ilog_addr, pkt_sz, reason_idx);		\
 	XFW_CTX_DBG("[DROP] %s" postfix,				\
 		    xfw_drop_stats[reason_idx].desc, ##args);	\
 	XFW_CTX_DROP;							\
 })
 
-#define XFW_MAKE_CTX_DROP(ctx, reason_idx, args...)			\
-	XFW_MAKE_CTX_DROP_EXT(ctx, reason_idx, "", ##args)
+#define XFW_MAKE_DROP(ilog_addr, pkt_sz, reason_idx, args...)		\
+	XFW_MAKE_DROP_EXT(ilog_addr, pkt_sz, reason_idx, "", ##args)
 
 /**
  * Avoid returning PASS codes directly without using these 2 functions, as it is

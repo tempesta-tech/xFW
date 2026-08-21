@@ -96,7 +96,6 @@ typedef struct XfwDnsCtx {
 	XfwMd		*ctx;
 	XfwPerCpuStats	*g_stats;
 	XfwHdrCursor	hdr_cur;
-	XfwIp		ilog_addr;
 	uint32_t	pkt_sz;
 } XfwDnsCtx;
 
@@ -216,7 +215,8 @@ struct {
 } MAP_DNS_EGR_FD_REF SEC(".maps");
 
 static __always_inline int
-process_ingress_dns_query(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
+process_ingress_dns_query(XfwDnsCtx *dns_ctx, const XfwTcpConnKey *key,
+			  const XfwDnsHdr *dh)
 {
 	XfwDnsQRec *dq;
 
@@ -229,8 +229,9 @@ process_ingress_dns_query(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
 		return XFW_CTX_CONTINUE;
 
 	if (rcode != RCODE_OK)
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_QRY_RCODE_NOT_OK,
-					     ": %u", rcode);
+		return XFW_MAKE_DROP_EXT(&key->src_addr, dns_ctx->pkt_sz,
+					 XFW_DNS_QRY_RCODE_NOT_OK,
+					 ": %u", rcode);
 
 	/*
 	 * Assume EDNS-only message.
@@ -242,16 +243,19 @@ process_ingress_dns_query(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
 
 	/* We don't support multiple DNS queries - it's quite rare case */
 	if (dh->qdcount != bpf_htons(1))
-		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_MULTIPLE_QUESTIONS);
+		return XFW_MAKE_DROP(&key->src_addr, dns_ctx->pkt_sz,
+				     XFW_DNS_MULTIPLE_QUESTIONS);
 
 	dq = parse_single_dns_question(dns_ctx->ctx, &dns_ctx->hdr_cur, dh);
 	if (dq == NULL)
-		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_BAD_QUESTION);
+		return XFW_MAKE_DROP(&key->src_addr, dns_ctx->pkt_sz,
+				     XFW_DNS_BAD_QUESTION);
 
 	if (unlikely(dh->nscount != 0))
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_ANS_OR_AUTHS_IN_QUERY,
-					     ": nscount = %u",
-					     bpf_ntohs(dh->nscount));
+		return XFW_MAKE_DROP_EXT(&key->src_addr, dns_ctx->pkt_sz,
+					 XFW_DNS_ANS_OR_AUTHS_IN_QUERY,
+					 ": nscount = %u",
+					 bpf_ntohs(dh->nscount));
 
 	if (dq->qtype == bpf_ntohs(QTYPE_IXFR)) {
 		/* XXX: should we pass it without further validation? */
@@ -263,17 +267,19 @@ process_ingress_dns_query(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
 	 * except for IXFR queries.
 	 */
 	if (unlikely(dh->ancount != 0))
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_ANS_OR_AUTHS_IN_QUERY,
-					     ": ancount = %u",
-					     bpf_ntohs(dh->ancount));
+		return XFW_MAKE_DROP_EXT(&key->src_addr, dns_ctx->pkt_sz,
+					 XFW_DNS_ANS_OR_AUTHS_IN_QUERY,
+					 ": ancount = %u",
+					 bpf_ntohs(dh->ancount));
 
 	/*
 	 * Maximum two records allowed (exactly in this order):
 	 * EDNS OPT RR, TSIG RR.
 	 */
 	if (bpf_ntohs(dh->arcount) > 2)
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_QRY_BAD_ARCOUNT,
-					     ": %u", bpf_ntohs(dh->arcount));
+		return XFW_MAKE_DROP_EXT(&key->src_addr, dns_ctx->pkt_sz,
+					 XFW_DNS_QRY_BAD_ARCOUNT,
+					 ": %u", bpf_ntohs(dh->arcount));
 
 	return XFW_CTX_CONTINUE;
 }
@@ -301,42 +307,54 @@ parse_full_dns_rr(XfwMd *ctx, XfwHdrCursor* hdr_cur)
 }
 
 static __always_inline int
-process_ingress_dns_response(XfwDnsCtx *dns_ctx, const XfwDnsHdr *dh)
+process_ingress_dns_response(XfwDnsCtx *dns_ctx, const XfwTcpConnKey *key,
+			     const XfwDnsHdr *dh)
 {
 	/*
 	 * Drop all ingress responses, which we didn't see an
 	 * outgoing queries for.
 	 */
-	if (bpf_map_lookup_elem(&MAP_DNS_EGR_FD_REF, &dh->id) == NULL)
-		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_NOT_ASKED_RESPONSE);
+	if (!bpf_map_lookup_elem(&MAP_DNS_EGR_FD_REF, &dh->id))
+		return XFW_MAKE_DROP(&key->src_addr, dns_ctx->pkt_sz,
+				     XFW_DNS_NOT_ASKED_RESPONSE);
 
 
 	if (unlikely(dns_ctx->pkt_sz > MAX_DNS_UDP_PACKET))
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_LARGE_RESPONSE,
-					     ": %u", dns_ctx->pkt_sz);
+		return XFW_MAKE_DROP_EXT(&key->src_addr, dns_ctx->pkt_sz,
+					 XFW_DNS_LARGE_RESPONSE,
+					 ": %u", dns_ctx->pkt_sz);
 
 	/* We don't support multiple DNS queries - it's quite rare case */
 	if (dh->qdcount != bpf_htons(1))
-		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_MULTIPLE_QUESTIONS);
+		return XFW_MAKE_DROP(&key->src_addr, dns_ctx->pkt_sz,
+				     XFW_DNS_MULTIPLE_QUESTIONS);
 
-	if (parse_single_dns_question(dns_ctx->ctx, &dns_ctx->hdr_cur, dh) == NULL)
-		return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_BAD_QUESTION);
+	if (!parse_single_dns_question(dns_ctx->ctx,
+				       &dns_ctx->hdr_cur, dh))
+		return XFW_MAKE_DROP(&key->src_addr, dns_ctx->pkt_sz,
+				     XFW_DNS_BAD_QUESTION);
 
 	uint16_t an_count = bpf_ntohs(dh->ancount);
 
 	if (an_count > MAX_ANCOUNT)
-		return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_RESP_ANS_OVERLIMIT,
-					     ": %u", an_count);
+		return XFW_MAKE_DROP_EXT(&key->src_addr, dns_ctx->pkt_sz,
+					 XFW_DNS_RESP_ANS_OVERLIMIT,
+					 ": %u", an_count);
 
 	uint16_t i;
 	bpf_for (i, 0, an_count) {
-		XfwDnsRR *dr = parse_full_dns_rr(dns_ctx->ctx, &dns_ctx->hdr_cur);
+		XfwDnsRR *dr =
+			parse_full_dns_rr(dns_ctx->ctx, &dns_ctx->hdr_cur);
 		if (dr == NULL)
-			return XFW_MAKE_CTX_DROP(dns_ctx, XFW_DNS_BAD_RR);
+			return XFW_MAKE_DROP(&key->src_addr,
+					     dns_ctx->pkt_sz,
+					     XFW_DNS_BAD_RR);
 
 		if (dr->ttl == 0 || bpf_ntohl(dr->ttl) > 604800)
-			return XFW_MAKE_CTX_DROP_EXT(dns_ctx, XFW_DNS_ANSWER_ANOMALY,
-						     ": %lu", bpf_ntohl(dr->ttl));
+			return XFW_MAKE_DROP_EXT(&key->src_addr,
+						 dns_ctx->pkt_sz,
+						 XFW_DNS_ANSWER_ANOMALY,
+						 ": %lu", bpf_ntohl(dr->ttl));
 	}
 
 	return XFW_CTX_CONTINUE;
@@ -360,33 +378,20 @@ init_dns_ctx(XfwDnsCtx *dns_ctx, XfwMd *ctx, XfwPerCpuStats *global_stats)
 
 	if (unlikely(md->ip_pos > L3_L4_HDRS_MAXLEN))
 		return -1;
-	void *ip_hdr = (void *)(long)ctx->data + md->ip_pos;
-	if (md->is_ipv4) {
-		struct iphdr *ipv4 = ip_hdr;
-		if (unlikely((void*)(ipv4 + 1) > dns_ctx->hdr_cur.end))
-			return -1;
-		xfw_ipv4_to_ipv6_mapped(ipv4->saddr, dns_ctx->ilog_addr.addr32);
-	}
-	else {
-		struct ipv6hdr *ipv6 = ip_hdr;
-		if (unlikely((void*)(ipv6 + 1) > dns_ctx->hdr_cur.end))
-			return -1;
-		dns_ctx->ilog_addr.in6 = ipv6->saddr;
-	}
-
 	dns_ctx->pkt_sz = XFW_CTX_MD(ctx)->data_end - XFW_CTX_MD(ctx)->data;
 
 	return 0;
 }
 
 int __noinline
-ingress_dns_filter_global(XfwMd *ctx, XfwPerCpuStats *global_stats)
+ingress_dns_filter_global(XfwMd *ctx, const XfwTcpConnKey *key,
+			 XfwPerCpuStats *global_stats)
 {
 	/*
 	 * Internal error that can't be reported. However it is impossible due
 	 * to check in ingress_dns_filter. This is just check for verifier.
 	 */
-	if (unlikely(!global_stats))
+	if (unlikely(!global_stats || !key))
 		return XFW_CTX_CONTINUE;
 
 	XfwDnsCtx dns_ctx;
@@ -397,20 +402,21 @@ ingress_dns_filter_global(XfwMd *ctx, XfwPerCpuStats *global_stats)
 
 	XfwDnsHdr *dh = parse_dnshdr(&dns_ctx.hdr_cur);
 	if (unlikely(dh == NULL))
-		return XFW_MAKE_CTX_DROP(&dns_ctx, XFW_DNS_BADHDR_INGRESS);
+		return XFW_MAKE_DROP(&key->src_addr, dns_ctx.pkt_sz,
+				     XFW_DNS_BADHDR_INGRESS);
 
 	uint16_t hflags = bpf_ntohs(dh->flags);
 	uint8_t qr = (hflags >> 15) & 1;
 
 	if (qr == DNS_QUERY) /* Is query */
-		return process_ingress_dns_query(&dns_ctx, dh);
+		return process_ingress_dns_query(&dns_ctx, key, dh);
 
 	/* Packet is response */
-	return process_ingress_dns_response(&dns_ctx, dh);
+	return process_ingress_dns_response(&dns_ctx, key, dh);
 }
 
 static __always_inline int
-ingress_dns_filter(XfwGlobalCtx *ctx)
+ingress_dns_filter(XfwGlobalCtx *ctx, const XfwTcpConnKey *key)
 {
 	if (unlikely(!ctx->cfg->rules.dns.enabled))
 		return XFW_CTX_CONTINUE;
@@ -450,7 +456,7 @@ ingress_dns_filter(XfwGlobalCtx *ctx)
 		return XFW_CTX_CONTINUE;
 	}
 
-	return ingress_dns_filter_global(ctx->ctx, ctx->g_stats);
+	return ingress_dns_filter_global(ctx->ctx, key, ctx->g_stats);
 }
 
 static __always_inline void
