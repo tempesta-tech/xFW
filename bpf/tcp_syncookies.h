@@ -609,7 +609,7 @@ tcp_sk_listen_lookup(const XfwGlobalCtx *ctx)
  * are tolerated where possible.
  */
 static __always_inline int
-tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
+tcp_syncookies_syn_filter(XfwGlobalCtx *ctx, const XfwTcpConnKey *key)
 {
 	XfwTcpSynCookieTs *ts = __tcp_get_tcp_syncookie_ts();
 	XFW_ASSERT(ts);
@@ -638,8 +638,9 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 	if (unlikely(!sk)) {
 		/* Treat a SYN for a non-listening or absent socket as flooding. */
 		ts->last_gen_jiff = ctx->ts_jiff;
-		return XFW_MAKE_CTX_DROP(ctx, XFW_SYNCOOKIE_FAILED,
-					 "No listening socket");
+		return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+				     XFW_SYNCOOKIE_FAILED,
+				     "No listening socket");
 	}
 
 	int64_t seq_mss = bpf_tcp_gen_syncookie(sk, ctx->iph, iph_len, ctx->th,
@@ -660,22 +661,25 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 
 	if (unlikely(seq_mss < 0)) {
 		XFW_CTX_DBG("Cannot generate syncookie, %d", seq_mss);
-		return XFW_MAKE_CTX_DROP(ctx, XFW_SYNCOOKIE_FAILED, "bad MSS");
+		return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+				     XFW_SYNCOOKIE_FAILED, "bad MSS");
 	}
 
 	XfwTCPOpts opts = { 0 };
 	long r = tcp_parse_opts(ctx, &opts);
 	if (unlikely(r)) {
 		XFW_CTX_DBG("Cannot parse TCP options, %d", r);
-		return XFW_MAKE_CTX_DROP(ctx, XFW_SYNCOOKIE_FAILED,
-					 "bad TCP options in SYN");
+		return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+				     XFW_SYNCOOKIE_FAILED,
+				     "bad TCP options in SYN");
 	}
 
 	r = tcp_syncookies_make_synack(ctx, (uint32_t)seq_mss,
 				       (uint16_t)(seq_mss >> 32), &opts);
 	if (unlikely(r))
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SYNCOOKIE_FAILED,
-					     "Cannot generate SYN-ACK, %d", r);
+		return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+					 XFW_SYNCOOKIE_FAILED,
+					 "Cannot generate SYN-ACK, %d", r);
 
 	return MAKE_XDP_TX(ctx, XFW_SYNCOOKIE_GENERATED);
 }
@@ -688,13 +692,14 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
  *  - DROP if SYN cookie is invalid or host socket not found
  */
 static __always_inline int
-tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx)
+tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx, const XfwTcpConnKey *key)
 {
 	/* Lookup socket to validate ACK against SYN cookie */
 	struct bpf_sock *sk = tcp_sk_listen_lookup(ctx);
 	if (!sk)
-		return XFW_MAKE_CTX_DROP(ctx, XFW_SYNCOOKIE_FAILED,
-					 "No host socket");
+		return XFW_MAKE_DROP(&key->src_addr, ctx->pkt_sz,
+				     XFW_SYNCOOKIE_FAILED,
+				     "No host socket");
 
 	const bool in_listen_state = sk->state == BPF_TCP_LISTEN;
 	bpf_sk_release(sk);
@@ -718,8 +723,10 @@ tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx)
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		int r = bpf_tcp_raw_check_syncookie_ipv4(ctx->iph4, ctx->th);
 		if (r < 0)
-			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SYNCOOKIE_FAILED,
-				"IPv4 ACK with invalid cookie, retcode=%d.", r);
+			return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+						 XFW_SYNCOOKIE_FAILED,
+						 "IPv4 ACK with invalid cookie,"
+						 " retcode=%d.", r);
 	}
 	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
 		/* This check is just to satisfy the verifier. */
@@ -727,8 +734,10 @@ tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx)
 
 		int r = bpf_tcp_raw_check_syncookie_ipv6(ctx->iph6, ctx->th);
 		if (r < 0)
-			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_SYNCOOKIE_FAILED,
-				"IPv6 ACK with invalid cookie, retcode=%d.", r);
+			return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+						 XFW_SYNCOOKIE_FAILED,
+						 "IPv6 ACK with invalid cookie,"
+						 " retcode=%d.", r);
 	}
 
 	return XFW_CTX_CONTINUE;

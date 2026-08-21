@@ -71,7 +71,7 @@ populate_dst_info(const XfwGlobalCtx *ctx, XfwDstKey *key, __u8 *default_idx)
 }
 
 static __always_inline int
-xfw_dst_filter(const XfwGlobalCtx *ctx)
+xfw_dst_filter(const XfwGlobalCtx *ctx, const XfwTcpConnKey *key)
 {
 	XfwDstKey dst_key;
 	uint8_t dst_default;
@@ -84,9 +84,10 @@ xfw_dst_filter(const XfwGlobalCtx *ctx)
 	if (!rule) {
 		XfwActionRule *default_rule = &ctx->cfg->rules.defaults[dst_default];
 		if (default_rule->action == XFW_ACTION_BLOCK)
-			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DST_BLOCKED, ": %pI6",
-						     &dst_key.addr.in6,
-						     "(by default action)");
+			return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+						 XFW_DST_BLOCKED, ": %pI6",
+						 &dst_key.addr.in6,
+						 "(by default action)");
 		if (default_rule->action == XFW_ACTION_ALLOW)
 			return XFW_CTX_CONTINUE;
 
@@ -94,14 +95,16 @@ xfw_dst_filter(const XfwGlobalCtx *ctx)
 		if (xfw_is_allowed_by_rlimits(ctx, &default_rule->rlimit))
 			return XFW_CTX_CONTINUE;
 
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DST_RATE_LIMITED,
-					     ": %pI6", &dst_key.addr.in6,
-					     "(by default action)");
+		return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+					 XFW_DST_RATE_LIMITED,
+					 ": %pI6", &dst_key.addr.in6,
+					 "(by default action)");
 	}
 
 	if (rule->action == XFW_ACTION_BLOCK)
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DST_BLOCKED, ": %pI6",
-					     &dst_key.addr.in6);
+		return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+					 XFW_DST_BLOCKED, ": %pI6",
+					 &dst_key.addr.in6);
 
 	if (rule->action == XFW_ACTION_ALLOW)
 		return XFW_CTX_CONTINUE;
@@ -110,8 +113,9 @@ xfw_dst_filter(const XfwGlobalCtx *ctx)
 	if (xfw_is_allowed_by_rlimits(ctx, &rule->rlimit))
 		return XFW_CTX_CONTINUE;
 
-	return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DST_RATE_LIMITED, ": %pI6",
-				     &dst_key.addr.in6);
+	return XFW_MAKE_DROP_EXT(&key->src_addr, ctx->pkt_sz,
+				 XFW_DST_RATE_LIMITED, ": %pI6",
+				 &dst_key.addr.in6);
 }
 
 #undef BANNER

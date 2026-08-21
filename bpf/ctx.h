@@ -75,7 +75,6 @@ typedef struct XfwGlobalCtx {
 		struct udphdr	*uh;
 	};
 	uint64_t	ts_jiff;
-	XfwIp		ilog_addr;
 } XfwGlobalCtx;
 
 /* Read-only for eBPF. */

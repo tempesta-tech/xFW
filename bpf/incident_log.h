@@ -181,6 +181,3 @@ register_incident(const XfwIp* ilog_addr, uint32_t pkt_sz, enum XfwDropStat reas
 	else 
 		update_drop_cnt();
 }
-
-#define REGISTER_INCIDENT(ctx, reason)					\
-	register_incident(&(ctx)->ilog_addr, (ctx)->pkt_sz, reason)
