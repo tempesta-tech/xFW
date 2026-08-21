@@ -324,6 +324,7 @@ class XFW(NetworkStateful):
         )
 
     async def rules_set(self, new_rules: str) -> None:
+        print(new_rules)
         return await self.rules_push_config(new_rules)
 
     async def rules_patch(self, new_rules: str) -> None:

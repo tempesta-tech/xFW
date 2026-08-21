@@ -80,7 +80,7 @@ class UdpV6ServerMappedIP(UdpServer, IP6Mixin):
 
     @property
     def ip_testing(self):
-        return self.ipv4
+        return self.ip_format(self.ipv4)
 
 
 class UdpV4ServerRemote(RemoteServer, UdpV4Server): ...

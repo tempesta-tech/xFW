@@ -1,10 +1,18 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+import asyncio
 
 import pytest
+from scapy.layers.inet import UDP
+from scapy.layers.inet6 import IPv6
+from scapy.layers.l2 import Ether
+from scapy.packet import Raw
 
 from framework.cmp import check_connection
-from framework.stateful import RegularKernelSocketNetworkStateful
+from framework.stateful import (
+    RawSocketNetworkStateful,
+    RegularKernelSocketNetworkStateful,
+)
 from framework.xfw import XFW
 
 
@@ -340,18 +348,34 @@ async def test_src_block_only_one_protocol_subtype(
 
 async def test_src_block_by_ip_mapped(
     xfw: XFW,
-    udp_ip4_client: RegularKernelSocketNetworkStateful,
-    udp_ip4_mapped_ip6_server: RegularKernelSocketNetworkStateful,
+    ether_raw_client: RawSocketNetworkStateful,
+    ether_raw_server: RawSocketNetworkStateful,
 ):
+    breakpoint()
+    await ether_raw_server.start()
+    await ether_raw_client.start()
+
+    src_mac, dst_mac = await asyncio.gather(
+        ether_raw_client.get_mac_address(),
+        ether_raw_server.get_mac_address(),
+    )
+
+    real_server_ipv6 = "fe80::706a:a2ff:feae:646d"
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_ip ip4: allow; }}
-            src=extended_group ip4.udp : block {{
-                {udp_ip4_client.ip_testing}
+            defaults {{ src_ip : allow; }}
+            src=extended_group ip6.udp : block {{
+                {ether_raw_client.ip_mapped}
             }}
         }}
         """)
 
-    assert (
-        await check_connection(udp_ip4_client, udp_ip4_mapped_ip6_server) is False
-    ), f"Client {udp_ip4_client.ip_testing} is not blocked"
+    packet = (
+        Ether(dst=dst_mac, src=src_mac)
+        / IPv6(src=ether_raw_client.ip_mapped, dst=real_server_ipv6)
+        / UDP()
+        / Raw(b"payload")
+    )
+
+    await ether_raw_client.send_packet(packet)
+    assert await ether_raw_server.receive_block()
