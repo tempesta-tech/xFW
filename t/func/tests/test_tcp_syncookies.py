@@ -263,10 +263,16 @@ async def group_of_clients(
         pytest.param("passive_timer=2", id="passive"),
         pytest.param("flood_timer=1 passive_timer=0", id="always-passive"),
         pytest.param(
+            # This configuration is not recommeded by our wiki.
+            # The problem with it that it's very non-deterministic: zero passive
+            # mode makes xFW to try to send SYN cookie every CPU scheduler tick
+            # and zero flood mode moves to the passive mode also every scheduler
+            # tick. With these timing the tests results may differ.
             "flood_timer=0 passive_timer=0",
             id="no-received-syncookies",
             marks=pytest.mark.xfail(
-                reason="Expected failre as `flood_timer=0 passive_timer=0` configuration is not recommended"
+                strict=False,
+                reason="Expected failre as `flood_timer=0 passive_timer=0` configuration is not recommended",
             ),
         ),
     ],
@@ -869,6 +875,7 @@ _SYNCOOKIE_SMALL_FRACTION_VAL_RANGE = [0, _HANDSHAKE_FLOOD_GENERATED * 0.1]
 
 # The whole range for the values, which are fully undeterministic
 _SYNCOOKIE_WHOLE_VAL_RANGE = [0, _HANDSHAKE_FLOOD_GENERATED]
+
 
 @pytest.mark.parametrize(
     "option,handshakes,duration,expected_xfw,expected_kernel",
