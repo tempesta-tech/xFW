@@ -110,6 +110,15 @@ class EtherRawClient(SocketBaseNetworkStateful):
         self.logger.info("The expected L2 packet was not received - the timeout was exceeded")
         return None
 
+    async def receive_block(self) -> bool:
+        """
+        This method returns False if a non‑system package is received.
+        """
+        result = await self.receive_packet()
+        if result is not None:
+            self.logger.info(f"Received unexpected L2 packet {result}")
+        return result is None
+
     async def set_sock_proto(self, proto: int):
         self.socket_proto = proto
 
