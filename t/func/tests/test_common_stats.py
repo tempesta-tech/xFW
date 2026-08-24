@@ -29,28 +29,8 @@ ETH_P_ARP = 0x0806
 @pytest.fixture
 def stats_counters() -> list[str]:
     return [
-        "xfw_l2_unknown_ingress_packets",
-        "xfw_l2_unknown_ingress_bytes",
-        "xfw_eth_badhdr_ingress_packets",
-        "xfw_eth_badhdr_ingress_bytes",
-        "xfw_ip4_badhdr_ingress_packets",
-        "xfw_ip4_badhdr_ingress_bytes",
-        "xfw_ip4_fragmented_ingress_packets",
-        "xfw_ip4_fragmented_ingress_bytes",
-        "xfw_ip6_badhdr_ingress_packets",
-        "xfw_ip6_badhdr_ingress_bytes",
-        "xfw_ip6_fragmented_ingress_packets",
-        "xfw_ip6_fragmented_ingress_bytes",
-        "xfw_tcp_badhdr_ingress_packets",
-        "xfw_tcp_badhdr_ingress_bytes",
-        "xfw_udp_badhdr_ingress_packets",
-        "xfw_udp_badhdr_ingress_bytes",
-        "xfw_icmp_badhdr_ingress_packets",
-        "xfw_icmp_badhdr_ingress_bytes",
         "xfw_arp_ingress_packets",
         "xfw_arp_ingress_bytes",
-        "xfw_l4_unsupported_ingress_packets",
-        "xfw_l4_unsupported_ingress_bytes",
         "xfw_preload_ingress_packets",
         "xfw_preload_ingress_bytes",
         "xfw_l2_unknown_egress_packets",
@@ -421,19 +401,23 @@ async def test_ingress_preload_stats(
     [
         # xfw_l2_unknown_egress_packets is diapason because
         # some kernel messages could be caught
+        # sizeof(ethhdr) = 14
+        # sizeof(payload) = 9
+        # (14 + 9) * 10
         pytest.param(
-            dict(xfw_l2_unknown_egress_packets=[10, 15], xfw_l2_unknown_egress_bytes=[540, 800]),
+            dict(xfw_l2_unknown_egress_packets=[10, 15], xfw_l2_unknown_egress_bytes=[230, 345]),
             "send_eth_eapol_packet",
             ETH_P_IP,
             id="eth-l2-bad-protocol-eapol",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
+        # sizeof(ethhdr) = 14
+        # sizeof(payload) = 9
+        # (14 + 9) * 10
         pytest.param(
-            dict(xfw_l2_unknown_egress_packets=[10, 12], xfw_l2_unknown_egress_bytes=[540, 800]),
+            dict(xfw_l2_unknown_egress_packets=[10, 12], xfw_l2_unknown_egress_bytes=[230, 276]),
             "send_eth_custom_packet",
             ETH_P_IP,
             id="eth-l2-bad-protocol-custom",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
         pytest.param(
             dict(xfw_eth_badhdr_egress_packets=10, xfw_eth_badhdr_egress_bytes=540),
@@ -442,61 +426,81 @@ async def test_ingress_preload_stats(
             id="eth-send-bad-header",
             marks=pytest.mark.skip("ISSUE: 332"),
         ),
+        # sizeof(ethhdr) = 14
+        # sizeof(iphdr)[:10] = 10
+        # (14 + 10) * 10
         pytest.param(
-            dict(xfw_ip4_badhdr_egress_packets=10, xfw_ip4_badhdr_egress_bytes=540),
+            dict(xfw_ip4_badhdr_egress_packets=10, xfw_ip4_badhdr_egress_bytes=240),
             "send_bad_ip4_header_less",
             ETH_P_IP,
             id="ip4-tcp-header-less",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
+        # sizeof(ethhdr) = 14
+        # sizeof(iphdr) = 20
+        # sizeof(payload) = 12
+        # (14 + 20 + 12) * 10
         pytest.param(
-            dict(xfw_ip4_badhdr_egress_packets=10, xfw_ip4_badhdr_egress_bytes=540),
+            dict(xfw_ip4_badhdr_egress_packets=10, xfw_ip4_badhdr_egress_bytes=460),
             "send_bad_ip4_header_greater",
             ETH_P_IP,
             id="ip4-tcp-header-greater",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
+        # sizeof(ethhdr) = 14
+        # sizeof(iphdr) = 20
+        # (14 + 20) * 10
         pytest.param(
-            dict(xfw_ip4_badhdr_egress_packets=10, xfw_ip4_badhdr_egress_bytes=540),
+            dict(xfw_ip4_badhdr_egress_packets=10, xfw_ip4_badhdr_egress_bytes=340),
             "send_bad_ip4_bad_ip_version",
             ETH_P_IP,
             id="ip4-bad-ip-version",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
+        # sizeof(ethhdr) = 14
+        # sizeof(ipv6hdr)[:35] = 35
+        # (14 + 35) * 10
         pytest.param(
-            dict(xfw_ip6_badhdr_egress_packets=10, xfw_ip6_badhdr_egress_bytes=540),
+            dict(xfw_ip6_badhdr_egress_packets=10, xfw_ip6_badhdr_egress_bytes=490),
             "send_bad_ip6_header_less",
             ETH_P_IPV6,
             id="ip6-header-less",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
+        # sizeof(ethhdr) = 14
+        # sizeof(ipv6hdr) = 40
+        # (14 + 40) * 10
         pytest.param(
             dict(xfw_ip6_badhdr_egress_packets=10, xfw_ip6_badhdr_egress_bytes=540),
             "send_bad_ip6_bad_ip_version",
             ETH_P_IPV6,
             id="ip6-bad-ip-version",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
+        # sizeof(ethhdr) = 14
+        # sizeof(iphdr) = 20
+        # sizeof(tcphdr)[:15] = 15
+        # (14 + 20 + 15) * 10
         pytest.param(
-            dict(xfw_tcp_badhdr_egress_packets=10, xfw_tcp_badhdr_egress_bytes=540),
+            dict(xfw_tcp_badhdr_egress_packets=10, xfw_tcp_badhdr_egress_bytes=490),
             "send_bad_tcp_headers",
             ETH_P_IP,
             id="tcp-bad-header-len",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
+        # sizeof(ethhdr) = 14
+        # sizeof(iphdr) = 20
+        # sizeof(tcphdr)[:6] = 6
+        # (14 + 20 + 6) * 10
         pytest.param(
-            dict(xfw_udp_badhdr_egress_packets=10, xfw_udp_badhdr_egress_bytes=540),
+            dict(xfw_udp_badhdr_egress_packets=10, xfw_udp_badhdr_egress_bytes=400),
             "send_bad_udp_headers",
             ETH_P_IP,
             id="udp-bad-header-len",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
+        # sizeof(ethhdr) = 14
+        # sizeof(iphdr) = 20
+        # sizeof(sctphdr) = 12
+        # (14 + 20 + 12) * 10
         pytest.param(
-            dict(xfw_l4_unsupported_egress_packets=10, xfw_l4_unsupported_egress_bytes=540),
+            dict(xfw_l4_unsupported_egress_packets=10, xfw_l4_unsupported_egress_bytes=460),
             "send_l4_unsupported_ip_proto",
             ETH_P_IP,
             id="ip4-block-unsupported-sctp",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
     ],
 )
@@ -523,6 +527,7 @@ async def test_egress_stats(
         config=config,
         logging_level=logging_level,
         local_class=InvalidEthTypeRawClient,
+        force_ip4=sock_proto == ETH_P_IP,
     )
     client.socket_proto = socket.htons(ETH_P_ALL)
 
