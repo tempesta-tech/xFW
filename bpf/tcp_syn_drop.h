@@ -20,14 +20,43 @@
 #define XFW_SYN_RETRY_MAX_ENTRIES	1000000
 
 /*
+ * Pending-entry states.
+ *
+ * PENDING is the normal validation state. PROMOTING gives one CPU exclusive
+ * ownership of the pending -> retry transition; concurrent SYNs are dropped
+ * while the transition is in progress. BLOCKED permanently rejects the tuple
+ * until the LRU entry is evicted.
+ */
+typedef enum XfwSynPendingState {
+	XFW_SYN_PENDING_STATE_PENDING,
+	XFW_SYN_PENDING_STATE_PROMOTING,
+	XFW_SYN_PENDING_STATE_BLOCKED
+} XfwSynPendingState;
+
+/*
+ * Retry-entry states.
+ *
+ * ACTIVE allows a SYN to acquire the entry for processing. UPDATING gives one
+ * CPU exclusive ownership while retry timing, backoff and counters are being
+ * updated; concurrent SYNs are dropped. BLOCKED permanently rejects the tuple
+ * until the LRU entry is evicted.
+ */
+typedef enum XfwSynRetryState {
+	XFW_SYN_RETRY_STATE_ACTIVE,
+	XFW_SYN_RETRY_STATE_UPDATING,
+	XFW_SYN_RETRY_STATE_BLOCKED
+} XfwSynRetryState;
+
+/*
  * The first map stores SYN tuples which have not yet passed the initial
  * retransmission timing check.
  *
- * A blocked entry remains blocked until the LRU map evicts it.
+ * A blocked entry, with XFW_SYN_PENDING_STATE_BLOCKED state
+ * remains blocked until the LRU map evicts it.
  */
 typedef struct XfwSynPending {
 	uint64_t	jtxtstamp;
-	bool		blocked;
+	uint64_t	state;
 } XfwSynPending;
 
 /*
@@ -56,8 +85,8 @@ typedef struct XfwSynRetry {
 	uint64_t	jtxtstamp;
 	uint64_t	max_delay;
 	uint64_t	blocked_until;
+	uint64_t	state;
 	uint32_t	retry_count;
-	bool		blocked;
 } XfwSynRetry;
 
 /*
@@ -143,12 +172,22 @@ xfw_promote_syn(uint64_t hash, uint64_t now,
 		.jtxtstamp = now,
 		.max_delay = cfg->max_delay_jiff * 2,
 		.blocked_until = 0,
+		.state = XFW_SYN_RETRY_STATE_ACTIVE,
 		.retry_count = 1,
-		.blocked = false,
 	};
 
+	/*
+	 * BPF_NOEXIST is not required for serialization of concurrent
+	 * promotions: ownership of the pending entry is already protected by
+	 * the PENDING -> PROMOTING CAS transition.
+	 *
+	 * Keep BPF_NOEXIST to avoid overwriting an existing retry entry in case
+	 * of a hash collision or stale state. In that case the current SYN is
+	 * dropped conservatively instead of destroying the existing protection
+	 * state.
+	 */
 	if (bpf_map_update_elem(&MAP_SYN_RETRY_REF, &hash, &retry,
-				BPF_ANY))
+				BPF_NOEXIST))
 	{
 		XFW_CTX_DBG("Failed to add SYN tuple to the syn retry table");
 		return XDP_DROP;
@@ -205,8 +244,23 @@ static __always_inline int
 xfw_process_pending_filter(const XfwGlobalCtx *ctx, XfwSynPending *entry,
 			   uint64_t hash, uint64_t now)
 {
-	if (entry->blocked)
+	uint64_t state =
+		__sync_val_compare_and_swap(&entry->state,
+					    XFW_SYN_PENDING_STATE_PENDING,
+					    XFW_SYN_PENDING_STATE_PROMOTING);
+	/*
+	 * The entry is permanently blocked until LRU eviction.
+	 * Drop the current SYN.
+	 */
+	if (state == XFW_SYN_PENDING_STATE_BLOCKED)
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
+	/*
+	 * Another CPU is already processing this entry.
+	 * Drop the concurrent SYN.
+	 */
+	else if (state == XFW_SYN_PENDING_STATE_PROMOTING)
+		return XDP_DROP;
+
 	/*
 	 * The valid retransmission window is:
 	 *
@@ -218,11 +272,19 @@ xfw_process_pending_filter(const XfwGlobalCtx *ctx, XfwSynPending *entry,
 	if (entry->jtxtstamp + syn_cfg->time_min_jiff > now
 	    || now > entry->jtxtstamp + syn_cfg->max_delay_jiff)
 	{
-		entry->blocked = true;
+		WRITE_ONCE(entry->state, XFW_SYN_PENDING_STATE_BLOCKED);
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
 
-	return xfw_promote_syn(hash, now, syn_cfg);
+	int r = xfw_promote_syn(hash, now, syn_cfg);
+	/*
+	 * Restore PENDING entry state if no retry entry was created,
+	 * otherwise this entry was removed from the LRU hash table.
+	 */
+	if (r != XFW_CTX_CONTINUE)
+		WRITE_ONCE(entry->state, XFW_SYN_PENDING_STATE_PENDING);
+
+	return r;
 }
 
 static __always_inline bool
@@ -230,15 +292,24 @@ xfw_start_validation(uint64_t hash, uint64_t now)
 {
 	XfwSynPending pending = {
 		.jtxtstamp = now,
-		.blocked = false,
+		.state = XFW_SYN_PENDING_STATE_PENDING,
 	};
 
 	/*
 	 * The current SYN becomes the first SYN of a new validation cycle.
 	 * Remember it in the pending map and deliberately drop it.
+	 *
+	 * Use BPF_NOEXIST so that concurrent SYNs for the same tuple cannot
+	 * overwrite an entry created by another CPU and move its validation
+	 * timestamp forward. If another CPU wins the race, the existing state
+	 * must be preserved.
+	 *
+	 * The current SYN is always dropped after this function is called, so
+	 * -EEXIST does not require any special handling.
 	 */
 	if (bpf_map_update_elem(&MAP_SYN_PENDING_REF, &hash,
-				&pending, BPF_ANY)) {
+				&pending, BPF_NOEXIST))
+	{
 		XFW_CTX_DBG("Failed to add SYN tuple to the syn pending table");
 		return false;
 	}
@@ -329,12 +400,22 @@ static __always_inline int
 xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 			 uint64_t hash, uint64_t now)
 {
+	uint64_t state =
+		__sync_val_compare_and_swap(&entry->state,
+					    XFW_SYN_RETRY_STATE_ACTIVE,
+					    XFW_SYN_RETRY_STATE_UPDATING);
 	/*
-	 * A timing violation blocks the tuple indefinitely, until LRU
-	 * eviction.
+	 * The entry is permanently blocked until LRU eviction.
+	 * Drop the current SYN.
 	 */
-	if (entry->blocked) 
+	if (state == XFW_SYN_RETRY_STATE_BLOCKED)
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
+	/*
+	 * Another CPU is already processing this entry.
+	 * Drop the concurrent SYN.
+	 */
+	else if (state == XFW_SYN_RETRY_STATE_UPDATING)
+		return XDP_DROP;
 
 	/*
 	 * `retry_count` may impose a finite block. Once it expires, restart
@@ -342,9 +423,11 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 	 * the tuple again.
 	 */
 	if (entry->blocked_until) {
-		if (now < entry->blocked_until)
+		if (now < entry->blocked_until) {
+			WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_ACTIVE);
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED,
 						 "blocking timeout has not expired");
+		}
 
 		/*
 		 * The finite block has expired. Treat this SYN as the first SYN
@@ -356,6 +439,8 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 		 */
 		if (xfw_start_validation(hash, now))
 			bpf_map_delete_elem(&MAP_SYN_RETRY_REF, &hash);
+		else
+			WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_ACTIVE);
 
 		return XDP_DROP;
 	}
@@ -368,27 +453,28 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 		 * A SYN outside the retransmission window is permanently
 		 * blocked, as required by the design.
 		 */
-		entry->blocked = true;
+		WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_BLOCKED);
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
 
 	entry->retry_count++;
-
 	/*
 	 * The SYN that reaches `retry_count` is still passed upstream. At the
- 	 * same time, put the entry into the blocked state so that every
+	 * same time, put the entry into the blocked state so that every
 	 * following SYN is handled by the checks above and never reaches
 	 * retry_count++ again.
 	 *
 	 * Therefore, for a valid retry-map entry `retry_count` cannot grow past
 	 * syn_cfg->retry_count.
-	 */
+         */
+
 	if (entry->retry_count == syn_cfg->retry_count) {
 		if (syn_cfg->block_timeout_jiff) {
 			entry->blocked_until =
 				now + syn_cfg->block_timeout_jiff;
+			WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_ACTIVE);
 		} else {
-			entry->blocked = true;	
+			WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_BLOCKED);
 		}
 		return XFW_CTX_CONTINUE;
 	}
@@ -400,6 +486,7 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 	 */
 	entry->max_delay = entry->max_delay * 2;
 	entry->jtxtstamp = now;
+	WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_ACTIVE);
 
 	return XFW_CTX_CONTINUE;
 }
