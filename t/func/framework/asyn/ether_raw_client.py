@@ -3,6 +3,7 @@
 
 import asyncio
 import socket
+import time
 from typing import Optional
 
 from scapy.all import Raw
@@ -85,6 +86,29 @@ class EtherRawClient(SocketBaseNetworkStateful):
         if any(packet.haslayer(layer) for layer in _SYSTEM_LAYERS):
             return await self.receive_packet()
         return packet
+
+    async def receive_message(self, message: bytes) -> Optional[Ether]:
+        start_at = time.time()
+        packet = None
+        while time.time() - start_at < self.timeout:
+            packet = await self.receive_packet()
+
+            if packet is None:
+                continue
+
+            self.logger.info(f"The L2 packet is received - {packet}")
+            if message not in bytes(packet):
+                await asyncio.sleep(self.message_polling_interval)
+                continue
+
+            return packet
+
+        if packet is not None:
+            self.logger.info(
+                f"The expected L2 package is missing from the received ones - {packet}"
+            )
+        self.logger.info("The expected L2 packet was not received - the timeout was exceeded")
+        return None
 
     async def set_sock_proto(self, proto: int):
         self.socket_proto = proto

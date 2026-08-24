@@ -156,6 +156,7 @@ async def test_allow_arbitrary_ip_protocol(
         ether_raw_server.get_mac_address(),
     )
 
+    payload = b"payload"
     packet = (
         Ether(dst=dst_mac, src=src_mac, type=ETH_P_IP)
         / IP(
@@ -163,15 +164,14 @@ async def test_allow_arbitrary_ip_protocol(
             dst=ether_raw_server.ip,
             proto=protocol,
         )
-        / Raw(b"payload")
+        / Raw(payload)
     )
 
     await xfw.rules_set(f"xfw {{ ip_proto {{ {protocol} }} }}")
 
     await ether_raw_client.send_packet(packet)
 
-    received = await ether_raw_server.receive_packet()
+    received = await ether_raw_server.receive_message(payload)
     assert received is not None
-    assert received.haslayer(IP), received
     assert received[IP].proto == protocol
-    assert bytes(received[Raw].load) == b"payload"
+    assert bytes(received[Raw].load) == payload
