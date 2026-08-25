@@ -45,7 +45,13 @@ async def server_cloner() -> AsyncGenerator[ClonerCallable, None]:
 
     yield wrapper
 
-    await asyncio.gather(*[clone.stop() for clone in _clones], return_exceptions=True)
+    # Stop clones sequentially because Netns serializes namespace access with
+    # an asyncio.Lock. Concurrent stop() calls may bind that lock to the current
+    # event loop, while subsequent pytest-asyncio fixture finalizers can run in
+    # another loop, causing "Lock is bound to a different event loop" errors.
+    for clone in _clones:
+        await clone.stop()
+
     _clones.clear()
 
 
@@ -73,14 +79,24 @@ async def client_cloner(server_cloner) -> AsyncGenerator[ClonerCallable, None]:
     _clones: list[SocketBaseNetworkStateful] = []
 
     def wrapper(
-        cloner: SocketBaseNetworkStateful, amount: int, fabric: Optional[Any] = None
+        cloner: SocketBaseNetworkStateful,
+        amount: int,
+        fabric: Optional[Any] = None,
+        reuse_endpoint: bool = False,
     ) -> list[SocketBaseNetworkStateful]:
         nonlocal _clones
 
-        ports = cloner.generate_new_ports(amount)
-        addresses = cloner.generate_new_addresses(amount)
+        if not reuse_endpoint:
+            ports = cloner.generate_new_ports(amount)
+            addresses = cloner.generate_new_addresses(amount)
+        else:
+            ports = [cloner.port] * amount
+            addresses = [cloner.ip] * amount
 
         class_to_create = fabric if fabric else cloner.__class__
+        extra_kwargs = {}
+        if issubclass(class_to_create, TcpClient):
+            extra_kwargs["reuse_addr"] = reuse_endpoint
 
         for port, address in zip(ports, addresses):
             _clones.append(
@@ -98,11 +114,17 @@ async def client_cloner(server_cloner) -> AsyncGenerator[ClonerCallable, None]:
                     namespace=cloner.namespace,
                     testing_model=cloner.testing_model,
                     timeout=cloner.timeout,
+                    **extra_kwargs,
                 )
             )
         return _clones
 
     yield wrapper
 
-    await asyncio.gather(*[clone.stop() for clone in _clones], return_exceptions=True)
+    # Stop clones sequentially because Netns serializes namespace access with
+    # an asyncio.Lock. Concurrent stop() calls may bind that lock to the current
+    # event loop, while subsequent pytest-asyncio fixture finalizers can run in
+    # another loop, causing "Lock is bound to a different event loop" errors.
+    for clone in _clones:
+        await clone.stop()
     _clones.clear()

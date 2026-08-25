@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+import socket
 from abc import ABC
 from typing import Optional
 
@@ -48,8 +49,9 @@ class TCPClientProtocol(asyncio.Protocol):
 
 class TcpClient(BaseTcpStateful, ABC):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, reuse_addr: bool = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.reuse_addr = reuse_addr
         self.protocol: Optional[TCPClientProtocol] = None
 
     @property
@@ -72,6 +74,12 @@ class TcpClient(BaseTcpStateful, ABC):
             ),
             timeout=self.timeout,
         )
+
+    def set_socket_options(self, sock: socket.socket):
+        super().set_socket_options(sock)
+
+        if self.reuse_addr:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
 
 class TcpV4Client(TcpClient, IP4Mixin): ...
