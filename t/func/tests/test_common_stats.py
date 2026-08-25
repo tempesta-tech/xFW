@@ -153,9 +153,9 @@ class SendInvalidPacketsMixin(EtherRawClient):
         await self.loop.sock_sendall(self.socket, bytes(packet / icmp_part))
         self.logger.info(f"Sending L2 packet {packet}")
 
-    async def send_bad_arp_headers(self, src_mac: str, dst_mac: str):
+    async def send_arp_headers(self, src_mac: str, dst_mac: str):
         packet = Ether(dst=dst_mac, src=src_mac, type=ETH_P_ARP)
-        arp_part = bytes(ARP(op=1, pdst=self.remote_ip))[:20]
+        arp_part = bytes(ARP(op=1, pdst=self.remote_ip))
         await self.loop.sock_sendall(self.socket, bytes(packet / arp_part))
         self.logger.info(f"Sending L2 packet {packet}")
 
@@ -294,12 +294,14 @@ class InvalidEthTypeRawServerRemote(RemoteServer, InvalidEthTypeRawServer):
             id="icmp-bad-header-len",
             marks=pytest.mark.skip("ISSUE: 332, 40 (xFW)"),
         ),
+        # sizeof(ethhdr) = 14
+        # sizeof(arphdr) = 28
+        # (14 + 28) * 10
         pytest.param(
-            dict(xfw_arp_ingress_packets=10, xfw_arp_ingress_bytes=540),
-            "send_bad_arp_headers",
+            dict(xfw_arp_ingress_packets=10, xfw_arp_ingress_bytes=420),
+            "send_arp_headers",
             ETH_P_IP,
             id="arp-bad-header",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
         pytest.param(
             dict(xfw_l4_unsupported_ingress_packets=10, xfw_l4_unsupported_ingress_bytes=460),
