@@ -190,8 +190,8 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 	*is_upstream_egress = (bpf_map_lookup_elem(prot_net_map, &prot_net_key) == NULL);
 	if (!*is_upstream_egress) /* Packets going to upstream. */
 		CHAIN(process_downstream_egress, ctx);
-	
-	/* 
+
+	/*
 	 * Still needs to be called when rules are not loaded. TCP AUTH filter is
 	 * atomatically inactive at that time.
 	 */
@@ -233,13 +233,12 @@ xfw_tc(struct __sk_buff *skb)
 
 	if (is_upstream_egress) {
 		/*
-		 * Passed_upstream_egress will also include such passed trafic as
-		 * preload_egress, eth_badhdr_egress, ip6_badhdr_egress,
-		 * l2_unknown_egress, tcp_badhdr_egress, udp_badhdr_egress,
-		 * l4_unsupported_egress. So if you want to have clear markers,
-		 * it is better to remove these stats before calculation.
-		 * All this trafic were passed before we even know is it upstream
-		 * or downstream trafic.
+		 * Passed_upstream_egress will also include such passed trafic
+		 * as eth_badhdr_egress, ip6_badhdr_egress, l2_unknown_egress,
+		 * tcp_badhdr_egress, udp_badhdr_egress, l4_unsupported_egress.
+		 * So if you want to have clear markers, it is better to remove
+		 * these stats before calculation. All this trafic were passed
+		 * before we even know is it upstream or downstream trafic.
 		 */
 		count_traffic_stat(&ctx, XFW_TOTAL_UPSTREAM_EGRESS);
 		if (res == XFW_CTX_PASS)
