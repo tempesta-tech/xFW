@@ -47,8 +47,6 @@ def stats_counters() -> list[str]:
         "xfw_tcp_badhdr_egress_bytes",
         "xfw_udp_badhdr_egress_packets",
         "xfw_udp_badhdr_egress_bytes",
-        "xfw_preload_egress_packets",
-        "xfw_preload_egress_bytes",
     ]
 
 
@@ -560,41 +558,6 @@ async def test_egress_stats(
 
     # some third party traffic could be received
     assert len([responses]) <= 5, "Broken packets where not filtered"
-
-
-@pytest.mark.parametrize(
-    "counters",
-    [
-        pytest.param(
-            dict(xfw_preload_egress_packets=10, xfw_preload_egress_bytes=540),
-            id="egress-count-packets-before-rules",
-            marks=pytest.mark.skip("ISSUE: 332"),
-        ),
-    ],
-)
-async def test_egress_preload_stats(
-    counters: dict[str, int],
-    stats_counters: list[str],
-    xfw: XFW,
-    udp_ip4_client,
-    udp_ip4_server,
-):
-    await udp_ip4_server.start()
-    udp_ip4_server.client_ip = udp_ip4_client.ip
-    udp_ip4_server.client_port = udp_ip4_client.port
-
-    await udp_ip4_client.start()
-
-    async with xfw.metrics_diff(stats_counters) as diff:
-        await asyncio.gather(*[udp_ip4_server.send_message("message") for _ in range(10)])
-
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=stats_counters,
-        all_metrics=diff,
-        diff_metrics=counters,
-    )
-
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
 
 
 @pytest.mark.parametrize(

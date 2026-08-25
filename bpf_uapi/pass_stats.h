@@ -18,7 +18,6 @@ enum XfwPassStat {
 
 	/* Pass when rules are not loaded. */
 	XFW_PRELOAD_INGRESS,
-	XFW_PRELOAD_EGRESS,
 
 	/* Pass from TC on packet parsing failures. */
 	XFW_L2_UNKNOWN_EGRESS,
@@ -61,8 +60,6 @@ static const struct XfwStatInfo xfw_pass_stats[] = {
 						    "Allowed on parsing: packet "
 						    "with supported protocol"},
 	[XFW_PRELOAD_INGRESS]			= {"xfw_preload_ingress",
-						   "Allowed: xFW rules are not loaded"},
-	[XFW_PRELOAD_EGRESS]			= {"xfw_preload_egress",
 						   "Allowed: xFW rules are not loaded"},
 	[XFW_L2_UNKNOWN_EGRESS]			= {"xfw_l2_unknown_egress",
 						   "Allowed on parsing: unknown "
