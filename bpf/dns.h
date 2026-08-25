@@ -95,8 +95,8 @@ STATIC_ASSERT(sizeof(XfwPacketMetadata) <= 32,
 typedef struct XfwDnsCtx {
 	XfwMd		*ctx;
 	XfwPerCpuStats	*g_stats;
+	XfwTcpConnAddr	addr;
 	XfwHdrCursor	hdr_cur;
-	XfwIp		ilog_addr;
 	uint32_t	pkt_sz;
 } XfwDnsCtx;
 
@@ -365,13 +365,15 @@ init_dns_ctx(XfwDnsCtx *dns_ctx, XfwMd *ctx, XfwPerCpuStats *global_stats)
 		struct iphdr *ipv4 = ip_hdr;
 		if (unlikely((void*)(ipv4 + 1) > dns_ctx->hdr_cur.end))
 			return -1;
-		xfw_ipv4_to_ipv6_mapped(ipv4->saddr, dns_ctx->ilog_addr.addr32);
+		xfw_ipv4_to_ipv6_mapped(ipv4->saddr, dns_ctx->addr.src_addr.addr32);
+		xfw_ipv4_to_ipv6_mapped(ipv4->daddr, dns_ctx->addr.dst_addr.addr32);
 	}
 	else {
 		struct ipv6hdr *ipv6 = ip_hdr;
 		if (unlikely((void*)(ipv6 + 1) > dns_ctx->hdr_cur.end))
 			return -1;
-		dns_ctx->ilog_addr.in6 = ipv6->saddr;
+		dns_ctx->addr.src_addr.in6 = ipv6->saddr;
+		dns_ctx->addr.dst_addr.in6 = ipv6->daddr;
 	}
 
 	dns_ctx->pkt_sz = XFW_CTX_MD(ctx)->data_end - XFW_CTX_MD(ctx)->data;

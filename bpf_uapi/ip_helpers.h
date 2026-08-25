@@ -27,7 +27,7 @@ xfw_ipv4_to_ipv6_mapped(__be32 ipv4, __be32 addr[4])
 	addr[3] = ipv4;
 }
 
-static __always_inline int
+static __always_inline bool
 xfw_is_ipv6_mapped_to_ipv4(const __be32 addr[4])
 {
 	return (addr[0] == 0 && addr[1] == 0 &&

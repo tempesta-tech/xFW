@@ -227,6 +227,7 @@ populate_src_info(const XfwGlobalCtx *ctx, void **src_ip_map,
 {
 	if (ctx->ipver == bpf_htons(ETH_P_IPV6))
 	{
+		ipv6_populate_lpm_key(&ctx->addr.src_addr.in6, &ip_lpm->addr6);
 		if (ctx->l4_proto == XFW_L4_PROTO_UDP) {
 			*src_default = XFW_DEFAULT_SRC_IP_UDP_IP6;
 			*src_ip_map =  SELECT_SHADOW_MAP(MAP_SRC_6_UDP_BASENAME,
@@ -239,6 +240,8 @@ populate_src_info(const XfwGlobalCtx *ctx, void **src_ip_map,
 		}
 	}
 	else { /* ETH_P_IP */
+		ipv4_populate_lpm_key(ctx->addr.src_addr.addr32[3],
+				      &ip_lpm->addr4);
 		if (ctx->l4_proto == XFW_L4_PROTO_UDP) {
 			*src_default = XFW_DEFAULT_SRC_IP_UDP_IP4;
 			*src_ip_map = SELECT_SHADOW_MAP(MAP_SRC_4_UDP_BASENAME,
@@ -261,30 +264,34 @@ populate_src_info(const XfwGlobalCtx *ctx, void **src_ip_map,
  * information) in addition to the IP address.
  */
 static __always_inline int
-src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
+src_filter_ip(const XfwGlobalCtx *ctx)
 {
+	XfwIpLpmKey ip_lpm = {};
 	uint8_t src_default;
 	void *src_ip_map;
-	populate_src_info(ctx, &src_ip_map, ip_lpm, &src_default);
 
-	XfwSrcRule *rule = bpf_map_lookup_elem(src_ip_map, ip_lpm);
+	populate_src_info(ctx, &src_ip_map, &ip_lpm, &src_default);
+
+	XfwSrcRule *rule = bpf_map_lookup_elem(src_ip_map, &ip_lpm);
 
 	if (rule) {
 		switch (rule->action) {
 		case XFW_ACTION_BLOCK:
 			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SRC_IP_BLOCKED,
-						     ": %pI6", &ctx->ilog_addr.in6);
+						     ": %pI6",
+						     &ctx->addr.src_addr.in6);
 
 		case XFW_ACTION_ALLOW:
 			return XFW_MAKE_CTX_PASS_EXT(ctx, XFW_SRC_IP_ALLOWED,
-						     ": %pI6", &ctx->ilog_addr.in6);
+						     ": %pI6",
+						     &ctx->addr.src_addr.in6);
 		default:
 			/* XFW_ACTION_RATE_LIMIT */
 			XFW_ASSERT(rule->action == XFW_ACTION_RATE_LIMIT);
 
 			XfwRLimitSlidingWindow *b = XFW_MAP_LOOKUP_OR_INIT(
 							&MAP_SRC_RATELIM_REF,
-							&ctx->ilog_addr.in6,
+							&ctx->addr.src_addr.in6,
 							XfwRLimitSlidingWindow);
 			XFW_ASSERT(b);
 
@@ -294,14 +301,14 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
 						 b))
 				return XFW_CTX_CONTINUE;
 			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SRC_IP_RATE_LIMITED,
-						     ": %pI6", &ctx->ilog_addr.in6);
+						     ": %pI6", &ctx->addr.src_addr.in6);
 		}
 	}
 
 	XfwActionRule *default_rule = &ctx->cfg->rules.defaults[src_default];
 	if (default_rule->action == XFW_ACTION_BLOCK)
 		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SRC_IP_DEFAULT_BLOCKED,
-					     ": %pI6", &ctx->ilog_addr.in6);
+					     ": %pI6", &ctx->addr.src_addr.in6);
 
 	if (default_rule->action == XFW_ACTION_ALLOW)
 		return XFW_CTX_CONTINUE;
@@ -309,7 +316,7 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
 	XFW_ASSERT(default_rule->action == XFW_ACTION_RATE_LIMIT);
 
 	XfwRLimitSlidingWindow *b = XFW_MAP_LOOKUP_OR_INIT(&MAP_SRC_RATELIM_REF,
-						       &ctx->ilog_addr.in6,
+						       &ctx->addr.src_addr.in6,
 						       XfwRLimitSlidingWindow);
 	XFW_ASSERT(b);
 
@@ -320,7 +327,7 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
 		return XFW_CTX_CONTINUE;
 
 	return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SRC_IP_DEFAULT_RATE_LIMITED,
-				     ": %pI6", &ctx->ilog_addr.in6);
+				     ": %pI6", &ctx->addr.src_addr.in6);
 }
 
 /**
@@ -330,9 +337,9 @@ src_filter_ip(const XfwGlobalCtx *ctx, XfwIpLpmKey *ip_lpm)
  * We need to change the configuration to be able to split the layers.
  */
 static __always_inline int
-src_filter(const XfwGlobalCtx *ctx, XfwPort src_port, XfwIpLpmKey* src_ip_key)
+src_filter(const XfwGlobalCtx *ctx, XfwPort src_port)
 {
-	CHAIN(src_filter_ip, ctx, src_ip_key);
+	CHAIN(src_filter_ip, ctx);
 	CHAIN(src_filter_port, ctx, src_port);
 
 	return XFW_CTX_CONTINUE;
@@ -366,7 +373,7 @@ syn_rlimit(XfwGlobalCtx *ctx)
 }
 
 static __always_inline int
-in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
+in_process_l3(XfwGlobalCtx *ctx)
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
@@ -380,8 +387,8 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_FRAGMENTED_INGRESS);
 
 		ctx->l4_proto = (u8)proto;
-		xfw_ipv4_to_ipv6_mapped(ctx->iph4->saddr, ctx->ilog_addr.addr32);
-		ipv4_populate_lpm_key(ctx->iph4->saddr, &src_ip_key->addr4);
+		xfw_ipv4_to_ipv6_mapped(ctx->iph4->saddr, ctx->addr.src_addr.addr32);
+		xfw_ipv4_to_ipv6_mapped(ctx->iph4->daddr, ctx->addr.dst_addr.addr32);
 		return XFW_CTX_CONTINUE;
 	}
 	case bpf_ntohs(ETH_P_IPV6): {
@@ -394,8 +401,8 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		}
 
 		ctx->l4_proto = (u8)proto;
-		ctx->ilog_addr.in6 = ctx->iph6->saddr;
-		ipv6_populate_lpm_key(&ctx->iph6->saddr, &src_ip_key->addr6);
+		ctx->addr.src_addr.in6 = ctx->iph6->saddr;
+		ctx->addr.dst_addr.in6 = ctx->iph6->daddr;
 
 		return XFW_CTX_CONTINUE;
 	}
@@ -557,7 +564,7 @@ tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 }
 
 static __always_inline int
-in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
+in_process_l4(XfwGlobalCtx *ctx)
 {
 	if (!bpf_bitset64_test(ctx->cfg->rules.ip_proto.protocols.data,
 			       ctx->l4_proto))
@@ -572,12 +579,14 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_BADHDR_INGRESS);
 
+		ctx->addr.src_port = ctx->th->source;
+		ctx->addr.dst_port = ctx->th->dest;
 		CHAIN(tcp_anomaly_filter, ctx);
 
-		CHAIN(src_filter, ctx, ctx->th->source, src_ip_key);
+		CHAIN(src_filter, ctx, ctx->th->source);
 
 		const XfwSockAddr addr = {
-			.addr = ctx->ilog_addr,
+			.addr = ctx->addr.src_addr,
 			.port = ctx->th->source
 		};
 		return tcp_flags_filter(ctx, &addr);
@@ -591,7 +600,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_UDP_ANOM_ZERO_PORT);
 
 		CHAIN(ingress_dns_filter, ctx);
-		return src_filter(ctx, ctx->uh->source, src_ip_key);
+		return src_filter(ctx, ctx->uh->source);
 	};
 	case XFW_L4_PROTO_ICMP:
 	case XFW_L4_PROTO_ICMPV6: {
@@ -608,7 +617,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 			.type = ih->type
 		};
 		CHAIN(icmp_filter, ctx, &key);
-		CHAIN(src_filter_ip, ctx, src_ip_key);
+		CHAIN(src_filter_ip, ctx);
 		/* ICMP has no destination port, so dst rules cannot refine this path. */
 		return XFW_CTX_PASS;
 	};
@@ -647,10 +656,8 @@ xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 	ctx->ipver = ipver;
 
 	int r;
-	/* Helper structure for src filter, filled on L3, used on L4. */
-	XfwIpLpmKey src_ip_key = {};
-	CHAIN_PASS_ALL(in_process_l3, ctx, &src_ip_key);
-	CHAIN_PASS_ALL(in_process_l4, ctx, &src_ip_key);
+	CHAIN_PASS_ALL(in_process_l3, ctx);
+	CHAIN_PASS_ALL(in_process_l4, ctx);
 	CHAIN_PASS_ALL(xfw_dst_filter, ctx);
 
 pass:

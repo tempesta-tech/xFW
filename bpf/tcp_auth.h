@@ -201,7 +201,7 @@ tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx)
 	VERIFY_TRUE_OR_RETURN((void *)(th + 1) <= ctx->hdr_cur.end, (void)0);
 
 	const XfwSockAddr addr = {
-		.addr = ctx->ilog_addr,
+		.addr = ctx->addr.src_addr,
 		.port = th->dest
 	};
 	

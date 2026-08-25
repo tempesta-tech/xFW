@@ -59,6 +59,7 @@ typedef struct XfwHdrCursor {
 typedef struct XfwGlobalCtx {
 	XfwFilterCfg	*cfg;
 	XfwPerCpuStats	*g_stats;
+	XfwTcpConnAddr	addr;
 	XfwHdrCursor	hdr_cur;
 	uint32_t	pkt_sz;
 	uint16_t	ipver;
@@ -75,7 +76,6 @@ typedef struct XfwGlobalCtx {
 		struct udphdr	*uh;
 	};
 	uint64_t	ts_jiff;
-	XfwIp		ilog_addr;
 } XfwGlobalCtx;
 
 /* Read-only for eBPF. */
