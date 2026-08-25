@@ -294,14 +294,16 @@ parse_icmphdr(XfwHdrCursor *cur, struct icmphdr **icmphdr)
 }
 
 static __always_inline int
-parse_icmphdr_common(XfwHdrCursor *cur, XfwICMPCommon **icmphdr)
+parse_icmphdr_common(XfwHdrCursor *cur, XfwICMPCommon **icmphdr,
+		     enum XfwSupportedProtocols proto)
 {
 	XfwICMPCommon *h = cur->pos;
+	uint32_t hdr_sz = proto == XFW_L4_PROTO_ICMP
+				? sizeof(struct icmphdr)
+				: sizeof(struct icmp6hdr);
 
-	if (unlikely((void *)(h + 1) > cur->end))
-		return -EINVAL;
+	CUR_ADVANCE(cur, hdr_sz, -EINVAL);
 
-	cur->pos = h + 1;
 	*icmphdr = h;
 
 	return h->type;
