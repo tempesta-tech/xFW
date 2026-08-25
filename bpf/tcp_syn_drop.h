@@ -56,6 +56,10 @@ typedef enum XfwSynRetryState {
  */
 typedef struct XfwSynPending {
 	uint64_t	jtxtstamp;
+	/*
+	 * Keep the state 64-bit because the BPF compiler backend used by
+	 * xFW does not support 32-bit atomic compare-and-swap.
+	 */
 	uint64_t	state;
 } XfwSynPending;
 
@@ -85,6 +89,10 @@ typedef struct XfwSynRetry {
 	uint64_t	jtxtstamp;
 	uint64_t	max_delay;
 	uint64_t	blocked_until;
+	/*
+	 * Keep the state 64-bit because the BPF compiler backend used by
+	 * xFW does not support 32-bit atomic compare-and-swap.
+	 */
 	uint64_t	state;
 	uint32_t	retry_count;
 } XfwSynRetry;
@@ -119,7 +127,7 @@ struct {
 static __always_inline bool
 xfw_is_valid_initial_syn(const struct tcphdr *th)
 {
-	const uint8_t tcp_flags = (uint8_t)((tcp_flag_word(th) >> 8) & 0xFF);
+	const uint8_t tcp_flags = (uint8_t)((tcp_flag_word(th) >> 8));
 	const uint8_t mask =
 		XFW_BIT_SYN | XFW_BIT_ACK | XFW_BIT_RST | XFW_BIT_FIN;
 
@@ -164,7 +172,7 @@ xfw_hash_ipv6_syn(const struct ipv6hdr *ipv6,
  * The new entry is inserted first. This way a map insertion failure does
  * not remove the only existing protection state.
  */
-static __always_inline int
+static __always_inline bool
 xfw_promote_syn(uint64_t hash, uint64_t now,
 		const XfwRulesCfgTcpSynDrop *cfg)
 {
@@ -190,12 +198,12 @@ xfw_promote_syn(uint64_t hash, uint64_t now,
 				BPF_NOEXIST))
 	{
 		XFW_CTX_DBG("Failed to add SYN tuple to the syn retry table");
-		return XDP_DROP;
+		return false;
 	}
 
 	bpf_map_delete_elem(&MAP_SYN_PENDING_REF, &hash);
 
-	return XFW_CTX_CONTINUE;
+	return true;
 }
 
 /*
@@ -259,7 +267,9 @@ xfw_process_pending_filter(const XfwGlobalCtx *ctx, XfwSynPending *entry,
 	 * Drop the concurrent SYN.
 	 */
 	else if (state == XFW_SYN_PENDING_STATE_PROMOTING)
-		return XDP_DROP;
+		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYN_BLOCKED,
+					     ": %s", "pending state update"
+					     " is in progress");
 
 	/*
 	 * The valid retransmission window is:
@@ -276,15 +286,21 @@ xfw_process_pending_filter(const XfwGlobalCtx *ctx, XfwSynPending *entry,
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
 
-	int r = xfw_promote_syn(hash, now, syn_cfg);
-	/*
-	 * Restore PENDING entry state if no retry entry was created,
-	 * otherwise this entry was removed from the LRU hash table.
-	 */
-	if (r != XFW_CTX_CONTINUE)
+	if (!xfw_promote_syn(hash, now, syn_cfg)) {
+		/*
+		 * Restore PENDING entry state if no retry entry was created,
+		 * otherwise this entry was removed from the LRU hash table.
+		 *
+		 * xxHash is not cryptographically collision-resistant, so an
+		 * attacker may deliberately generate SYN tuples with colliding
+		 * hashes. Do not allow such traffic, as it could be used to
+		 * bypass SYN validation.
+		 */
 		WRITE_ONCE(entry->state, XFW_SYN_PENDING_STATE_PENDING);
+		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_HASH_COLLISION_BLOCKED);
+	}
 
-	return r;
+	return XFW_CTX_CONTINUE;
 }
 
 static __always_inline bool
@@ -415,7 +431,9 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 	 * Drop the concurrent SYN.
 	 */
 	else if (state == XFW_SYN_RETRY_STATE_UPDATING)
-		return XDP_DROP;
+		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYN_BLOCKED,
+					     ": %s", "retry state update"
+					     " is in progress");
 
 	/*
 	 * `retry_count` may impose a finite block. Once it expires, restart
@@ -425,8 +443,9 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 	if (entry->blocked_until) {
 		if (now < entry->blocked_until) {
 			WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_ACTIVE);
-			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED,
-						 "blocking timeout has not expired");
+			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYN_BLOCKED,
+						     ": %s", "blocking timeout"
+						     " has not expired");
 		}
 
 		/*
@@ -437,12 +456,25 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 		 * deleting the retry entry would lose all state for this tuple
 		 * and allow the next SYN to start validation from scratch.
 		 */
-		if (xfw_start_validation(hash, now))
+		if (xfw_start_validation(hash, now)) {
 			bpf_map_delete_elem(&MAP_SYN_RETRY_REF, &hash);
-		else
-			WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_ACTIVE);
+			/*
+			 * This SYN is treated as initial SYN. Initial SYNs are
+			 * intentionally dropped silently as part of the normal
+			 * validation flow.
+			 *
+			 * This is the expected first step of SYN validation,
+			 * not an indication of malicious traffic.
+			 */
+			return XDP_DROP;
+		}
 
-		return XDP_DROP;
+		WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_ACTIVE);
+		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYN_BLOCKED,
+					     ": %s", "pending entry"
+					     " already exists, possibly due"
+					     " to a concurrent SYN or hash"
+					     " collision");
 	}
 
 	const XfwRulesCfgTcpSynDrop *syn_cfg = &ctx->cfg->rules.tcp_syn_drop;
@@ -495,14 +527,10 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 static __always_inline int
 tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
-	XfwSynPending *pending;
-	XfwSynRetry *retry;
-	uint64_t hash, hash_salt;
-	
 	if (!xfw_is_valid_initial_syn(th))
 		return XFW_CTX_CONTINUE;
 
-	hash_salt = ctx->cfg->rules.tcp_syn_drop.hash_salt;
+	uint64_t hash, hash_salt = ctx->cfg->rules.tcp_syn_drop.hash_salt;
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		struct iphdr *iph4 =
 			XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr);
@@ -545,7 +573,7 @@ tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	 * advanced validation state and avoids processing a stale pending
 	 * entry.
 	 */
-	retry = bpf_map_lookup_elem(&MAP_SYN_RETRY_REF, &hash);
+	XfwSynRetry *retry = bpf_map_lookup_elem(&MAP_SYN_RETRY_REF, &hash);
 	if (retry)
 		return xfw_process_retry_filter(ctx, retry, hash, ctx->ts_jiff);
 	
@@ -559,13 +587,25 @@ tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	 * arrives within the configured retransmission window. Otherwise the
 	 * tuple is permanently blocked until it is evicted from the LRU map.
 	 */
-	pending = bpf_map_lookup_elem(&MAP_SYN_PENDING_REF, &hash);
+	XfwSynPending *pending =
+		bpf_map_lookup_elem(&MAP_SYN_PENDING_REF, &hash);
 	if (pending)
 		return xfw_process_pending_filter(ctx, pending, hash,
 						  ctx->ts_jiff);
 
-	xfw_start_validation(hash, ctx->ts_jiff);
+	if (!xfw_start_validation(hash, ctx->ts_jiff))
+		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYN_BLOCKED,
+					     ": %s", "pending entry"
+					     " already exists, possibly due"
+					     " to a concurrent SYN or hash"
+					     " collision");
 
+	/*
+	 * Drop the initial SYN silently.
+	 *
+	 * This is the expected first step of SYN validation, not an indication
+	 * of malicious traffic.
+	 */
 	return XDP_DROP;
 }
 
