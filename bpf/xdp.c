@@ -625,7 +625,8 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		count_traffic_stat(ctx, XFW_ICMP_TOTAL_INGRESS);
 
 		XfwICMPCommon *ih;
-		if (unlikely(parse_icmphdr_common(&ctx->hdr_cur, &ih) < 0))
+		if (unlikely(parse_icmphdr_common(&ctx->hdr_cur, &ih,
+			     ctx->l4_proto) < 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_ICMP_BADHDR_INGRESS);
 
 		XFW_CTX_DBG("ICMP header parsed, type=%u", ih->type);
