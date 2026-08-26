@@ -44,7 +44,7 @@ class BaseUdpProtocol(asyncio.DatagramProtocol):
         self.logger.debug(f"received from {addr} : {data}")
 
 
-class BaseUdpStateful(RegularKernelSocketNetworkStateful, ABC):
+class BaseUdpStateful(RegularKernelSocketNetworkStateful):
     protocol: BaseUdpProtocol
     socket_type = socket.SOCK_DGRAM
     socket_proto = socket.IPPROTO_UDP

@@ -30,12 +30,11 @@ async def ether_raw_server(
     logging_level: int,
     rpc_connection: Optional[RpcClient],
 ):
-    new_client = server_fabric(
+    new_client = await server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=EtherRawServer,
-        remote_class=EtherRawServerRemote,
         force_ip4=True,
     )
     yield new_client

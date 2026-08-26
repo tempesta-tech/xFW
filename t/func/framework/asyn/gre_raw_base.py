@@ -14,7 +14,7 @@ from framework.stateful import IP4Mixin, IP6Mixin, RawSocketNetworkStateful
 __all__ = ["BaseGreRawStateful", "GreIP4Mixin", "GreIP6Mixin"]
 
 
-class BaseGreRawStateful(RawSocketNetworkStateful, abc.ABC):
+class BaseGreRawStateful(RawSocketNetworkStateful):
     socket_proto = socket.IPPROTO_GRE
 
     @property
@@ -61,7 +61,7 @@ class BaseGreRawStateful(RawSocketNetworkStateful, abc.ABC):
         return self.create_packet(self._ip_layer / self._icmp_layer / Raw(payload.encode()))
 
 
-class GreIP4Mixin(IP4Mixin, abc.ABC):
+class GreIP4Mixin(IP4Mixin):
     def get_sendto_dst(self) -> tuple:
         return self.remote_ip, 0
 
@@ -84,7 +84,7 @@ class GreIP4Mixin(IP4Mixin, abc.ABC):
         return ICMP(type=8)
 
 
-class GreIP6Mixin(IP6Mixin, abc.ABC):
+class GreIP6Mixin(IP6Mixin):
     def get_sendto_dst(self) -> tuple:
         return self.remote_ip, 0, 0, 0
 

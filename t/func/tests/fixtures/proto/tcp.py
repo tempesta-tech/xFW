@@ -14,12 +14,11 @@ from framework.rpc.client import RpcClient
 async def tcp_ip4_server(
     config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> TcpServer:
-    new_server = server_fabric(
+    new_server = await server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=TcpV4Server,
-        remote_class=TcpV4ServerRemote,
     )
     yield new_server
     await new_server.stop()
@@ -29,12 +28,11 @@ async def tcp_ip4_server(
 async def tcp_ip4_raw_server(
     config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> TcpRawServer:
-    new_server = server_fabric(
+    new_server = await server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=TcpIpV4RawServer,
-        remote_class=TcpIpV4RawServerRemote,
     )
     yield new_server
     await new_server.stop()
@@ -44,12 +42,11 @@ async def tcp_ip4_raw_server(
 async def tcp_ip6_server(
     config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> TcpServer:
-    new_server = server_fabric(
+    new_server = await server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=TcpV6Server,
-        remote_class=TcpV6ServerRemote,
     )
     yield new_server
     await new_server.stop()
@@ -59,12 +56,11 @@ async def tcp_ip6_server(
 async def tcp_ip6_raw_server(
     config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> TcpRawServer:
-    new_server = server_fabric(
+    new_server = await server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=TcpIpV6RawServer,
-        remote_class=TcpIpV6RawServerRemote,
     )
     yield new_server
     await new_server.stop()

@@ -28,7 +28,7 @@ class State(enum.StrEnum):
     error = "error"
 
 
-class Stateful(abc.ABC):
+class Stateful:
     """
     Implements the state machine which is based for all
     clients and servers
@@ -44,6 +44,7 @@ class Stateful(abc.ABC):
         self.logger: logging.Logger = logger
         self.loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
         self.testing_model: TestingModel = testing_model
+        self.ready_for_remote_calls = False
 
         if not self.logger:
             self.logger = logging.getLogger(self.__class__.__name__)
@@ -117,7 +118,7 @@ class Stateful(abc.ABC):
         await self.start()
 
 
-class NetworkStateful(Stateful, abc.ABC):
+class NetworkStateful(Stateful):
     """
     Provides methods for network configuration of the machine
     """
@@ -400,7 +401,7 @@ class NetworkStateful(Stateful, abc.ABC):
         return stdout.replace("\n", "")
 
 
-class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
+class SocketBaseNetworkStateful(NetworkStateful):
     socket_family: int
     socket_type: int
     socket_proto: int = -1
@@ -555,7 +556,7 @@ class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
         return await asyncio.gather(*tasks, return_exceptions=True)
 
 
-class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful, abc.ABC):
+class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.transport: typing.Optional[asyncio.Transport | asyncio.DatagramTransport] = None
@@ -617,7 +618,7 @@ class RegularKernelSocketNetworkStateful(SocketBaseNetworkStateful, abc.ABC):
         return raw_data.decode(errors="ignore")
 
 
-class RawSocketNetworkStateful(SocketBaseNetworkStateful, abc.ABC):
+class RawSocketNetworkStateful(SocketBaseNetworkStateful):
     """
     The abstract class for the services based on the custom defined protocol
     uses the SOCK_RAW
@@ -702,7 +703,7 @@ class RawSocketNetworkStateful(SocketBaseNetworkStateful, abc.ABC):
         return self.last_response
 
 
-class IP4Mixin(SocketBaseNetworkStateful, abc.ABC):
+class IP4Mixin(SocketBaseNetworkStateful):
     socket_family = socket.AF_INET
     iptables_binary_name = "iptables"
 
@@ -715,7 +716,7 @@ class IP4Mixin(SocketBaseNetworkStateful, abc.ABC):
         return self.remote_ip, self.remote_port
 
 
-class IP6Mixin(SocketBaseNetworkStateful, abc.ABC):
+class IP6Mixin(SocketBaseNetworkStateful):
     socket_family = socket.AF_INET6
     iptables_binary_name = "ip6tables"
 

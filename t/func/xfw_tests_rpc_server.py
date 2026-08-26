@@ -7,6 +7,7 @@ import signal
 import sys
 
 from config import ConfigSettings
+from framework.clickhouse import ClickhouseClient
 from framework.logger import get_logger
 from framework.rpc.server import RpcServer
 
@@ -52,11 +53,22 @@ if __name__ == "__main__":
 
     logger.info(f"Listening on {config.rpc_host}:{config.rpc_port}")
 
+    clickhouse_client = ClickhouseClient(
+        host=config.tfw_logger_clickhouse_host,
+        binary_port=config.tfw_logger_clickhouse_binary_port,
+        http_port=config.tfw_logger_clickhouse_http_port,
+        user=config.tfw_logger_clickhouse_user,
+        password=config.tfw_logger_clickhouse_password,
+        database=config.tfw_logger_clickhouse_db,
+        table=ClickhouseClient.gen_new_table_name(),
+        logger=get_logger("clickhouse"),
+    )
     rpc_server = RpcServer(
         host=config.rpc_host,
         port=config.rpc_port,
         cmd_timeout=config.rpc_cmd_timeout,
         stop_if_not_connections_sec=config.rpc_stop_if_not_connections_sec,
+        clickhouse_client=clickhouse_client,
     )
     task = loop.create_task(rpc_server.run())
 

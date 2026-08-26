@@ -9,19 +9,16 @@ from typing import Optional
 from scapy.layers.inet import IP, TCP, Packet
 
 from framework.asyn.tcp_raw_base import BaseTcpRawStateful
-from framework.remote import RemoteServer
 from framework.stateful import IP4Mixin, IP6Mixin
 
 __all__ = [
     "TcpRawServer",
     "TcpIpV4RawServer",
     "TcpIpV6RawServer",
-    "TcpIpV4RawServerRemote",
-    "TcpIpV6RawServerRemote",
 ]
 
 
-class TcpRawServer(BaseTcpRawStateful, ABC):
+class TcpRawServer(BaseTcpRawStateful):
     def set_client_data(self, ip: str, port: int):
         self.remote_port = port
         self.remote_ip = ip
@@ -113,25 +110,3 @@ class TcpIpV6RawServer(TcpRawServer, IP6Mixin):
 
     def get_sendto_dst(self):
         return self.remote_ip, 0, 0, 0
-
-
-class TcpIpV4RawServerRemote(RemoteServer, TcpIpV4RawServer):
-    remote_methods = [
-        "run_stop",
-        "start",
-        "stop",
-        "restart",
-        "receive_packet",
-        "receive_many_packets",
-    ]
-
-
-class TcpIpV6RawServerRemote(RemoteServer, TcpIpV6RawServer):
-    remote_methods = [
-        "run_stop",
-        "start",
-        "stop",
-        "restart",
-        "receive_packet",
-        "receive_many_packets",
-    ]

@@ -17,7 +17,7 @@ class DnsUdpClientProtocol(BaseUdpProtocol):
         self.logger.info(f"received from {addr} : {data}")
 
 
-class BaseDnsStateful(BaseUdpStateful, abc.ABC):
+class BaseDnsStateful(BaseUdpStateful):
     transmitting_protocol = DnsUdpClientProtocol
 
     @property

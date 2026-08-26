@@ -13,7 +13,7 @@ from framework.stateful import IP4Mixin, IP6Mixin, RawSocketNetworkStateful
 __all__ = ["IcmpRawClient", "IcmpRawV4Client", "IcmpRawV6Client"]
 
 
-class IcmpRawClient(RawSocketNetworkStateful, ABC):
+class IcmpRawClient(RawSocketNetworkStateful):
     socket_family: socket.AddressFamily
 
     packet_class: Packet

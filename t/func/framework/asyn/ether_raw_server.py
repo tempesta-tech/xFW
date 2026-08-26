@@ -6,11 +6,7 @@ import socket
 from scapy.data import ETH_P_ALL
 
 from framework.asyn.ether_raw_client import EtherRawClient
-from framework.remote import RemoteServer
 
 
 class EtherRawServer(EtherRawClient):
     socket_proto = socket.htons(ETH_P_ALL)
-
-
-class EtherRawServerRemote(RemoteServer, EtherRawServer): ...

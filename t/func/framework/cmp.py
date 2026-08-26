@@ -24,9 +24,10 @@ async def check_connection(
             return False
 
     try:
-        await asyncio.wait_for(client.ping(), timeout)
-
-        if not await asyncio.wait_for(server.pong(), timeout):
+        request_received, _ = await asyncio.gather(
+            asyncio.wait_for(server.pong(), timeout), asyncio.wait_for(client.ping(), timeout)
+        )
+        if not request_received:
             return False
 
         return True
