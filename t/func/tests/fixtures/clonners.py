@@ -44,7 +44,13 @@ async def server_cloner() -> ClonerCallable:
 
     yield wrapper
 
-    await asyncio.gather(*[clone.stop() for clone in _clones], return_exceptions=True)
+    # Stop clones sequentially because Netns serializes namespace access with
+    # an asyncio.Lock. Concurrent stop() calls may bind that lock to the current
+    # event loop, while subsequent pytest-asyncio fixture finalizers can run in
+    # another loop, causing "Lock is bound to a different event loop" errors.
+    for clone in _clones:
+        await clone.stop()
+
     _clones.clear()
 
 
@@ -72,12 +78,19 @@ async def client_cloner(server_cloner) -> ClonerCallable:
     _clones: list[RegularKernelSocketNetworkStateful] = []
 
     def wrapper(
-        cloner: RegularKernelSocketNetworkStateful, amount: int, fabric: Optional[Any] = None
+        cloner: RegularKernelSocketNetworkStateful,
+        amount: int,
+        fabric: Optional[Any] = None,
+        reuse_endpoint: bool = False,
     ) -> list[RegularKernelSocketNetworkStateful]:
         nonlocal _clones
 
-        ports = cloner.generate_new_ports(amount)
-        addresses = cloner.generate_new_addresses(amount)
+        if not reuse_endpoint:
+            ports = cloner.generate_new_ports(amount)
+            addresses = cloner.generate_new_addresses(amount)
+        else:
+            ports = [cloner.port] * amount
+            addresses = [cloner.ip] * amount
 
         class_to_create = fabric if fabric else cloner.__class__
 
@@ -96,11 +109,17 @@ async def client_cloner(server_cloner) -> ClonerCallable:
                     namespace=cloner.namespace,
                     testing_model=cloner.testing_model,
                     timeout=cloner.timeout,
+                    reuse_addr=reuse_endpoint,
                 )
             )
         return _clones
 
     yield wrapper
 
-    await asyncio.gather(*[clone.stop() for clone in _clones], return_exceptions=True)
+    # Stop clones sequentially because Netns serializes namespace access with
+    # an asyncio.Lock. Concurrent stop() calls may bind that lock to the current
+    # event loop, while subsequent pytest-asyncio fixture finalizers can run in
+    # another loop, causing "Lock is bound to a different event loop" errors.
+    for clone in _clones:
+        await clone.stop()
     _clones.clear()

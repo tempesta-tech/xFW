@@ -235,9 +235,7 @@ async def test_reset_one_connection_does_not_break_another(
     xfw: XFW,
     tcp_server: TcpServer,
     tcp_client: TcpClient,
-    config: ConfigSettings,
-    logging_level: int,
-    rpc_connection,
+    client_cloner,
 ):
     """
     Resetting one authenticated TCP connection must not remove the
@@ -245,82 +243,59 @@ async def test_reset_one_connection_does_not_break_another(
     """
     await xfw.rules_set("xfw { tcp_auth_filter; }")
 
+    tcp_server.echo_mode = True
+    await tcp_server.start()
+
     #
     # In gate mode xFW is placed between the clients and the server:
     #
-    #   client_ip:port1 -> xFW -> server_ip:port
-    #   client_ip:port2 -> xFW -> server_ip:port
+    #   client1_ip:port1 -> xFW -> server_ip:port
+    #   client2_ip:port2 -> xFW -> server_ip:port
     #
     # Both connections share the same server endpoint but have different
-    # client ports.
+    # client addresses and ports.
     #
-    first_client = client_fabric(
-        config=config,
-        logging_level=logging_level,
-        local_class=type(tcp_client),
-        port=tcp_client.port + 1,
-        remote_ip=tcp_server.ip,
-        remote_port=tcp_server.port,
+    clients = client_cloner(
+        cloner=tcp_client,
+        amount=2,
     )
+    for client in clients:
+        await client.start()
 
-    second_client = client_fabric(
-        config=config,
-        logging_level=logging_level,
-        local_class=type(tcp_client),
-        port=tcp_client.port + 2,
-        remote_ip=tcp_server.ip,
-        remote_port=tcp_server.port,
-    )
+    first_client, second_client = clients
 
-    tcp_server.echo_mode = True
+    assert first_client.ip != second_client.ip
+    assert first_client.port != second_client.port
 
-    await tcp_server.start()
-    await first_client.start()
-    await second_client.start()
+    assert first_client.remote_ip == second_client.remote_ip
+    assert first_client.remote_port == second_client.remote_port
 
-    try:
-        assert first_client.ip == second_client.ip
-        assert first_client.port != second_client.port
+    # Establish and verify both independent TCP connections.
+    await first_client.ping_pong()
+    await second_client.ping_pong()
 
-        assert first_client.remote_ip == second_client.remote_ip
-        assert first_client.remote_port == second_client.remote_port
+    #
+    # In gate mode TC egress sees the original client-to-server
+    # packets. With the old endpoint-only TCP AUTH key, both
+    # connections were therefore represented by the same destination:
+    #
+    #   server_ip:port
+    #
+    # Resetting the first connection could remove this shared entry
+    # and break the second connection even though it was still valid.
+    #
+    first_server_transport = tcp_server.transports[0]
+    tcp_server.close_client_with_rst(first_server_transport)
 
-        # Establish and verify both independent TCP connections.
-        await first_client.ping_pong()
-        await second_client.ping_pong()
+    await asyncio.sleep(0)
 
-        #
-        # In gate mode TC egress sees the original client-to-server
-        # packets. With the old endpoint-only TCP AUTH key, both
-        # connections were therefore represented by the same destination:
-        #
-        #   server_ip:port
-        #
-        # Resetting the first connection could remove this shared entry
-        # and break the second connection even though it was still valid.
-        #
-        first_server_transport = tcp_server.transports[0]
-        tcp_server.close_client_with_rst(first_server_transport)
-
-        await asyncio.sleep(0)
-
-        # Must use the already established second connection.
-        # No reconnect is allowed here.
-        await second_client.ping_pong()
-
-    finally:
-        await first_client.stop()
-        await second_client.stop()
-        await tcp_server.stop()
+    # Must use the already established second connection.
+    # No reconnect is allowed here.
+    await second_client.ping_pong()
 
 
 async def test_reset_one_connection_does_not_break_another_reuse_addr(
-    xfw: XFW,
-    tcp_server: TcpServer,
-    tcp_client: TcpClient,
-    config: ConfigSettings,
-    logging_level: int,
-    rpc_connection,
+    xfw: XFW, tcp_server: TcpServer, tcp_client: TcpClient, client_cloner, server_cloner
 ):
     """
     Resetting one authenticated TCP connection must not remove the
@@ -329,89 +304,50 @@ async def test_reset_one_connection_does_not_break_another_reuse_addr(
     """
     await xfw.rules_set("xfw { tcp_auth_filter; }")
 
-    first_server_ip, second_server_ip = tcp_server.generate_new_addresses(2)
-    server_ip_param = "ipv4" if tcp_server.socket_family == socket.AF_INET else "ipv6"
+    servers = server_cloner(cloner=tcp_server, amount=2)
+    for server in servers:
+        server.echo_mode = True
+        await server.start()
 
-    first_server = server_fabric(
-        config=config,
-        logging_level=logging_level,
-        rpc_connection=rpc_connection,
-        local_class=type(tcp_server),
-        remote_class=type(tcp_server),
-        port=tcp_server.port,
-        echo_mode=True,
-        **{server_ip_param: first_server_ip},
-    )
+    clients = client_cloner(cloner=tcp_client, amount=2, reuse_endpoint=True)
+    first_client, second_client = clients
+    first_server, second_server = servers
 
-    second_server = server_fabric(
-        config=config,
-        logging_level=logging_level,
-        rpc_connection=rpc_connection,
-        local_class=type(tcp_server),
-        remote_class=type(tcp_server),
-        port=tcp_server.port,
-        echo_mode=True,
-        **{server_ip_param: second_server_ip},
-    )
+    first_client.remote_ip = first_server.ip
+    first_client.remote_port = first_server.port
 
-    first_client = client_fabric(
-        config=config,
-        logging_level=logging_level,
-        local_class=type(tcp_client),
-        port=tcp_client.port + 1,
-        remote_ip=first_server.ip,
-        remote_port=first_server.port,
-        reuse_addr=True,
-    )
+    second_client.remote_ip = second_server.ip
+    second_client.remote_port = second_server.port
 
-    second_client = client_fabric(
-        config=config,
-        logging_level=logging_level,
-        local_class=type(tcp_client),
-        port=tcp_client.port + 1,
-        remote_ip=second_server.ip,
-        remote_port=second_server.port,
-        reuse_addr=True,
-    )
+    for client in clients:
+        await client.start()
 
-    await first_server.start()
-    await second_server.start()
-    await first_client.start()
-    await second_client.start()
+    assert first_client.ip == second_client.ip
+    assert first_client.port == second_client.port
 
-    try:
-        assert first_client.ip == second_client.ip
-        assert first_client.port == second_client.port
+    assert first_client.remote_ip != second_client.remote_ip
+    assert first_client.remote_port != second_client.remote_port
 
-        assert first_client.remote_ip != second_client.remote_ip
-        assert first_client.remote_port == second_client.remote_port
+    # Establish and verify both independent TCP connections.
+    await first_client.ping_pong()
+    await second_client.ping_pong()
 
-        # Establish and verify both independent TCP connections.
-        await first_client.ping_pong()
-        await second_client.ping_pong()
+    #
+    # Reset only the first connection.
+    #
+    # With the old endpoint-only TCP AUTH key, both connections had
+    # the same authentication key on the server-to-client path:
+    #
+    #   client_ip:port
+    #
+    # Therefore, resetting the first connection could remove the
+    # authentication state used by the second one.
+    #
+    first_client.use_rst_for_connection_closing()
+    first_client.transport.abort()
 
-        #
-        # Reset only the first connection.
-        #
-        # With the old endpoint-only TCP AUTH key, both connections had
-        # the same authentication key on the server-to-client path:
-        #
-        #   client_ip:port
-        #
-        # Therefore, resetting the first connection could remove the
-        # authentication state used by the second one.
-        #
-        first_client.use_rst_for_connection_closing()
-        first_client.transport.abort()
+    await asyncio.sleep(0)
 
-        await asyncio.sleep(0)
-
-        # Must use the already established second connection.
-        # No reconnect is allowed here.
-        await second_client.ping_pong()
-
-    finally:
-        await first_client.stop()
-        await second_client.stop()
-        await first_server.stop()
-        await second_server.stop()
+    # Must use the already established second connection.
+    # No reconnect is allowed here.
+    await second_client.ping_pong()
