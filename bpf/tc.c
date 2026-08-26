@@ -48,8 +48,12 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
 		int proto = parse_iphdr(&ctx->hdr_cur, &iph4);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP4_BADHDR_EGRESS);
-		ctx->ip_off = (uint8_t)((void *)iph4 -
-			XFW_CTX_DATA_BGN(ctx->ctx));
+
+		ptrdiff_t ip_off = (void *)iph4 - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (ip_off < 0 || ip_off > L3_OFF_MAX)
+			return XFW_MAKE_CTX_PASS(ctx, XFW_IP4_BADHDR_EGRESS);
+
+		ctx->ip_off = ip_off;
 		ctx->l4_proto = (u8)proto;
 		xfw_ipv4_to_ipv6_mapped(iph4->daddr, ctx->ilog_addr.addr32);
 		ipv4_populate_lpm_key(iph4->daddr, &prot_net_key->addr4);
@@ -65,8 +69,12 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
 		int proto = parse_ip6hdr(&ctx->hdr_cur, &iph6);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP6_BADHDR_EGRESS);
-		ctx->ip_off = (uint8_t)((void *)iph6 -
-			XFW_CTX_DATA_BGN(ctx->ctx));
+
+		ptrdiff_t ip_off = (void *)iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (ip_off < 0 || ip_off > L3_OFF_MAX)
+			return XFW_MAKE_CTX_PASS(ctx, XFW_IP4_BADHDR_EGRESS);
+
+		ctx->ip_off = (uint8_t)ip_off;
 		ctx->l4_proto = (u8)proto;
 		ctx->ilog_addr.in6 = iph6->daddr;
 		ipv6_populate_lpm_key(&iph6->daddr, &prot_net_key->addr6);
@@ -96,8 +104,10 @@ out_process_l4(XfwGlobalCtx *ctx)
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &th) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_TCP_BADHDR_EGRESS);
 
-		ctx->l4_off = (uint16_t)((void *)th -
-			xfw_ctx_data_bgn(ctx->ctx));
+		ptrdiff_t l4_off = (void *)th - xfw_ctx_data_bgn(ctx->ctx);
+		if (l4_off < 0 || l4_off > L4_OFF_MAX)
+			return XFW_MAKE_CTX_PASS(ctx, XFW_TCP_BADHDR_EGRESS);
+		ctx->l4_off = l4_off;
 
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
@@ -109,8 +119,11 @@ out_process_l4(XfwGlobalCtx *ctx)
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &uh) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_UDP_BADHDR_EGRESS);
 
-		ctx->l4_off = (uint16_t)((void *)uh -
-			xfw_ctx_data_bgn(ctx->ctx));
+		ptrdiff_t l4_off = (void *)uh - xfw_ctx_data_bgn(ctx->ctx);
+		if (l4_off < 0 || l4_off > L4_OFF_MAX)
+			return XFW_MAKE_CTX_PASS(ctx, XFW_UDP_BADHDR_EGRESS);
+		ctx->l4_off = l4_off;
+
 		egress_dns_filter(ctx, uh);
 
 		/* It is a regular case, don't need to add any statistic */

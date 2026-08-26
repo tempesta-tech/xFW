@@ -34,8 +34,8 @@
 /* Limit on answers count for verificator */
 #define MAX_ANCOUNT			100
 
-/* IPv4/IPv6 max len is 60, UDP len is 8*/
-#define L3_L4_HDRS_MAXLEN		68
+/* IPv4 max len is 60, UDP len is 8*/
+#define L3_L4_IPV4_UDP_HDRS_MAXLEN	68
 
 /* Necessary for verifier */
 /* RFC 6891 (6.2.5)*/
@@ -354,11 +354,11 @@ init_dns_ctx(XfwDnsCtx *dns_ctx, XfwMd *ctx, XfwPerCpuStats *global_stats)
 	XfwPacketMetadata *md = (void *)(long)ctx->data_meta;
 	/* Limiting is important for verifier */
 	if (unlikely((void *)(md + 1) > dns_ctx->hdr_cur.pos
-		     || md->cur_pos > L3_L4_HDRS_MAXLEN))
+		     || md->cur_pos > L3_OFF_MAX + L3_L4_IPV4_UDP_HDRS_MAXLEN))
 		return -1; /* internal error */
 	dns_ctx->hdr_cur.pos += md->cur_pos;
 
-	if (unlikely(md->ip_off > L3_L4_HDRS_MAXLEN))
+	if (unlikely(md->ip_off > L3_OFF_MAX))
 		return -1;
 	void *ip_hdr = (void *)(long)ctx->data + md->ip_off;
 	if (md->is_ipv4) {

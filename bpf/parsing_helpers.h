@@ -97,11 +97,20 @@ typedef struct {
  */
 #define IPV6_EXT_HDR_MAXLEN	((UINT8_MAX + 1) * 8)
 
-#define L4_OFF_MAX						\
+#define L3_OFF_MAX						\
 	(sizeof(struct ethhdr)					\
-	 + VLAN_MAX_DEPTH * sizeof(struct vlan_hdr)		\
+	 + VLAN_MAX_DEPTH * sizeof(struct vlan_hdr))
+
+STATIC_ASSERT(L3_OFF_MAX <= UINT8_MAX,
+	      "L3 offset does not fit into uint8_t");
+
+#define L4_OFF_MAX						\
+	(L3_OFF_MAX						\
 	 + sizeof(struct ipv6hdr)				\
 	 + IPV6_EXT_MAX_CHAIN * IPV6_EXT_HDR_MAXLEN)
+
+STATIC_ASSERT(L4_OFF_MAX <= UINT16_MAX,
+	      "L3 offset does not fit into uint16_t");
 
 #define CUR_CHECK(cur, len, bad_retval)					\
 do {									\

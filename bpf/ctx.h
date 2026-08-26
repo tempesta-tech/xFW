@@ -68,6 +68,22 @@ xfw_ctx_data_bgn(const XfwMd *ctx)
 	return data;
 }
 
+static __always_inline void *
+xfw_ctx_data_end(const XfwMd *ctx)
+{
+	void *data_end;
+
+	asm volatile(
+		"%[res] = *(u32 *)(%[base] + %[offset])"
+		: [res] "=r"(data_end)
+		: [base] "r"(ctx),
+		  [offset] "i"(offsetof(XfwMd, data_end)),
+		  "m"(*ctx)
+	);
+
+	return data_end;
+}
+
 /*
  * Return code meaning that we should continue the packet processing through
  * all following finters.

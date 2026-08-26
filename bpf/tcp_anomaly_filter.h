@@ -22,8 +22,7 @@ tcp_anomaly_filter(const XfwGlobalCtx *ctx, struct tcphdr *th)
 		return XFW_CTX_CONTINUE;
 
 	/* Take correct 8-bit TCP flags from words[3] */
-	const uint8_t tcp_flags =
-		(uint8_t)((tcp_flag_word(th) >> 8) & 0xFF);
+	const uint8_t tcp_flags = (uint8_t)(tcp_flag_word(th) >> 8);
 	bool r = bpf_bitset64_test(ctx->cfg->rules.tcp_anomaly.bad_flags.data,
 				   tcp_flags);
 	if (unlikely(r))

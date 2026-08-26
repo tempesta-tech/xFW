@@ -377,8 +377,11 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_BADHDR_INGRESS);
 
-		ctx->ip_off = (uint8_t)((void *)iph4 -
-			XFW_CTX_DATA_BGN(ctx->ctx));
+		ptrdiff_t ip_off = (void *)iph4 - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (ip_off < 0 ||  ip_off > L3_OFF_MAX)
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_BADHDR_INGRESS);
+
+		ctx->ip_off = (uint8_t)ip_off;
 		/* Any MF bit or non-zero fragment offset means fragmented IPv4. */
 		if ((bpf_htons(iph4->frag_off) & 0x3fff) != 0)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_FRAGMENTED_INGRESS);
@@ -398,8 +401,11 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 				return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_FRAGMENTED_INGRESS);
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_BADHDR_INGRESS);
 		}
-		ctx->ip_off = (uint8_t)((void *)iph6 -
-			XFW_CTX_DATA_BGN(ctx->ctx));
+		ptrdiff_t ip_off = (void *)iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (ip_off < 0 || ip_off > L3_OFF_MAX)
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_BADHDR_INGRESS);
+
+		ctx->ip_off = (uint8_t)ip_off;
 		ctx->l4_proto = (u8)proto;
 		ctx->ilog_addr.in6 = iph6->saddr;
 		ipv6_populate_lpm_key(&iph6->saddr, &src_ip_key->addr6);
@@ -580,8 +586,11 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		count_traffic_stat(ctx, XFW_TCP_TOTAL_INGRESS);
 		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &th) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_BADHDR_INGRESS);
-		ctx->l4_off = (uint16_t)((void *)th -
-			XFW_CTX_DATA_BGN(ctx->ctx));
+
+		ptrdiff_t l4_off = (void *)th - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (l4_off < 0 || l4_off > L4_OFF_MAX)
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_BADHDR_INGRESS);
+		ctx->l4_off = (uint16_t)l4_off;
 
 		CHAIN(tcp_anomaly_filter, ctx, th);
 
@@ -599,8 +608,11 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		count_traffic_stat(ctx, XFW_UDP_TOTAL_INGRESS);
 		if (unlikely(parse_udphdr(&ctx->hdr_cur, &uh) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_UDP_BADHDR_INGRESS);
-		ctx->l4_off = (uint16_t)((void *)uh -
-			XFW_CTX_DATA_BGN(ctx->ctx));
+
+		ptrdiff_t l4_off = (void *)uh - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (l4_off < 0 || l4_off > L4_OFF_MAX)
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_BADHDR_INGRESS);
+		ctx->l4_off = (uint16_t)l4_off;
 
 		if (uh->source == 0 || uh->dest == 0)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_UDP_ANOM_ZERO_PORT);
