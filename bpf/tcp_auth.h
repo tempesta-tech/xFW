@@ -87,24 +87,116 @@ struct {
 	(UINT64_MAX - TCP_AUTH_CONN_CLOSE_TIMEOUT_JIFF) /* Keep timeout math bounded. */
 
 static __always_inline XfwTcpConnState *
-tcp_auth_conn_lookup(const XfwSockAddr *addr)
+tcp_auth_conn_lookup(const XfwGlobalCtx *ctx, const XfwSockAddr *addr, int from)
 {
-	return bpf_map_lookup_elem(&MAP_TCP_CONN_REF, addr);
+	XfwTcpConnState *s = bpf_map_lookup_elem(&MAP_TCP_CONN_REF, addr);
+
+	switch (from) {
+	case 1:
+		bpf_printk("CHECK TRUSTED conn %px: AUTH lookup pkt %pI4:%u -> %pI4:%u key=%pI4:%u\n",
+			s,
+			&ctx->iph4->saddr,
+			bpf_ntohs(ctx->th->source),
+			&ctx->iph4->daddr,
+			bpf_ntohs(ctx->th->dest),
+			&addr->addr.addr32[3],
+			bpf_ntohs(addr->port));
+		break;
+	case 2:
+		bpf_printk("INGRESS conn %px: AUTH lookup pkt %pI4:%u -> %pI4:%u key=%pI4:%u\n",
+			s,
+			&ctx->iph4->saddr,
+			bpf_ntohs(ctx->th->source),
+			&ctx->iph4->daddr,
+			bpf_ntohs(ctx->th->dest),
+			&addr->addr.addr32[3],
+			bpf_ntohs(addr->port));
+		break;
+	case 3:
+		bpf_printk("EGRESS conn %px: AUTH lookup pkt %pI4:%u -> %pI4:%u key=%pI4:%u\n",
+			s,
+			&ctx->iph4->saddr,
+			bpf_ntohs(ctx->th->source),
+			&ctx->iph4->daddr,
+			bpf_ntohs(ctx->th->dest),
+			&addr->addr.addr32[3],
+			bpf_ntohs(addr->port));
+		break;
+	default:
+		break;
+	}
+
+	return s;
 }
 
 static __always_inline void
-tcp_auth_conn_delete(const XfwSockAddr *addr)
+tcp_auth_conn_delete(const XfwGlobalCtx *ctx, const XfwSockAddr *addr, int from)
 {
+	switch (from) {
+	case 1:
+		bpf_printk("INGRESS OUTDATED conn: AUTH delete pkt %pI4:%u -> %pI4:%u key=%pI4:%u\n",
+			&ctx->iph4->saddr,
+			bpf_ntohs(ctx->th->source),
+			&ctx->iph4->daddr,
+			bpf_ntohs(ctx->th->dest),
+			&addr->addr.addr32[3],
+			bpf_ntohs(addr->port));
+		break;
+	case 2:
+		bpf_printk("INGRESS RST conn: AUTH delete pkt %pI4:%u -> %pI4:%u key=%pI4:%u\n",
+			&ctx->iph4->saddr,
+			bpf_ntohs(ctx->th->source),
+			&ctx->iph4->daddr,
+			bpf_ntohs(ctx->th->dest),
+			&addr->addr.addr32[3],
+			bpf_ntohs(addr->port));
+		break;
+	case 3:
+		bpf_printk("EGRESS RST conn: AUTH delete pkt %pI4:%u -> %pI4:%u key=%pI4:%u\n",
+			&ctx->iph4->saddr,
+			bpf_ntohs(ctx->th->source),
+			&ctx->iph4->daddr,
+			bpf_ntohs(ctx->th->dest),
+			&addr->addr.addr32[3],
+			bpf_ntohs(addr->port));
+		break;
+	default:
+		break;
+	}
+
 	bpf_map_delete_elem(&MAP_TCP_CONN_REF, addr);
 	XFW_CTX_DBG("Delete TCP AUTH connection");
 }
 
 static __always_inline void
-tcp_auth_conn_add(const XfwSockAddr *addr)
+tcp_auth_conn_add(const XfwGlobalCtx *ctx, const XfwSockAddr *addr, int from)
 {
 	XfwTcpConnState new_conn = {
 		.last_fin_time_jiff = TCP_AUTH_CONN_MAX_FIN_TIME_JIFF
 	};
+
+	switch (from) {
+	case 1:
+		bpf_printk("EGRESS conn: AUTH add pkt %pI4:%u -> %pI4:%u key=%pI4:%u\n",
+			&ctx->iph4->saddr,
+			bpf_ntohs(ctx->th->source),
+			&ctx->iph4->daddr,
+			bpf_ntohs(ctx->th->dest),
+			&addr->addr.addr32[3],
+			bpf_ntohs(addr->port));
+		break;
+	case 2:
+		bpf_printk("INGRESS conn: AUTH add pkt %pI4:%u -> %pI4:%u key=%pI4:%u\n",
+			&ctx->iph4->saddr,
+			bpf_ntohs(ctx->th->source),
+			&ctx->iph4->daddr,
+			bpf_ntohs(ctx->th->dest),
+			&addr->addr.addr32[3],
+			bpf_ntohs(addr->port));
+		break;
+	default:
+		break;
+	}
 
 	bpf_map_update_elem(&MAP_TCP_CONN_REF, addr, &new_conn, BPF_ANY);
 	XFW_CTX_DBG("Add TCP AUTH connection");
@@ -127,7 +219,7 @@ tcp_auth_is_conn_outdated(const XfwGlobalCtx *ctx, const XfwTcpConnState *conn)
 static __always_inline bool
 tcp_auth_has_conn_trusted(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 {
-	XfwTcpConnState *conn = tcp_auth_conn_lookup(addr);
+	XfwTcpConnState *conn = tcp_auth_conn_lookup(ctx, addr, 1);
 
 	if (!conn || tcp_auth_is_conn_outdated(ctx, conn))
 		return false;
@@ -166,12 +258,20 @@ tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr,
 	if (unlikely(!ctx->cfg->rules.tcp_auth.enabled))
 		return XFW_CTX_CONTINUE;
 
-	XfwTcpConnState *conn = tcp_auth_conn_lookup(addr);
-	if (likely(!(conn))) /* Fast path for unauthenticated flood traffic. */
+	XfwTcpConnState *conn = tcp_auth_conn_lookup(ctx, addr, 2);
+	if (likely(!(conn))) /* Fast path for unauthenticated flood traffic. */ {
+		bpf_printk("INGRESS conn DROP pkt %pI4:%u -> %pI4:%u key=%pI4:%u\n",
+			&ctx->iph4->saddr,
+			bpf_ntohs(ctx->th->source),
+			&ctx->iph4->daddr,
+			bpf_ntohs(ctx->th->dest),
+			&addr->addr.addr32[3],
+			bpf_ntohs(addr->port));
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_AUTH_FAILED);
+	}
 
 	if (unlikely(tcp_auth_is_conn_outdated(ctx, (conn)))) {
-		tcp_auth_conn_delete(addr);
+		tcp_auth_conn_delete(ctx, addr, 1);
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_AUTH_TIMEOUT);
 	}
 
@@ -181,7 +281,7 @@ tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr,
 		 * Out-of-order traffic: early RST clears the connection,
 		 * mirroring TCP stack behavior.
 		 */
-		tcp_auth_conn_delete(addr);
+		tcp_auth_conn_delete(ctx, addr, 2);
 		return XFW_CTX_CONTINUE;
 
 	case TCP_AUTH_EVENT_FIN:
@@ -207,11 +307,11 @@ tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx)
 	
 	if (unlikely(th->rst)) {
 		/* An early RST can safely remove a learned tuple. */
-		tcp_auth_conn_delete(&addr);
+		tcp_auth_conn_delete(ctx, &addr, 3);
 		return;
 	}
 
-	XfwTcpConnState *conn = tcp_auth_conn_lookup(&addr);
+	XfwTcpConnState *conn = tcp_auth_conn_lookup(ctx, &addr, 3);
 
 	/*
 	 * Trusted connection tracking in tc.c has two modes:
@@ -237,7 +337,15 @@ tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx)
 	 */
 	if (!conn) {
 		if (unlikely(!ctx->cfg->rules.tcp_auth.enabled || th->syn))
-			tcp_auth_conn_add(&addr);
+			tcp_auth_conn_add(ctx, &addr, 1);
+		else
+			bpf_printk("EGRESS conn NOT FOUND not SYN pkt %pI4:%u -> %pI4:%u key=%pI4:%u\n",
+				&ctx->iph4->saddr,
+				bpf_ntohs(ctx->th->source),
+				&ctx->iph4->daddr,
+				bpf_ntohs(ctx->th->dest),
+				&addr.addr.addr32[3],
+				bpf_ntohs(addr.port));
 		return;
 	}
 

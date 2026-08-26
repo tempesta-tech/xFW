@@ -471,7 +471,7 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 	 * generated and sent directly by xdp.c, bypassing tc.c. This ensures
 	 * the connection is correctly tracked without relying on tc.c.
 	 */
-	tcp_auth_conn_add(addr);
+	tcp_auth_conn_add(ctx, addr, 2);
 	return XFW_CTX_CONTINUE;
 }
 
