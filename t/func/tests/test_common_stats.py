@@ -50,6 +50,18 @@ def stats_counters() -> list[str]:
     ]
 
 
+# Need to compare only metrics from the list to prevent comparing egress metrics.
+# Egress traffic is accounted even if no rules are loaded.
+@pytest.fixture
+def pre_load_stats_counters() -> list[str]:
+    return [
+        "xfw_arp_ingress_packets",
+        "xfw_arp_ingress_bytes",
+        "xfw_preload_ingress_packets",
+        "xfw_preload_ingress_bytes",
+    ]
+
+
 class SendInvalidPacketsMixin(EtherRawClient):
     async def send_eth_eapol_packet(self, src_mac: str, dst_mac: str):
         packet = Ether(dst=dst_mac, src=src_mac, type=socket.ETHERTYPE_VLAN) / Raw(
@@ -370,27 +382,30 @@ async def test_ingress_stats(
     "counters",
     [
         pytest.param(
-            dict(xfw_preload_ingress_packets=10, xfw_preload_ingress_bytes=540),
+            dict(xfw_preload_ingress_packets=11, xfw_preload_ingress_bytes=512),
             id="ingress-count-packets-before-rules",
-            marks=pytest.mark.skip("ISSUE: 332"),
         ),
     ],
 )
 async def test_ingress_preload_stats(
     counters: dict[str, int],
-    stats_counters: list[str],
+    pre_load_stats_counters: list[str],
     xfw: XFW,
     udp_ip4_client,
     udp_ip4_server,
+    flush_arp_cache,
 ):
     await udp_ip4_server.start()
     await udp_ip4_client.start()
 
-    async with xfw.metrics_diff(stats_counters) as diff:
+    async with xfw.metrics_diff(pre_load_stats_counters) as diff:
         await asyncio.gather(*[udp_ip4_client.ping() for _ in range(10)])
 
     invalid_metrics = compare_metrics_diff(
-        compare_metrics=stats_counters, all_metrics=diff, diff_metrics=counters, strict=True
+        compare_metrics=pre_load_stats_counters,
+        all_metrics=diff,
+        diff_metrics=counters,
+        strict=True,
     )
 
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
@@ -424,7 +439,7 @@ async def test_ingress_preload_stats(
             "send_bad_eth_header",
             ETH_P_IP,
             id="eth-send-bad-header",
-            marks=pytest.mark.skip("ISSUE: 332"),
+            marks=pytest.mark.skip("OS prevent sending packages less then 14 bytes, ISSUE: 332"),
         ),
         # sizeof(ethhdr) = 14
         # sizeof(iphdr)[:10] = 10
