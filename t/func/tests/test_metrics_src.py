@@ -12,65 +12,66 @@ from framework.xfw import XFW
 
 
 @pytest.fixture
-def dst_stats_counters() -> list[str]:
+def src_stats_counters() -> list[str]:
     return [
-        "xfw_dst_blocked_packets",
-        "xfw_dst_blocked_bytes",
-        "xfw_dst_rate_limited_packets",
-        "xfw_dst_rate_limited_bytes",
+        "xfw_src_port_allowed_packets",
+        "xfw_src_port_allowed_bytes",
+        "xfw_src_ip_allowed_packets",
+        "xfw_src_ip_allowed_bytes",
     ]
 
 
 @pytest.mark.parametrize(
     "rule,ip,counters",
+    # udp ip
     [
         pytest.param(
-            "xfw {{ dst ip4.udp: block {{ {host}:{port}  }} }}",
+            "xfw {{ src ip4.udp: allow {{ {host}, {host_2} }} }}",
             "ip4",
             dict(
-                xfw_dst_blocked_packets=10,
-                xfw_dst_blocked_bytes=480,
+                xfw_src_ip_allowed_packets=10,
+                xfw_src_ip_allowed_bytes=480,
             ),
-            id="ip4-block-udp",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
+            id="ip4-block-udp-ip",
         ),
         pytest.param(
-            "xfw {{ dst ip6.udp: block {{ {host}:{port}  }} }}",
+            "xfw {{ src ip6.udp: allow {{ {host}, {host_2} }} }}",
             "ip6",
             dict(
-                xfw_dst_blocked_packets=10,
-                xfw_dst_blocked_bytes=680,
+                xfw_src_ip_allowed_packets=10,
+                xfw_src_ip_allowed_bytes=680,
             ),
-            id="ip6-block-udp",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
+            id="ip6-block-udp-ip",
         ),
+    ]
+    +
+    # udp port
+    [
         pytest.param(
-            "xfw {{ ratelimit=test pps=0 bps=0; dst ip4.udp: ratelimit=test {{ {host}:{port}  }} }}",
+            "xfw {{ src ip4.udp: allow {{ :{port}, :{port_2} }} }}",
             "ip4",
             dict(
-                xfw_dst_rate_limited_packets=10,
-                xfw_dst_rate_limited_bytes=480,
+                xfw_src_port_allowed_packets=10,
+                xfw_src_port_allowed_bytes=480,
             ),
-            id="ip4-ratelimit-udp",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
+            id="ip4-block-udp-port",
         ),
         pytest.param(
-            "xfw {{ ratelimit=test pps=0 bps=0; dst ip6.udp: ratelimit=test {{ {host}:{port}  }} }}",
+            "xfw {{ src ip6.udp: allow {{ :{port}, :{port_2} }} }}",
             "ip6",
             dict(
-                xfw_dst_rate_limited_packets=10,
-                xfw_dst_rate_limited_bytes=680,
+                xfw_src_port_allowed_packets=10,
+                xfw_src_port_allowed_bytes=680,
             ),
-            id="ip6-ratelimit-udp",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
+            id="ip6-block-udp-port",
         ),
     ],
 )
-async def test_dst_udp_stats(
+async def test_src_udp_stats(
     rule: str,
     ip: str,
     counters: dict[str, int],
-    dst_stats_counters: list[str],
+    src_stats_counters: list[str],
     xfw: XFW,
     udp_ip4_server: UdpServer,
     udp_ip6_server: UdpServer,
@@ -86,16 +87,23 @@ async def test_dst_udp_stats(
     await client.start()
     await client_2.start()
 
-    await xfw.rules_set(rule.format(host=server.ip_testing, port=server.port))
+    await xfw.rules_set(
+        rule.format(
+            host=client.ip_testing,
+            port=client.port,
+            host_2=client_2.ip_testing,
+            port_2=client_2.port,
+        )
+    )
 
-    async with xfw.metrics_diff(dst_stats_counters) as diff:
+    async with xfw.metrics_diff(src_stats_counters) as diff:
         await asyncio.gather(
             *[client.send_message(f"12345{i}") for i in range(5)]
             + [client_2.send_message(f"12345{i}") for i in range(5)]
         )
 
     invalid_metrics = compare_metrics_diff(
-        compare_metrics=dst_stats_counters, all_metrics=diff, diff_metrics=counters
+        compare_metrics=src_stats_counters, all_metrics=diff, diff_metrics=counters
     )
 
     await client.stop()
@@ -107,54 +115,64 @@ async def test_dst_udp_stats(
 
 @pytest.mark.parametrize(
     "rule,ip,counters",
+    # tcp ip
     [
         pytest.param(
-            "xfw {{ dst ip4.tcp: block {{ {host}:{port}  }} }}",
+            "xfw {{ src ip4.tcp: allow {{ {host}, {host_2} }} }}",
             "ip4",
             dict(
-                xfw_dst_blocked_packets=10,
-                xfw_dst_blocked_bytes=610,
+                xfw_src_ip_allowed_packets=10,
+                xfw_src_ip_allowed_bytes=610,
             ),
-            id="ip4-block-tcp",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
+            id="ip4-block-tcp-ip",
         ),
+        # tcp ip6 src filter blocks also ICMP6 packets, the results could be different
         pytest.param(
-            "xfw {{ dst ip6.tcp: block {{ {host}:{port}  }} }}",
+            """
+            xfw {{ 
+                icmp ip6: allow {{ 1, 2, 3, 4, 128, 129, 133, 134, 135, 136, 137, 143 }}
+                src ip6.tcp: allow {{ 
+                    {host}, 
+                    {host_2} 
+                }}
+            }}
+            """,
             "ip6",
             dict(
-                xfw_dst_blocked_packets=10,
-                xfw_dst_blocked_bytes=810,
+                xfw_src_ip_allowed_packets=[3, 15],
+                xfw_src_ip_allowed_bytes=[100, 1200],
             ),
-            id="ip6-block-tcp",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
+            id="ip6-block-tcp-ip",
         ),
+    ]
+    +
+    # tcp port
+    [
         pytest.param(
-            "xfw {{ ratelimit=test pps=0 bps=0; dst ip4.tcp: ratelimit=test {{ {host}:{port}  }} }}",
+            "xfw {{ src ip4.tcp: allow {{ :{port}, :{port_2} }} }}",
             "ip4",
             dict(
-                xfw_dst_rate_limited_packets=10,
-                xfw_dst_rate_limited_bytes=610,
+                xfw_src_port_allowed_packets=10,
+                xfw_src_port_allowed_bytes=610,
             ),
-            id="ip4-ratelimit-tcp",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
+            id="ip4-block-tcp-port",
         ),
         pytest.param(
-            "xfw {{ ratelimit=test pps=0 bps=0; dst ip6.tcp: ratelimit=test {{ {host}:{port}  }} }}",
+            "xfw {{ src ip6.tcp: allow {{ :{port}, :{port_2} }} }}",
             "ip6",
             dict(
-                xfw_dst_rate_limited_packets=10,
-                xfw_dst_rate_limited_bytes=810,
+                xfw_src_port_allowed_packets=10,
+                xfw_src_port_allowed_bytes=810,
             ),
-            id="ip6-ratelimit-tcp",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
+            id="ip6-block-tcp-port",
         ),
     ],
 )
-async def test_dst_tcp_stats(
+async def test_src_tcp_stats(
     rule: str,
     ip: str,
     counters: dict[str, int],
-    dst_stats_counters: list[str],
+    src_stats_counters: list[str],
     xfw: XFW,
     tcp_ip4_server: TcpServer,
     tcp_ip6_server: TcpServer,
@@ -177,9 +195,16 @@ async def test_dst_tcp_stats(
     await client.start()
     await client_2.start()
 
-    await xfw.rules_set(rule.format(host=server.ip_testing, port=server.port))
+    await xfw.rules_set(
+        rule.format(
+            host=client.ip_testing,
+            port=client.port,
+            host_2=client_2.ip_testing,
+            port_2=client_2.port,
+        )
+    )
 
-    async with xfw.metrics_diff(dst_stats_counters, wait_softirq=True) as diff:
+    async with xfw.metrics_diff(src_stats_counters, wait_softirq=True) as diff:
         await asyncio.gather(
             *[
                 client.send_packet(TCP(flags="PA", seq=22211) / f"012345{i}".encode())
@@ -192,7 +217,7 @@ async def test_dst_tcp_stats(
         )
 
     invalid_metrics = compare_metrics_diff(
-        compare_metrics=dst_stats_counters, all_metrics=diff, diff_metrics=counters
+        compare_metrics=src_stats_counters, all_metrics=diff, diff_metrics=counters
     )
 
     await client.stop()
