@@ -20,9 +20,6 @@
 #else
 #error "Undefined program type: should be TC or XDP"
 #endif
-#define XFW_CTX_MD(ctx)			((XfwMd *)ctx)
-#define XFW_CTX_DATA_BGN(ctx)		((void *)(long)XFW_CTX_MD(ctx)->data)
-#define XFW_CTX_DATA_END(ctx)		((void *)(long)XFW_CTX_MD(ctx)->data_end)
 
 /*
  * Read the packet data pointer directly from the BPF context.
@@ -84,6 +81,11 @@ xfw_ctx_data_end(const XfwMd *ctx)
 	return data_end;
 }
 
+#define XFW_CTX_MD(ctx)			((XfwMd *)ctx)
+#define XFW_CTX_DATA_BGN(ctx)		xfw_ctx_data_bgn(XFW_CTX_MD(ctx))
+#define XFW_CTX_DATA_END(ctx)		xfw_ctx_data_end(XFW_CTX_MD(ctx))
+
+
 /*
  * Return code meaning that we should continue the packet processing through
  * all following finters.
@@ -130,8 +132,14 @@ typedef struct XfwGlobalCtx {
 	uint8_t		l4_proto;
 } XfwGlobalCtx;
 
+/*
+ * Do not use XFW_CTX_DATA_BGN() here. It forces a reload of the packet data
+ * pointer, which may lose the verifier's packet pointer range tracking.
+ * Load ctx->data directly so bounds checks on the resulting packet pointer
+ * remain visible to the verifier.
+ */
 #define XFW_PKT_PTR(ctx, off, type) \
-	((type *)((void *)XFW_CTX_DATA_BGN((ctx)->ctx) + (off)))
+	((type *)((void *)(long)XFW_CTX_MD((ctx)->ctx)->data + (off)))
 
 /* Read-only for eBPF. */
 struct {
