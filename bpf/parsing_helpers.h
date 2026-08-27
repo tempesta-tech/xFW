@@ -81,19 +81,10 @@ typedef struct {
 #define VLAN_VID_MASK 0x0fff /* VLAN Identifier */
 
 /*
- * Maximum supported offset of an L4 header from the beginning of
- * the Ethernet frame.
+ * Maximum size of an IPv6 extension header supported by the parser.
  *
- * VLAN tags add 4 bytes each. IPv6 extension headers with an 8-bit
- * Hdr Ext Len field may occupy up to 2048 bytes:
- *
- *     (U8_MAX + 1) * 8
- *
+ * The Hdr Ext Len field limits an extension header to 2048 bytes.
  * See RFC 8200, Sections 4.3, 4.4 and 4.6.
- *
- * The bound is derived from the parser limits VLAN_MAX_DEPTH and
- * IPV6_EXT_MAX_CHAIN and is also used to constrain packet pointer
- * arithmetic for the BPF verifier.
  */
 #define IPV6_EXT_HDR_MAXLEN	((UINT8_MAX + 1) * 8)
 
@@ -104,13 +95,25 @@ typedef struct {
 STATIC_ASSERT(L3_OFF_MAX <= UINT8_MAX,
 	      "L3 offset does not fit into uint8_t");
 
+
+/*
+ * Maximum supported offset of an L4 header from the beginning of
+ * the Ethernet frame.
+ *
+ * The offset consists of the maximum L3 header offset, the IPv6
+ * header, and the maximum supported chain of IPv6 extension headers.
+ *
+ * The bound is derived from the parser limits VLAN_MAX_DEPTH and
+ * IPV6_EXT_MAX_CHAIN and is also used to constrain packet pointer
+ * arithmetic for the BPF verifier.
+ */
 #define L4_OFF_MAX						\
 	(L3_OFF_MAX						\
 	 + sizeof(struct ipv6hdr)				\
 	 + IPV6_EXT_MAX_CHAIN * IPV6_EXT_HDR_MAXLEN)
 
 STATIC_ASSERT(L4_OFF_MAX <= UINT16_MAX,
-	      "L3 offset does not fit into uint16_t");
+	      "L4 offset does not fit into uint16_t");
 
 #define CUR_CHECK(cur, len, bad_retval)					\
 do {									\

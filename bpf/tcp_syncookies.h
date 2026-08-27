@@ -635,7 +635,7 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 		return XFW_CTX_CONTINUE;
 
 	const bool is_ip4 = ctx->ipver == bpf_htons(ETH_P_IP);
-	void *iph = is_ip4 ? 
+	void *iph = is_ip4 ?
 		(void *)XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr) :
 		(void *)XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
 	uint32_t iph_len = is_ip4 ? sizeof(struct iphdr) : sizeof(struct ipv6hdr);

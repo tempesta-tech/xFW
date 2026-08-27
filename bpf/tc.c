@@ -72,7 +72,7 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
 
 		ptrdiff_t ip_off = (void *)iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
 		if (ip_off < 0 || ip_off > L3_OFF_MAX)
-			return XFW_MAKE_CTX_PASS(ctx, XFW_IP4_BADHDR_EGRESS);
+			return XFW_MAKE_CTX_PASS(ctx, XFW_IP6_BADHDR_EGRESS);
 
 		ctx->ip_off = (uint8_t)ip_off;
 		ctx->l4_proto = (u8)proto;

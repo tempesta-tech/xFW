@@ -378,7 +378,7 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_BADHDR_INGRESS);
 
 		ptrdiff_t ip_off = (void *)iph4 - XFW_CTX_DATA_BGN(ctx->ctx);
-		if (ip_off < 0 ||  ip_off > L3_OFF_MAX)
+		if (ip_off < 0 || ip_off > L3_OFF_MAX)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_BADHDR_INGRESS);
 
 		ctx->ip_off = (uint8_t)ip_off;
@@ -403,7 +403,7 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		}
 		ptrdiff_t ip_off = (void *)iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
 		if (ip_off < 0 || ip_off > L3_OFF_MAX)
-			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_BADHDR_INGRESS);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_BADHDR_INGRESS);
 
 		ctx->ip_off = (uint8_t)ip_off;
 		ctx->l4_proto = (u8)proto;
@@ -611,7 +611,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 
 		ptrdiff_t l4_off = (void *)uh - XFW_CTX_DATA_BGN(ctx->ctx);
 		if (l4_off < 0 || l4_off > L4_OFF_MAX)
-			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_BADHDR_INGRESS);
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_UDP_BADHDR_INGRESS);
 		ctx->l4_off = (uint16_t)l4_off;
 
 		if (uh->source == 0 || uh->dest == 0)
