@@ -375,5 +375,5 @@ async def test_src_block_by_ip_mapped(xfw, ether_raw_client, ether_raw_server, c
 
     await ether_raw_client.send_packet(packet)
     assert (
-        await ether_raw_server.receive_block()
+        await ether_raw_server.receive_message(b"payload") is None
     ), f"XFW doesn't block the client with IP {ether_raw_client.ip_mapped}"
