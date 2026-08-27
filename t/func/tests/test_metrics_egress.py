@@ -10,7 +10,6 @@ from scapy.all import ETH_P_IP, ETH_P_IPV6, Raw
 from scapy.data import ETH_P_ALL
 from scapy.layers.inet import ICMP, IP, IP_PROTOS, TCP, UDP, Ether
 from scapy.layers.inet6 import IPv6, IPv6ExtHdrFragment
-from scapy.layers.l2 import ARP
 from scapy.layers.sctp import SCTP
 
 from config import ConfigSettings
@@ -27,12 +26,16 @@ ETH_P_ARP = 0x0806
 
 
 @pytest.fixture
-def stats_counters() -> list[str]:
+def egress_metrics_counters() -> list[str]:
     return [
-        "xfw_arp_ingress_packets",
-        "xfw_arp_ingress_bytes",
-        "xfw_preload_ingress_packets",
-        "xfw_preload_ingress_bytes",
+        "xfw_total_downstream_egress_packets",
+        "xfw_total_downstream_egress_bytes",
+        "xfw_total_upstream_egress_packets",
+        "xfw_total_upstream_egress_bytes",
+        "xfw_passed_downstream_egress_packets",
+        "xfw_passed_downstream_egress_bytes",
+        "xfw_passed_upstream_egress_packets",
+        "xfw_passed_upstream_egress_bytes",
         "xfw_l2_unknown_egress_packets",
         "xfw_l2_unknown_egress_bytes",
         "xfw_eth_badhdr_egress_packets",
@@ -47,18 +50,6 @@ def stats_counters() -> list[str]:
         "xfw_tcp_badhdr_egress_bytes",
         "xfw_udp_badhdr_egress_packets",
         "xfw_udp_badhdr_egress_bytes",
-    ]
-
-
-# Need to compare only metrics from the list to prevent comparing egress metrics.
-# Egress traffic is accounted even if no rules are loaded.
-@pytest.fixture
-def pre_load_stats_counters() -> list[str]:
-    return [
-        "xfw_arp_ingress_packets",
-        "xfw_arp_ingress_bytes",
-        "xfw_preload_ingress_packets",
-        "xfw_preload_ingress_bytes",
     ]
 
 
@@ -210,210 +201,6 @@ class InvalidEthTypeRawServerRemote(RemoteServer, InvalidEthTypeRawServer):
 @pytest.mark.parametrize(
     "counters, method, sock_proto",
     [
-        pytest.param(
-            dict(xfw_l2_unknown_ingress_packets=[10, 15], xfw_l2_unknown_ingress_bytes=[230, 1000]),
-            "send_eth_eapol_packet",
-            ETH_P_IP,
-            id="eth-l2-bad-protocol-eapol",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(
-                xfw_l2_unknown_ingress_packets=[10, 15],
-                xfw_l2_unknown_ingress_bytes=[230, 1000],
-            ),
-            "send_eth_custom_packet",
-            ETH_P_IP,
-            id="eth-l2-bad-protocol-custom",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(xfw_eth_badhdr_ingress_packets=10, xfw_eth_badhdr_ingress_bytes=540),
-            "send_bad_eth_header",
-            ETH_P_IP,
-            id="eth-send-bad-header",
-            marks=pytest.mark.skip("OS prevent sending packages less then 14 bytes, 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(xfw_ip4_badhdr_ingress_packets=10, xfw_ip4_badhdr_ingress_bytes=240),
-            "send_bad_ip4_header_less",
-            ETH_P_IP,
-            id="ip4-tcp-header-less",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(xfw_ip4_badhdr_ingress_packets=10, xfw_ip4_badhdr_ingress_bytes=460),
-            "send_bad_ip4_header_greater",
-            ETH_P_IP,
-            id="ip4-tcp-header-greater",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(xfw_ip4_badhdr_ingress_packets=10, xfw_ip4_badhdr_ingress_bytes=340),
-            "send_bad_ip4_bad_ip_version",
-            ETH_P_IP,
-            id="ip4-bad-ip-version",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(xfw_ip4_fragmented_ingress_packets=10, xfw_ip4_fragmented_ingress_bytes=410),
-            "send_bad_ip4_fragmented",
-            ETH_P_IP,
-            id="ip4-block-fragmented",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(xfw_ip6_badhdr_ingress_packets=10, xfw_ip6_badhdr_ingress_bytes=490),
-            "send_bad_ip6_header_less",
-            ETH_P_IPV6,
-            id="ip6-header-less",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(xfw_ip6_badhdr_ingress_packets=10, xfw_ip6_badhdr_ingress_bytes=540),
-            "send_bad_ip6_bad_ip_version",
-            ETH_P_IPV6,
-            id="ip6-bad-ip-version",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(xfw_ip6_fragmented_ingress_packets=10, xfw_ip6_fragmented_ingress_bytes=690),
-            "send_bad_ip6_fragmented",
-            ETH_P_IPV6,
-            id="ip6-block-fragmented",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(xfw_tcp_badhdr_ingress_packets=10, xfw_tcp_badhdr_ingress_bytes=490),
-            "send_bad_tcp_headers",
-            ETH_P_IP,
-            id="tcp-bad-header-len",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(xfw_udp_badhdr_ingress_packets=10, xfw_udp_badhdr_ingress_bytes=400),
-            "send_bad_udp_headers",
-            ETH_P_IP,
-            id="udp-bad-header-len",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-        pytest.param(
-            dict(xfw_icmp_badhdr_ingress_packets=10, xfw_icmp_badhdr_ingress_bytes=540),
-            "send_bad_icmp_headers",
-            ETH_P_IP,
-            id="icmp-bad-header-len",
-            marks=pytest.mark.skip("ISSUE: 332, 40 (xFW)"),
-        ),
-        # sizeof(ethhdr) = 14
-        # sizeof(arphdr) = 28
-        # (14 + 28) * 10
-        pytest.param(
-            dict(xfw_arp_ingress_packets=10, xfw_arp_ingress_bytes=420),
-            "send_arp_headers",
-            ETH_P_IP,
-            id="arp-bad-header",
-        ),
-        pytest.param(
-            dict(xfw_l4_unsupported_ingress_packets=10, xfw_l4_unsupported_ingress_bytes=460),
-            "send_l4_unsupported_ip_proto",
-            ETH_P_IP,
-            id="ip4-block-unsupported-sctp",
-            marks=pytest.mark.skip("ISSUE: 40 (xFW)"),
-        ),
-    ],
-)
-async def test_ingress_stats(
-    counters: dict[str, int],
-    method: str,
-    sock_proto: int,
-    stats_counters: list[str],
-    xfw: XFW,
-    config: ConfigSettings,
-    logging_level: int,
-    rpc_connection,
-):
-    client = client_fabric(
-        config=config,
-        logging_level=logging_level,
-        local_class=InvalidEthTypeRawClient,
-        force_ip4=sock_proto == ETH_P_IP,
-    )
-    client.socket_proto = sock_proto
-
-    server = server_fabric(
-        config=config,
-        logging_level=logging_level,
-        local_class=InvalidEthTypeRawServer,
-        remote_class=InvalidEthTypeRawServerRemote,
-        force_ip4=sock_proto == ETH_P_IP,
-        rpc_connection=rpc_connection,
-    )
-
-    await xfw.rules_set("xfw {}")
-
-    await server.start()
-    await client.start()
-
-    src_mac, dst_mac = await asyncio.gather(
-        client.get_mac_address(),
-        server.get_mac_address(),
-    )
-
-    async with xfw.metrics_diff(stats_counters) as diff:
-        await asyncio.gather(*[getattr(client, method)(src_mac, dst_mac) for _ in range(10)])
-        responses = await asyncio.gather(*[server.receive_packet() for _ in range(10)])
-
-    await client.stop()
-    await server.stop()
-
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=stats_counters,
-        all_metrics=diff,
-        diff_metrics=counters,
-    )
-
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
-
-    # some third party traffic could be received
-    assert len([responses]) <= 5, "Broken packets where not filtered"
-
-
-@pytest.mark.parametrize(
-    "counters",
-    [
-        pytest.param(
-            dict(xfw_preload_ingress_packets=11, xfw_preload_ingress_bytes=512),
-            id="ingress-count-packets-before-rules",
-        ),
-    ],
-)
-async def test_ingress_preload_stats(
-    counters: dict[str, int],
-    pre_load_stats_counters: list[str],
-    xfw: XFW,
-    udp_ip4_client,
-    udp_ip4_server,
-    flush_arp_cache,
-):
-    await udp_ip4_server.start()
-    await udp_ip4_client.start()
-
-    async with xfw.metrics_diff(pre_load_stats_counters) as diff:
-        await asyncio.gather(*[udp_ip4_client.ping() for _ in range(10)])
-
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=pre_load_stats_counters,
-        all_metrics=diff,
-        diff_metrics=counters,
-        strict=True,
-    )
-
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
-
-
-@pytest.mark.parametrize(
-    "counters, method, sock_proto",
-    [
         # xfw_l2_unknown_egress_packets is diapason because
         # some kernel messages could be caught
         # sizeof(ethhdr) = 14
@@ -517,13 +304,24 @@ async def test_ingress_preload_stats(
             ETH_P_IP,
             id="ip4-block-unsupported-sctp",
         ),
+        pytest.param(
+            dict(
+                xfw_total_upstream_egress_packets=10,
+                xfw_total_upstream_egress_bytes=490,
+                xfw_passed_upstream_egress_packets=10,
+                xfw_passed_upstream_egress_bytes=490,
+            ),
+            "send_bad_tcp_headers",
+            ETH_P_IP,
+            id="upstream",
+        ),
     ],
 )
-async def test_egress_stats(
+async def test_egress_metrics(
     counters: dict[str, int],
     method: str,
     sock_proto: int,
-    stats_counters: list[str],
+    egress_metrics_counters: list[str],
     xfw: XFW,
     config: ConfigSettings,
     logging_level: int,
@@ -556,12 +354,12 @@ async def test_egress_stats(
 
     await xfw.rules_set("xfw {}")
 
-    async with xfw.metrics_diff(stats_counters) as diff:
+    async with xfw.metrics_diff(egress_metrics_counters) as diff:
         await asyncio.gather(*[getattr(server, method)(src_mac, dst_mac) for _ in range(10)])
         responses = await asyncio.gather(*[client.receive_packet() for _ in range(10)])
 
     invalid_metrics = compare_metrics_diff(
-        compare_metrics=stats_counters,
+        compare_metrics=egress_metrics_counters,
         all_metrics=diff,
         diff_metrics=counters,
     )
@@ -575,55 +373,15 @@ async def test_egress_stats(
     assert len([responses]) <= 5, "Broken packets where not filtered"
 
 
-@pytest.mark.parametrize(
-    "counters",
-    [
-        pytest.param(
-            dict(
-                xfw_not_reported_incident_packets=[10, 20],
-                xfw_not_reported_incident_bytes=[300, 3000],
-            ),
-            id="not-reported-clickhouse-records",
-            marks=pytest.mark.skip("ISSUE: 332"),
-        ),
-    ],
-)
-async def test_clickhouse_reports_stats(
-    counters: dict[str, int],
-    xfw: XFW,
-    udp_ip4_client,
-    udp_ip4_server,
-):
-    stats_counters = ["xfw_not_reported_incident_packets", "xfw_not_reported_incident_bytes"]
-    await udp_ip4_server.start()
-    await udp_ip4_client.start()
-
-    await xfw.rules_set("xfw { defaults { dst: block; } }")
-
-    async with xfw.metrics_diff(stats_counters) as diff:
-        await asyncio.gather(
-            *[udp_ip4_client.ping() for _ in range(10)],
-        )
-        await asyncio.sleep(3)
-
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=stats_counters,
-        all_metrics=diff,
-        diff_metrics=counters,
-    )
-
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
-
-
 @asynccontextmanager
 async def check_clean_counters(
-    stats_counters: list[str],
+    metrics_counters: list[str],
     xfw: XFW,
     udp_ip4_server,
     config: ConfigSettings,
     logging_level: int,
 ):
-    counters = dict(xfw_udp_badhdr_ingress_packets=10, xfw_udp_badhdr_ingress_bytes=400)
+    counters = dict(xfw_udp_total_ingress_packets=10, xfw_udp_total_ingress_bytes=400)
     client = client_fabric(
         config=config,
         logging_level=logging_level,
@@ -640,11 +398,11 @@ async def check_clean_counters(
         udp_ip4_server.get_mac_address(),
     )
 
-    async with xfw.metrics_diff(stats_counters) as diff:
+    async with xfw.metrics_diff(metrics_counters) as diff:
         await asyncio.gather(*[client.send_bad_udp_headers(src_mac, dst_mac) for _ in range(10)])
 
     invalid_metrics = compare_metrics_diff(
-        compare_metrics=stats_counters, all_metrics=diff, diff_metrics=counters, strict=True
+        compare_metrics=metrics_counters, all_metrics=diff, diff_metrics=counters, strict=True
     )
 
     assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
@@ -652,13 +410,12 @@ async def check_clean_counters(
     yield
 
     metrics = await xfw.metrics()
-    assert metrics["xfw_udp_badhdr_ingress_packets"] == 0
-    assert metrics["xfw_udp_badhdr_ingress_bytes"] == 0
+    assert metrics["xfw_udp_total_ingress_packets"] == 0
+    assert metrics["xfw_udp_total_ingress_bytes"] == 0
 
 
-@pytest.mark.skip("ISSUE: 40 (xFW)")
-async def test_clean_stats_after_restart(
-    stats_counters: list[str],
+async def test_clean_metrics_after_restart(
+    egress_metrics_counters: list[str],
     xfw: XFW,
     udp_ip4_client,
     udp_ip4_server,
@@ -666,7 +423,7 @@ async def test_clean_stats_after_restart(
     logging_level: int,
 ):
     verify_metrics_while_app_reloads = check_clean_counters(
-        stats_counters=stats_counters,
+        metrics_counters=["xfw_udp_total_ingress_packets", "xfw_udp_total_ingress_bytes"],
         xfw=xfw,
         udp_ip4_server=udp_ip4_server,
         config=config,
@@ -676,9 +433,7 @@ async def test_clean_stats_after_restart(
         await xfw.restart()
 
 
-@pytest.mark.skip("ISSUE: 40 (xFW)")
-async def test_clean_stats_after_stop_start(
-    stats_counters: list[str],
+async def test_clean_metrics_after_stop_start(
     xfw: XFW,
     udp_ip4_client,
     udp_ip4_server,
@@ -686,7 +441,7 @@ async def test_clean_stats_after_stop_start(
     logging_level: int,
 ):
     verify_metrics_while_app_reloads = check_clean_counters(
-        stats_counters=stats_counters,
+        metrics_counters=["xfw_udp_total_ingress_packets", "xfw_udp_total_ingress_bytes"],
         xfw=xfw,
         udp_ip4_server=udp_ip4_server,
         config=config,
