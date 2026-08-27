@@ -175,4 +175,4 @@ register_incident(const XfwIp* ilog_addr, uint32_t pkt_sz, enum XfwDropStat reas
 }
 
 #define REGISTER_INCIDENT(ctx, reason)					\
-	register_incident(&(ctx)->ilog_addr, (ctx)->pkt_sz, reason)
+	register_incident(&(ctx)->addr.src_addr, (ctx)->pkt_sz, reason)

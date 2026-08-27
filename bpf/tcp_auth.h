@@ -48,19 +48,12 @@
 
 #include "filter.h"
 
-typedef struct XfwSockAddr {
-	XfwIp		addr; /* IPv4 uses the low 32 bits; the rest stays zero. */
-	XfwPort		port;
-	uint8_t		__reserved[2];
-} XfwSockAddr;
-STATIC_ASSERT(sizeof(XfwSockAddr) == 20, "Invalid XfwSockAddr size");
-
 /*
  * For TCP Authentication Filter there are only 2 states for a connection:
  * unauthenticated (no XfwTcpConnState entry in the map) and authenticated
  * (a map entry exists).
  *
- * @last_fin_time	- timestamp in seconds for the last seen FIN
+ * @last_fin_time_jiff	- timestamp in jiffies for the last seen FIN
  */
 typedef struct XfwTcpConnState {
 	uint64_t		last_fin_time_jiff; /* In jiffies */
@@ -68,7 +61,7 @@ typedef struct XfwTcpConnState {
 
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__type(key, XfwSockAddr);
+	__type(key, XfwTcpConnAddr);
 	__type(value, XfwTcpConnState);
 	/* Pinned so ingress and egress programs share authenticated sockets. */
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
@@ -87,20 +80,20 @@ struct {
 	(UINT64_MAX - TCP_AUTH_CONN_CLOSE_TIMEOUT_JIFF) /* Keep timeout math bounded. */
 
 static __always_inline XfwTcpConnState *
-tcp_auth_conn_lookup(const XfwSockAddr *addr)
+tcp_auth_conn_lookup(const XfwTcpConnAddr *addr)
 {
 	return bpf_map_lookup_elem(&MAP_TCP_CONN_REF, addr);
 }
 
 static __always_inline void
-tcp_auth_conn_delete(const XfwSockAddr *addr)
+tcp_auth_conn_delete(const XfwTcpConnAddr *addr)
 {
 	bpf_map_delete_elem(&MAP_TCP_CONN_REF, addr);
 	XFW_CTX_DBG("Delete TCP AUTH connection");
 }
 
 static __always_inline void
-tcp_auth_conn_add(const XfwSockAddr *addr)
+tcp_auth_conn_add(const XfwTcpConnAddr *addr)
 {
 	XfwTcpConnState new_conn = {
 		.last_fin_time_jiff = TCP_AUTH_CONN_MAX_FIN_TIME_JIFF
@@ -125,7 +118,7 @@ tcp_auth_is_conn_outdated(const XfwGlobalCtx *ctx, const XfwTcpConnState *conn)
 }
 
 static __always_inline bool
-tcp_auth_has_conn_trusted(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
+tcp_auth_has_conn_trusted(const XfwGlobalCtx *ctx, const XfwTcpConnAddr *addr)
 {
 	XfwTcpConnState *conn = tcp_auth_conn_lookup(addr);
 
@@ -160,18 +153,17 @@ enum XfwTcpAuthEvent {
  * keeping the per-packet cost minimal.
  */
 static __always_inline int
-tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr,
-			     enum XfwTcpAuthEvent ev)
+tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, enum XfwTcpAuthEvent ev)
 {
 	if (unlikely(!ctx->cfg->rules.tcp_auth.enabled))
 		return XFW_CTX_CONTINUE;
 
-	XfwTcpConnState *conn = tcp_auth_conn_lookup(addr);
+	XfwTcpConnState *conn = tcp_auth_conn_lookup(&ctx->addr);
 	if (likely(!(conn))) /* Fast path for unauthenticated flood traffic. */
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_AUTH_FAILED);
 
 	if (unlikely(tcp_auth_is_conn_outdated(ctx, (conn)))) {
-		tcp_auth_conn_delete(addr);
+		tcp_auth_conn_delete(&ctx->addr);
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_AUTH_TIMEOUT);
 	}
 
@@ -181,7 +173,7 @@ tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr,
 		 * Out-of-order traffic: early RST clears the connection,
 		 * mirroring TCP stack behavior.
 		 */
-		tcp_auth_conn_delete(addr);
+		tcp_auth_conn_delete(&ctx->addr);
 		return XFW_CTX_CONTINUE;
 
 	case TCP_AUTH_EVENT_FIN:
@@ -200,18 +192,13 @@ tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx)
 	struct tcphdr *th = ctx->th;
 	VERIFY_TRUE_OR_RETURN((void *)(th + 1) <= ctx->hdr_cur.end, (void)0);
 
-	const XfwSockAddr addr = {
-		.addr = ctx->ilog_addr,
-		.port = th->dest
-	};
-	
 	if (unlikely(th->rst)) {
 		/* An early RST can safely remove a learned tuple. */
-		tcp_auth_conn_delete(&addr);
+		tcp_auth_conn_delete(&ctx->addr);
 		return;
 	}
 
-	XfwTcpConnState *conn = tcp_auth_conn_lookup(&addr);
+	XfwTcpConnState *conn = tcp_auth_conn_lookup(&ctx->addr);
 
 	/*
 	 * Trusted connection tracking in tc.c has two modes:
@@ -237,7 +224,7 @@ tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx)
 	 */
 	if (!conn) {
 		if (unlikely(!ctx->cfg->rules.tcp_auth.enabled || th->syn))
-			tcp_auth_conn_add(&addr);
+			tcp_auth_conn_add(&ctx->addr);
 		return;
 	}
 

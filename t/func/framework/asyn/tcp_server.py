@@ -129,15 +129,19 @@ class TcpServer(BaseTcpStateful, ABC):
 
         await self.server.start_serving()
 
+    def close_client_with_rst(self, transport) -> None:
+        client_socket = transport.get_extra_info("socket")
+        linger = struct.pack("ii", 1, 0)
+        client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, linger)
+        transport.abort()
+        self.logger.debug(f"closed {client_socket} with rst")
+
     def close_all_clients_sockets(self):
         for transport in self.transports:
             if transport.is_closing():
                 continue
 
-            client_socket = transport.get_extra_info("socket")
-            client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
-            transport.abort()
-            self.logger.debug(f"closed {client_socket}")
+            self.close_client_with_rst(transport)
 
         self.logger.debug(f"closed {len(self.transports)} transports")
 

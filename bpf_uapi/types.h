@@ -103,6 +103,25 @@ typedef union {
 	struct in6_addr	in6;
 } XfwIp;
 
+/*
+ * Full TCP connection tracking address container.
+ *
+ * The full TCP 4-tuple is used to uniquely identify a connection and keep
+ * connections sharing the same endpoint in separate authentication states.
+ *
+ * Always normalized to the client-to-server direction regardless
+ * of the packet direction. For ingress traffic, source and destination are
+ * used as-is. For egress traffic, they are reversed so that packets in both
+ * directions of the same connection resolve to the same map entry.
+ */
+typedef struct XfwTcpConnAddr {
+	XfwIp		src_addr;
+	XfwIp		dst_addr;
+	XfwPort		src_port;
+	XfwPort		dst_port;
+} XfwTcpConnAddr;
+
 STATIC_ASSERT(sizeof(XfwIp) == sizeof(struct in6_addr), "Invalid XfwIp size");
 STATIC_ASSERT(sizeof(XfwIp) == sizeof(__be32[4]), "Invalid XfwIp size");
 STATIC_ASSERT(sizeof(XfwIp) == 16, "Invalid XfwIp size");
+STATIC_ASSERT(sizeof(XfwTcpConnAddr) == 36, "Invalid XfwTcpConnAddr size");
