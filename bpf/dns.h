@@ -15,8 +15,9 @@
 #define BANNER "dns"
 #include "log.h"
 
-#include "filter.h"
 #include "ctx.h"
+#include "filter.h"
+#include "metadata.h"
 #include "parsing_helpers.h"
 
 #define DNS_PORT			53
@@ -87,10 +88,10 @@ typedef struct {
 	uint16_t	ip_off;
 	uint16_t	is_ipv4;
 	uint16_t	unused;
-} __attribute__((packed)) XfwPacketMetadata;
+} __attribute__((packed)) XfwDnsPacketMetadata;
 
-STATIC_ASSERT(sizeof(XfwPacketMetadata) <= 32,
-	      "Packet metadata must be less than 32 bytes");
+STATIC_ASSERT(sizeof(XfwDnsPacketMetadata) <= sizeof(XfwPacketMetadata),
+	      "DNS packet metadata must be less than modules packed metadata");
 
 typedef struct XfwDnsCtx {
 	XfwMd		*ctx;
@@ -151,7 +152,7 @@ process_dname_global(XfwMd *ctx)
 	XfwHdrCursor hdr_cur;
 	INIT_CURSOR_FROM_BPF_CONTEXT(ctx, &hdr_cur);
 
-	XfwPacketMetadata *md = (void *)(long)ctx->data_meta;
+	XfwDnsPacketMetadata *md = (void *)(long)ctx->data_meta;
 	/* Limiting is important for verifier */
 	if (unlikely((void *)(md + 1) > hdr_cur.pos
 		     || md->cur_pos > MAX_DNS_UDP_PACKET))
@@ -176,7 +177,7 @@ process_dname_global(XfwMd *ctx)
 static __always_inline int
 process_dname(XfwMd *ctx, XfwHdrCursor* hdr_cur)
 {
-	XfwPacketMetadata *md = (void *)(long)ctx->data_meta;
+	XfwDnsPacketMetadata *md = (void *)(long)ctx->data_meta;
 	if (unlikely((void *)(md + 1) > (void *)(long)ctx->data))
 		return -1; /* internal error */
 
@@ -351,7 +352,7 @@ init_dns_ctx(XfwDnsCtx *dns_ctx, XfwMd *ctx, XfwPerCpuStats *global_stats)
 	dns_ctx->ctx = ctx;
 	INIT_CURSOR_FROM_BPF_CONTEXT(ctx, &dns_ctx->hdr_cur);
 
-	XfwPacketMetadata *md = (void *)(long)ctx->data_meta;
+	XfwDnsPacketMetadata *md = (void *)(long)ctx->data_meta;
 	/* Limiting is important for verifier */
 	if (unlikely((void *)(md + 1) > dns_ctx->hdr_cur.pos
 		     || md->cur_pos > L3_OFF_MAX + L3_L4_IPV4_UDP_HDRS_MAXLEN))
@@ -434,7 +435,7 @@ ingress_dns_filter(XfwGlobalCtx *ctx, struct udphdr *uh)
 		return XFW_CTX_CONTINUE;
 	}
 
-	XfwPacketMetadata *md = (void *)(long)xdp_ctx->data_meta;
+	XfwDnsPacketMetadata *md = (void *)(long)xdp_ctx->data_meta;
 	if (unlikely((void *)(md + 1) > (void *)(long)xdp_ctx->data)) {
 		XFW_CTX_DBG("Logic error: created meta data is incorrect.");
 		return XFW_CTX_CONTINUE;

@@ -14,11 +14,11 @@
 #include "ctx.h"
 #include "dns.h"
 #include "dst.h"
+#include "module_filter.h"
 #include "filter.h"
 #include "parsing_helpers.h"
 #include "tcp_anomaly_filter.h"
 #include "tcp_auth.h"
-#include "tcp_syncookies.h"
 
 #define SHADOW_SRC_IP_MAP(basename, key_t)				\
 	SHADOW_MAP(basename, BPF_MAP_TYPE_LPM_TRIE, XFW_MAX_SRC_IP_RULES, \
@@ -67,12 +67,6 @@ struct {
 	}								\
 	r;								\
 })
-
-static __always_inline bool
-is_metadata_creation_necessary(const XfwGlobalCtx *ctx)
-{
-	return ctx->cfg->rules.dns.enabled;
-}
 
 static __always_inline int
 create_metadata(XfwGlobalCtx *ctx, struct xdp_md *xdp)
@@ -429,7 +423,7 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
  * connection trusted.
  */
 static __always_inline int
-tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
+tcp_rcv_syn_filter(XfwGlobalCtx *ctx)
 {
 	/*
 	 * Rate-limit SYNs before stateful validation to protect the SYN
@@ -440,57 +434,12 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 
 	/* If a SYN cookie was generated, processing stops immediately. */
 	if (ctx->cfg->rules.syncookie.enabled)
-		CHAIN(tcp_syncookies_syn_filter, ctx, th);
+		CHAIN(xdp_tcp_syncookies_module_filter, ctx);
 
 	/* We do not add the connection to the trusted set here.
 	 * The trusted entry will be created later in tc.c, which is less
 	 * loaded than xdp.c, when responding with SYN-ACK.
 	 */
-	return XFW_CTX_CONTINUE;
-}
-
-/**
- * Filter incoming ACK packets.
- *
- * 1. If SYN cookies are disabled or flood mode is inactive → fall back to
- *    the normal TCP auth filter.
- * 2. If a trusted connection already exists → continue.
- * 3. Otherwise, call SYN-cookie-specific check.
- * 4. If valid, trust the connection on ingress side.
- */
-static __always_inline int
-tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th,
-		   const XfwSockAddr *addr)
-{
-	/* Fast path - no SYN cookies. */
-	if (!ctx->cfg->rules.syncookie.enabled)
-		return tcp_auth_conn_ingress_filter(ctx, addr, TCP_AUTH_EVENT_NORMAL);
-
-	XfwTcpSynCookieTs *ts = __tcp_get_tcp_syncookie_ts();
-	XFW_ASSERT(ts);
-
-	/* Fast path - syncookies flood mode is inactive. */
-	if (!tcp_syncookies_flood_mode(ctx, ts))
-		return tcp_auth_conn_ingress_filter(ctx, addr, TCP_AUTH_EVENT_NORMAL);
-
-	/* Can rely only on connections that are up-to-date */
-	if (ctx->cfg->rules.tcp_auth.enabled && tcp_auth_has_conn_trusted(ctx, addr))
-		return XFW_CTX_CONTINUE;
-
-	/* Perform SYN-cookie-specific ACK validation */
-	CHAIN(tcp_syncookies_ack_filter, ctx, th);
-
-	/*
-	 * This is the scenario where a SYN cookie was issued and successfully
-	 * validated. We need to authenticate TCP flows passing through the host
-	 * or designated to the local host.
-	 *
-	 * This is the only case where xdp.c adds a connection to the trusted set.
-	 * The SYN arrived on the ingress interface, while the SYN-ACK was
-	 * generated and sent directly by xdp.c, bypassing tc.c. This ensures
-	 * the connection is correctly tracked without relying on tc.c.
-	 */
-	tcp_auth_conn_add(addr);
 	return XFW_CTX_CONTINUE;
 }
 
@@ -561,13 +510,14 @@ tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
 	/* SYN-only. Authenticate the connection if all checks pass. */
 	if (th->syn) {
 		count_traffic_stat(ctx, XFW_SYN);
-		return tcp_rcv_syn_filter(ctx, th);
+		return tcp_rcv_syn_filter(ctx);
 	}
 
 	/* ACK-only: validate SYN-ACK cookies or authenticate normally.*/
 	if (th->ack) {
 		count_traffic_stat(ctx, XFW_ACK);
-		return tcp_rcv_ack_filter(ctx, th, addr);
+		if (ctx->cfg->rules.syncookie.enabled)
+			CHAIN(xdp_tcp_syncookies_module_filter, ctx);
 	}
 
 	/* Default: authenticate any remaining TCP packets. */
@@ -650,16 +600,6 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		return XFW_MAKE_CTX_PASS(ctx, XFW_SUPPORTED_PROTOCOL_INGRESS);
 	}
 }
-
-#define CHAIN_PASS_ALL(filter, ...)					\
-do {									\
-	r = filter(__VA_ARGS__);					\
-	if (r == XFW_CTX_CONTINUE)					\
-		break;							\
-	if (r == XFW_CTX_PASS)						\
-		goto pass;						\
-	return r;							\
-} while (0)
 
 static __always_inline int
 xfw_xdp_filter(struct XfwGlobalCtx *ctx)

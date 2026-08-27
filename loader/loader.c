@@ -64,6 +64,12 @@ typedef struct XfwProgram {
 	 * created or reused under pin_root.
 	 */
 	bool pin_maps;
+
+	/*
+	 * Register the loaded program in the global tail-call program array.
+	 */
+	bool register_in_prog_array;
+	uint32_t prog_array_idx;
 } XfwProgram;
 
 static const XfwProgram main_xdp = {
@@ -78,6 +84,7 @@ static const XfwProgram main_xdp = {
 	 * The main XDP object creates and owns the shared maps.
 	 */
 	.pin_maps = true,
+	.register_in_prog_array = false,
 };
 
 static const MapDesc tc_maps[] = {
@@ -106,11 +113,38 @@ static const XfwProgram main_tc = {
 	 * created and pinned under the common pin root.
 	 */
 	.pin_maps = true,
+	.register_in_prog_array = false,
+};
+
+static const MapDesc xdp_tcp_syncookies_maps[] = {
+	{ .name = MAP_GLBL_STAT_STR },
+	{ .name = MAP_CFG_STR },
+	{ .name = MAP_LOG_ACTIVE_FD_STR },
+	{ .name = MAP_LOG_EVENTS_STR },
+	{ .name = MAP_LOG_EV_CNT_STR },
+	{ .name = MAP_RATELIMIT_STR },
+	{ .name = MAP_TCP_CONN_STR },
+	{ .name = MAP_DST_STR(MAP_PRIMARY_IDX) },
+	{ .name = MAP_DST_STR(MAP_SECONDARY_IDX) },
+};
+
+static const XfwProgram xdp_tcp_syncookies_module = {
+	.name = "xdp_tcp_syncookies",
+	.obj_path = XFW_BPF_LIB_DIR "/" "xdp_tcp_syncookies.o",
+	.prog_name = "xfw_xdp_tcp_syncookies",
+	.prog_pin_name = "xdp_tcp_syncookies",
+	.prog_type = BPF_PROG_TYPE_XDP,
+	.reuse_maps = xdp_tcp_syncookies_maps,
+	.reuse_maps_cnt = ARRAY_SIZE(xdp_tcp_syncookies_maps),
+	.pin_maps = true,
+	.register_in_prog_array = true,
+	.prog_array_idx = XFW_PROG_TCP_SYNCOOKIES_FILTER,
 };
 
 static const XfwProgram *programs[] = {
 	&main_xdp,
 	&main_tc,
+	&xdp_tcp_syncookies_module,
 };
 
 static void
@@ -126,15 +160,18 @@ usage(const char *prog)
 		"Programs:\n"
 		"  xdp\n"
 		"  tc\n"
+		"  xdp_tcp_syncookies"
 		"\n"
 		"Examples:\n"
 		"  %s load xdp /sys/fs/bpf/xfw\n"
 		"  %s load tc /sys/fs/bpf/xfw\n"
+		"  %s load xdp_tcp_syncookies /sys/fs/bpf/xfw\n"
 		"  %s attach tc /sys/fs/bpf/xfw enp1s0\n"
 		"  %s detach tc /sys/fs/bpf/xfw enp1s0\n"
+		"  %s unload xdp /sys/fs/bpf/xfw\n"
 		"  %s unload tc /sys/fs/bpf/xfw\n"
-		"  %s unload xdp /sys/fs/bpf/xfw\n",
-		prog, prog, prog, prog,
+		"  %s unload xdp_tcp_syncookies /sys/fs/bpf/xfw\n",
+		prog, prog, prog, prog, prog, prog,
 		prog, prog, prog, prog, prog, prog);
 }
 
@@ -347,8 +384,6 @@ attach_tc(const XfwProgram *desc, const char *pin_root,
 	       desc->prog_name, device);
 	printf("TCX link pin: %s\n", link_pin);
 
-	err = 0;
-
 out:
 	if (link_fd >= 0)
 		close(link_fd);
@@ -374,7 +409,7 @@ detach_tc(const XfwProgram *desc, const char *pin_root,
 	}
 
 	err = make_tc_link_pin_path(link_pin, sizeof(link_pin),
-				     pin_root, device);
+				    pin_root, device);
 	if (err)
 		return err;
 
@@ -399,6 +434,91 @@ detach_tc(const XfwProgram *desc, const char *pin_root,
 	return 0;
 }
 
+static int
+register_tail_call_program(const struct bpf_program *prog,
+			   const char *pin_root, __u32 key)
+{
+	char prog_array_pin[PATH_MAX];
+	int prog_array_fd;
+	int prog_fd;
+	int err;
+
+	err = make_pin_path(prog_array_pin, sizeof(prog_array_pin),
+			    pin_root, MAP_PROG_ARRAY_STR);
+	if (err)
+		return err;
+
+	prog_fd = bpf_program__fd(prog);
+	if (prog_fd < 0) {
+		fprintf(stderr, "Failed to get program fd: %s\n",
+			strerror(-prog_fd));
+		return prog_fd;
+	}
+
+	prog_array_fd = bpf_obj_get(prog_array_pin);
+	if (prog_array_fd < 0) {
+		err = -errno;
+		fprintf(stderr, "Failed to open prog array '%s': %s\n",
+			prog_array_pin, strerror(-err));
+		return err;
+	}
+
+	/*
+	 * Register the newly loaded program in the global PROG_ARRAY so that
+	 * it can be reached via bpf_tail_call().
+	 */
+	if (bpf_map_update_elem(prog_array_fd, &key, &prog_fd, BPF_ANY)) {
+		err = -errno;
+		fprintf(stderr, "Failed to update prog array '%s' at index %u: %s\n",
+			prog_array_pin, key, strerror(-err));
+	}
+
+	close(prog_array_fd);
+	return err;
+}
+
+static int
+unregister_tail_call_program(const XfwProgram *desc, const char *pin_root)
+{
+	char prog_array_pin[PATH_MAX];
+	__u32 key = desc->prog_array_idx;
+	int prog_array_fd;
+	int err;
+
+	err = make_pin_path(prog_array_pin, sizeof(prog_array_pin),
+			    pin_root, MAP_PROG_ARRAY_STR);
+	if (err)
+		return err;
+
+	prog_array_fd = bpf_obj_get(prog_array_pin);
+	if (prog_array_fd < 0) {
+		if (errno == ENOENT)
+			return 0;
+
+		err = -errno;
+		fprintf(stderr, "Failed to open prog array '%s': %s\n",
+			prog_array_pin, strerror(-err));
+		return err;
+	}
+
+	/*
+	 * Remove the program from the tail-call dispatch table before
+	 * unpinning it.
+	 */
+	if (bpf_map_delete_elem(prog_array_fd, &key)) {
+		if (errno != ENOENT) {
+			err = -errno;
+			fprintf(stderr,
+				"Failed to remove program '%s' from "
+				"prog array index %u: %s\n",
+				desc->prog_name, key, strerror(-err));
+		}
+	}
+
+	close(prog_array_fd);
+	return err;
+}
+
 /*
  * Load and pin a BPF program.
  *
@@ -413,6 +533,7 @@ load_program(const XfwProgram *desc, const char *pin_root)
 	struct bpf_program *prog;
 	char prog_pin[PATH_MAX];
 	char map_pin[PATH_MAX];
+	bool pinned = false;
 	size_t i;
 	int err;
 
@@ -493,11 +614,22 @@ load_program(const XfwProgram *desc, const char *pin_root)
 			desc->prog_name, prog_pin, strerror(-err));
 		goto out;
 	}
+	pinned = true;
+
+	if (desc->register_in_prog_array) {
+		err = register_tail_call_program(prog, pin_root,
+						 desc->prog_array_idx);
+		if (err)
+			goto out;
+	}
 
 	printf("Loaded program '%s'\n", desc->prog_name);
 	printf("Program pin: %s\n", prog_pin);
 
 out:
+	if (err && pinned)
+		unlink(prog_pin);
+
 	bpf_object__close(obj);
 
 	return err;
@@ -513,6 +645,12 @@ unload_program(const XfwProgram *desc, const char *pin_root)
 			    pin_root, desc->prog_pin_name);
 	if (err)
 		return err;
+
+	if (desc->register_in_prog_array) {
+		err = unregister_tail_call_program(desc, pin_root);
+		if (err)
+			return err;
+	}
 
 	if (unlink(prog_pin)) {
 		if (errno == ENOENT)

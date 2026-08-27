@@ -38,6 +38,9 @@ declare -r xfw_bpf_path="/sys/fs/bpf/xfw"
 declare -r xfw_tmp_path="/tmp/tempesta/xfw"
 declare -r version_file="$xfw_tmp_path/version"
 declare -r status_dir="$xfw_tmp_path/status/"
+declare -ar bpf_modules=(
+	xdp_tcp_syncookies
+)
 
 # Select the first existing directory
 if [ -n "$xfw_path" ] && [ -d "$xfw_path" ]; then
@@ -280,6 +283,45 @@ xdp_attach_type()
 	esac
 }
 
+load_module()
+{
+	local module="$1"
+	local tmp_log
+	local rc
+
+	tmp_log=$(mktemp "$xfw_tmp_path/${module}-load.XXXXXX")
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		unload_bpf
+		error "Failed to create log file for BPF module '$module'"
+	fi
+
+	[[ "$v" -eq 1 ]] && echo "$project_path/bin/xfw_bpf_loader" load "$module" "$xfw_bpf_path"
+
+	"$project_path/bin/xfw_bpf_loader" load "$module" "$xfw_bpf_path" > "$tmp_log" 2>&1
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		echo "Error while loading BPF module '$module'. See $tmp_log for details."
+		[[ "$v" -eq 1 ]] && echo "Trying to unload remaining BPF programs:"
+		unload_bpf
+		error "Failed to load BPF module '$module' (exit code $rc)"
+	fi
+
+	if [[ "$v" -eq 1 ]]; then
+		echo "BPF module '$module' loader output:"
+		cat "$tmp_log"
+	fi
+}
+
+load_modules()
+{
+	local module
+
+	for module in "${bpf_modules[@]}"; do
+		load_module "$module"
+	done
+}
+
 load_xdp()
 {
 	local tmp_log
@@ -447,6 +489,7 @@ load_bpf()
 
 	load_xdp
 	load_tc
+	load_modules
 
 	for dev in ${devs}; do
 		attach_xdp "$dev" "$attach_type"
@@ -494,6 +537,41 @@ detach_xdp()
 	done
 }
 
+unload_module()
+{
+	local module="$1"
+	local prog_pin
+	local rc
+
+	case "$module" in
+	xdp_tcp_syncookies)
+		prog_pin="$xfw_bpf_path/xdp_tcp_syncookies"
+		;;
+	*)
+		return
+		;;
+	esac
+
+	if [[ -e "$prog_pin" ]]; then
+		if [[ "$v" -eq 1 ]]; then
+			"$project_path/bin/xfw_bpf_loader" unload "$module" "$xfw_bpf_path" || true
+		else
+			"$project_path/bin/xfw_bpf_loader" unload "$module" "$xfw_bpf_path" 2>/dev/null || true
+		fi
+	else
+		[[ "$v" -eq 1 ]] && echo "BPF module '$module' is not loaded"
+	fi
+}
+
+unload_modules()
+{
+	local module
+
+	for module in "${bpf_modules[@]}"; do
+		unload_module "$module"
+	done
+}
+
 unload_bpf()
 {
 	local rc=0
@@ -505,6 +583,8 @@ unload_bpf()
 		detach_xdp "$dev"
 		detach_tc "$dev"
 	done
+
+	unload_modules
 
 	if [[ -e "$xfw_bpf_path/tc" ]]; then
 		[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader unload tc "$xfw_bpf_path"

@@ -58,6 +58,7 @@ enum XfwDropStat {
 	XFW_DROP_DNS_RESP_ANS_OVERLIMIT,
 	XFW_DROP_DNS_BAD_RR,
 	XFW_DROP_DNS_ANSWER_ANOMALY,
+	XFW_DROP_TAIL_CALL_FAILED,
 
 	XFW_DROP_STAT_MAX
 };
@@ -212,7 +213,10 @@ static const struct XfwStatInfo xfw_drop_stats[] = {
 	[XFW_DROP_DNS_ANSWER_ANOMALY]		= {"xfw_dns_answer_anomaly",
 						   "Blocked by DNS anomaly: "
 						   "DNS answer has "
-						   "anomaly ttl"}
+						   "anomaly ttl"},
+	[XFW_DROP_TAIL_CALL_FAILED]		= {"xfw_tail_call_failed",
+						   "Blocked: failed to invoke "
+						   "XDP module"},
 };
 XFW_STAT_ARRAY_ASSERT(xfw_drop_stats, XFW_DROP_STAT_MAX);
 

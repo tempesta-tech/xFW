@@ -1,5 +1,5 @@
 /**
- *	Tempesta xFW TCP SYN Cookies implementation
+ *	Tempesta xFW TCP SYN Cookies module implementation
  *
  * The design reference is "Issuing SYN Cookies in XDP" by P.Penkov et al,
  * https://netdevconf.info/0x14/pub/papers/50/0x14-paper50-talk-paper.pdf
@@ -7,17 +7,25 @@
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
-#pragma once
+#define BPF_PROGRAM
+#define XFW_XDP
+#define BANNER "tcp_syncookies"
 
 #include "vmlinux.h"
 
-#pragma push_macro("BANNER")
-#undef BANNER
-#define BANNER "syncookie"
-#include "log.h"
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_endian.h>
 
+#include "compiler.h"
+#include "dst.h"
 #include "filter.h"
+#include "log.h"
+#include "metadata.h"
 #include "parsing_helpers.h"
+#include "tcp_auth.h"
+
+#include "../bpf_uapi/config.h"
+#include "../bpf_uapi/map_names.h"
 
 #ifndef BPF_F_CURRENT_NETNS
 #define BPF_F_CURRENT_NETNS	-1
@@ -770,5 +778,81 @@ tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th)
 	return XFW_CTX_CONTINUE;
 }
 
-#undef BANNER
-#pragma pop_macro("BANNER")
+static __always_inline int
+tcp_syncookies_filter(XfwGlobalCtx *ctx)
+{
+	XFW_ASSERT(ctx->l4_off <= L4_OFF_MAX);
+	struct tcphdr *th = XFW_PKT_PTR(ctx, ctx->l4_off, struct tcphdr);
+	XFW_ASSERT((void *)(th + 1) <= ctx->hdr_cur.end);
+
+	if (th->syn) {
+		CHAIN(tcp_syncookies_syn_filter, ctx, th);
+	} else if (th->ack) {
+		/*
+		 * Filter incoming ACK packets.
+		 *
+		 * 1. If flood mode is inactive → fall back to the normal
+		 *    TCP auth filter.
+		 * 2. If a trusted connection already exists → continue.
+		 * 3. Otherwise, call SYN-cookie-specific check.
+		 */
+		const XfwSockAddr addr = {
+			.addr = ctx->ilog_addr,
+			.port = th->source
+		};
+		XfwTcpSynCookieTs *ts = __tcp_get_tcp_syncookie_ts();
+		XFW_ASSERT(ts);
+
+		/* Fast path - syncookies flood mode is inactive. */
+		if (!tcp_syncookies_flood_mode(ctx, ts))
+			return tcp_auth_conn_ingress_filter(ctx, &addr, TCP_AUTH_EVENT_NORMAL);
+
+		/* Can rely only on connections that are up-to-date */
+		if (ctx->cfg->rules.tcp_auth.enabled
+		    && tcp_auth_has_conn_trusted(ctx, &addr))
+			return XFW_CTX_CONTINUE;
+
+		CHAIN(tcp_syncookies_ack_filter, ctx, th);
+		/*
+		 * This is the scenario where a SYN cookie was issued and
+		 * successfully validated. We need to authenticate TCP flows
+		 * passing through the host or designated to the local host.
+		 *
+		 * This is the only case where xdp.c adds a connection to the
+		 * trusted set. The SYN arrived on the ingress interface, while
+		 * the SYN-ACK was generated and sent directly by xdp.c,
+		 * bypassing tc.c. This ensures the connection is correctly
+		 * tracked without relying on tc.c.
+		 */
+		tcp_auth_conn_add(&addr);
+	}
+
+	return XFW_CTX_CONTINUE;
+}
+
+static __always_inline int
+xfw_xdp_tcp_syncookies_filter(XfwGlobalCtx *ctx)
+{
+	int r;
+
+	CHAIN_PASS_ALL(tcp_syncookies_filter, ctx);
+	CHAIN_PASS_ALL(xfw_dst_filter, ctx);
+pass:
+	count_traffic_stat(ctx, XFW_PASSED_DOWNSTREAM_INGRESS);
+	return XFW_CTX_PASS;
+}
+
+SEC("xdp")
+int
+xfw_xdp_tcp_syncookies(struct xdp_md *xdp)
+{
+	XfwGlobalCtx ctx;
+	VERIFY_TRUE_OR_RETURN(xfw_ctx_init_from_metadata(&ctx, xdp),
+			      XFW_CTX_PASS);
+
+	int r = xfw_xdp_tcp_syncookies_filter(&ctx);
+
+	return finalize_result(&ctx, r);
+}
+
+char LICENSE[] SEC("license") = "GPL v2";
