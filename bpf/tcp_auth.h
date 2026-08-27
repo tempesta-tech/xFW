@@ -197,9 +197,9 @@ tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr,
 static __always_inline void
 tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx)
 {
-	struct tcphdr *th = ctx->th;
+	VERIFY_TRUE_OR_RETURN(ctx->l4_off <= L4_OFF_MAX, (void)0);
+	struct tcphdr *th = XFW_PKT_PTR(ctx, ctx->l4_off, struct tcphdr);
 	VERIFY_TRUE_OR_RETURN((void *)(th + 1) <= ctx->hdr_cur.end, (void)0);
-
 	const XfwSockAddr addr = {
 		.addr = ctx->ilog_addr,
 		.port = th->dest

@@ -20,9 +20,71 @@
 #else
 #error "Undefined program type: should be TC or XDP"
 #endif
+
+/*
+ * Read the packet data pointer directly from the BPF context.
+ *
+ * Normally this could be expressed as:
+ *
+ *     (void *)(long)XFW_CTX_MD(ctx)->data
+ *
+ * However, when the resulting packet pointer participates in further
+ * pointer arithmetic, Clang/LLVM may reassociate the expression and move
+ * that arithmetic to the context pointer before loading the `data` field.
+ * The generated BPF can then effectively look like:
+ *
+ *     ctx += offset;
+ *     data = ctx->data;
+ *
+ * instead of:
+ *
+ *     data = ctx->data;
+ *     data += offset;
+ *
+ * The BPF verifier does not allow dereferencing such a modified context
+ * pointer and rejects the program with:
+ *
+ *     dereference of modified ctx ptr ... disallowed
+ *
+ * Use inline assembly to force a direct load of `data` from the original
+ * context and prevent LLVM from reassociating the access.
+ */
+static __always_inline void *
+xfw_ctx_data_bgn(const XfwMd *ctx)
+{
+	void *data;
+
+	asm volatile(
+		"%[res] = *(u32 *)(%[base] + %[offset])"
+		: [res] "=r"(data)
+		: [base] "r"(ctx),
+		  [offset] "i"(offsetof(XfwMd, data)),
+		  "m"(*ctx)
+	);
+
+	return data;
+}
+
+static __always_inline void *
+xfw_ctx_data_end(const XfwMd *ctx)
+{
+	void *data_end;
+
+	asm volatile(
+		"%[res] = *(u32 *)(%[base] + %[offset])"
+		: [res] "=r"(data_end)
+		: [base] "r"(ctx),
+		  [offset] "i"(offsetof(XfwMd, data_end)),
+		  "m"(*ctx)
+	);
+
+	return data_end;
+}
+
 #define XFW_CTX_MD(ctx)			((XfwMd *)ctx)
-#define XFW_CTX_DATA_BGN(ctx)		((void *)(long)XFW_CTX_MD(ctx)->data)
-#define XFW_CTX_DATA_END(ctx)		((void *)(long)XFW_CTX_MD(ctx)->data_end)
+#define XFW_CTX_DATA_BGN(ctx)		xfw_ctx_data_bgn(XFW_CTX_MD(ctx))
+#define XFW_CTX_DATA_END(ctx)		xfw_ctx_data_end(XFW_CTX_MD(ctx))
+
 
 /*
  * Return code meaning that we should continue the packet processing through
@@ -57,26 +119,27 @@ typedef struct XfwHdrCursor {
  * @l4_proto   - XFW_L4_PROTO_UDP or XFW_L4_PROTO_TCP if != 0
  */
 typedef struct XfwGlobalCtx {
+	XfwMd		*ctx;
 	XfwFilterCfg	*cfg;
 	XfwPerCpuStats	*g_stats;
 	XfwHdrCursor	hdr_cur;
+	XfwIp		ilog_addr;
+	uint64_t	ts_jiff;
 	uint32_t	pkt_sz;
 	uint16_t	ipver;
+	uint16_t	l4_off;
+	uint8_t		ip_off;
 	uint8_t		l4_proto;
-	XfwMd		*ctx;
-	struct ethhdr	*eth;
-	union {
-		void		*iph;
-		struct iphdr	*iph4;
-		struct ipv6hdr	*iph6;
-	};
-	union {
-		struct tcphdr	*th;
-		struct udphdr	*uh;
-	};
-	uint64_t	ts_jiff;
-	XfwIp		ilog_addr;
 } XfwGlobalCtx;
+
+/*
+ * Do not use XFW_CTX_DATA_BGN() here. It forces a reload of the packet data
+ * pointer, which may lose the verifier's packet pointer range tracking.
+ * Load ctx->data directly so bounds checks on the resulting packet pointer
+ * remain visible to the verifier.
+ */
+#define XFW_PKT_PTR(ctx, off, type) \
+	((type *)((void *)(long)XFW_CTX_MD((ctx)->ctx)->data + (off)))
 
 /* Read-only for eBPF. */
 struct {

@@ -70,63 +70,64 @@ csum_unfold(__sum16 csum)
 }
 
 static __always_inline void
-ipv4_set_ttl_csum(XfwGlobalCtx *ctx, uint64_t *csum64)
+ipv4_set_ttl_csum(struct iphdr *iph4, uint64_t *csum64)
 {
-	__be16 old_w = bpf_htons(((uint16_t)ctx->iph4->ttl << 8) | XFW_L4_PROTO_TCP);
-	__be16 new_w = bpf_htons(((uint16_t)XFW_DEFAULT_TTL << 8) | XFW_L4_PROTO_TCP);
+	__be16 old_w = bpf_htons(((uint16_t)iph4->ttl << 8) |
+				 XFW_L4_PROTO_TCP);
+	__be16 new_w = bpf_htons(((uint16_t)XFW_DEFAULT_TTL << 8) |
+				 XFW_L4_PROTO_TCP);
 
 	*csum64 += ~(__be32)old_w;
 	*csum64 += new_w;
 
-	ctx->iph4->ttl = XFW_DEFAULT_TTL;
+	iph4->ttl = XFW_DEFAULT_TTL;
 }
 
 static __always_inline void
-ipv4_set_tot_len_csum(XfwGlobalCtx *ctx, uint16_t len, uint64_t *csum64)
+ipv4_set_tot_len_csum(struct iphdr *iph4, uint16_t len, uint64_t *csum64)
 {
-	*csum64 += ~(__be32)ctx->iph4->tot_len;
-
-	ctx->iph4->tot_len = bpf_htons(len);
-	*csum64 += ctx->iph4->tot_len;
+	*csum64 += ~(__be32)iph4->tot_len;
+	iph4->tot_len = bpf_htons(len);
+	*csum64 += iph4->tot_len;
 }
 
 static __always_inline void
-tcp_ipv4_csum_update(XfwGlobalCtx *ctx, uint64_t csum)
+tcp_ipv4_csum_update(struct iphdr *iph4, struct tcphdr *th, uint64_t csum)
 {
 	/*
 	 * Sum addresses stored in network byte order w/o converting to little
 	 * endian on x86-64 (reference csum_tcpudp_magic() in
 	 * linux/arch/x86/include/asm/checksum_64.h).
 	 */
-	csum += (__be32)ctx->iph4->saddr;
-	csum += (__be32)ctx->iph4->daddr;
-	csum += (XFW_L4_PROTO_TCP + ctx->th->doff * 4) << 8;
+	csum += (__be32)iph4->saddr;
+	csum += (__be32)iph4->daddr;
+	csum += (XFW_L4_PROTO_TCP + th->doff * 4) << 8;
 
 	csum = (csum & 0xffffffffUL) + (csum >> 32);
 	csum = (csum & 0xffffffffUL) + (csum >> 32);
 
-	ctx->th->check = csum_fold(csum & 0xffffffffUL);
+	th->check = csum_fold(csum & 0xffffffffUL);
 }
 
 static __always_inline void
-tcp_ipv6_csum_update(XfwGlobalCtx *ctx, uint64_t csum)
+tcp_ipv6_csum_update(struct ipv6hdr *iph6, struct tcphdr *th, uint64_t csum)
 {
 	int i;
 
 #pragma unroll
 	for (i = 0; i < 4; i++)
-		csum += (__be32)ctx->iph6->saddr.in6_u.u6_addr32[i];
+		csum += (__be32)iph6->saddr.in6_u.u6_addr32[i];
 #pragma unroll
 	for (i = 0; i < 4; i++)
-		csum += (__be32)ctx->iph6->daddr.in6_u.u6_addr32[i];
+		csum += (__be32)iph6->daddr.in6_u.u6_addr32[i];
 
-	csum += bpf_htonl(ctx->th->doff * 4);
+	csum += bpf_htonl(th->doff * 4);
 	csum += bpf_htonl(XFW_L4_PROTO_TCP);
 
 	csum = (csum & 0xffffffffUL) + (csum >> 32);
 	csum = (csum & 0xffffffffUL) + (csum >> 32);
 
-	ctx->th->check = csum_fold(csum & 0xffffffffUL);
+	th->check = csum_fold(csum & 0xffffffffUL);
 }
 
 static __always_inline XfwTcpSynCookieTs *
@@ -334,10 +335,10 @@ bad_opt:
  * surrounding program is.
  */
 static __always_inline int
-tcp_parse_opts(XfwGlobalCtx *ctx, XfwTCPOpts *opts)
+tcp_parse_opts(XfwGlobalCtx *ctx, struct tcphdr *th, XfwTCPOpts *opts)
 {
-	const uint8_t *const o = (uint8_t *)ctx->th + sizeof(struct tcphdr);
-	const uint64_t th_len = ctx->th->doff * 4;
+	const uint8_t *const o = (uint8_t *)th + sizeof(struct tcphdr);
+	const uint64_t th_len = th->doff * 4;
 
 	VERIFY_TRUE_OR_RETURN(th_len >= sizeof(struct tcphdr), -EINVAL);
 	const uint64_t opt_len = th_len - sizeof(struct tcphdr);
@@ -422,13 +423,14 @@ tcp_syncookies_make_cookie_ts(struct tcphdr *th, XfwTCPOpts *opts)
  * @return the total length in double words of written options.
  */
 static __always_inline int
-tcp_syncookies_write_opts(XfwGlobalCtx *ctx, uint16_t mss, XfwTCPOpts *opts)
+tcp_syncookies_write_opts(XfwGlobalCtx *ctx, struct tcphdr *th,
+			  uint16_t mss, XfwTCPOpts *opts)
 {
 #define OPTS_DWORD(a, b, c, d)						\
 	bpf_htonl(((uint32_t)(a) << 24)	| ((uint32_t)(b) << 16)		\
 		  | ((uint32_t)(c) << 8) | (uint32_t)(d))
 
-	__be32 *o = (__be32 *)(ctx->th + 1);
+	__be32 *o = (__be32 *)(th + 1);
 	const __be32 *const d_end = XFW_CTX_DATA_END(ctx->ctx);
 
 	if (o + 1 > d_end)
@@ -478,7 +480,7 @@ tcp_syncookies_write_opts(XfwGlobalCtx *ctx, uint16_t mss, XfwTCPOpts *opts)
 	}
 	++o;
 
-	*o++ = tcp_syncookies_make_cookie_ts(ctx->th, opts);
+	*o++ = tcp_syncookies_make_cookie_ts(th, opts);
 	*o = opts->ts;
 
 	return 5;
@@ -495,24 +497,23 @@ tcp_syncookies_write_opts(XfwGlobalCtx *ctx, uint16_t mss, XfwTCPOpts *opts)
  * - Adjusts tail for added options
  */
 static __always_inline int
-tcp_syncookies_make_synack(XfwGlobalCtx *ctx, uint32_t cookie, uint16_t mss,
-			   XfwTCPOpts *opts)
+tcp_syncookies_make_synack(XfwGlobalCtx *ctx, struct tcphdr *th,
+			   uint32_t cookie, uint16_t mss, XfwTCPOpts *opts)
 {
 	/* Minimal TCP header size = 5 in 4-byte double words. */
-	uint8_t new_doff = 5 + tcp_syncookies_write_opts(ctx, mss, opts);
-	int16_t d_len = (new_doff - ctx->th->doff) * 4;
+	uint8_t new_doff = 5 + tcp_syncookies_write_opts(ctx, th, mss, opts);
+	int16_t d_len = (new_doff - th->doff) * 4;
 	uint16_t tcplen = new_doff * 4;
 
 	const void *const d_end = ctx->hdr_cur.end;
-	VERIFY_TRUE_OR_RETURN((void *)ctx->th + tcplen <= d_end, -EFBIG);
+	VERIFY_TRUE_OR_RETURN((void *)th + tcplen <= d_end, -EFBIG);
 
-	ctx->th->doff = new_doff;
-
-	ctx->th->window = XFW_DEFAULT_WINDOW;
-	ctx->th->check = 0;
-	tcp_flag_word(ctx->th) |= TCP_FLAG_ACK;
-	ctx->th->ack_seq = bpf_htonl(bpf_ntohl(ctx->th->seq) + 1);
-	ctx->th->seq = bpf_htonl(cookie);
+	th->doff = new_doff;
+	th->window = XFW_DEFAULT_WINDOW;
+	th->check = 0;
+	tcp_flag_word(th) |= TCP_FLAG_ACK;
+	th->ack_seq = bpf_htonl(bpf_ntohl(th->seq) + 1);
+	th->seq = bpf_htonl(cookie);
 
 	/*
 	 * TODO #224,#544: review the checksum computation -
@@ -521,41 +522,50 @@ tcp_syncookies_make_synack(XfwGlobalCtx *ctx, uint32_t cookie, uint16_t mss,
 	 *
 	 * See linux/tools/testing/selftests/bpf/progs/xdp_synproxy_kern.c
 	 */
-	int64_t csum = bpf_csum_diff(0, 0, (void *)ctx->th, tcplen, 0);
+	int64_t csum = bpf_csum_diff(0, 0, (void *)th, tcplen, 0);
 	VERIFY_TRUE_OR_RETURN(csum >= 0, csum);
 
 	/*
 	 * Swapping fields of size >= 16 bits doesn't affect the checksum,
 	 * because the checksum is calculated over 16-bit words.
 	 */
-	SWAP(ctx->th->source, ctx->th->dest);
+	SWAP(th->source, th->dest);
 
-	struct ethhdr tmp_eth = *ctx->eth;
-	memcpy(ctx->eth->h_dest, tmp_eth.h_source, sizeof(tmp_eth.h_source));
-	memcpy(ctx->eth->h_source, tmp_eth.h_dest, sizeof(tmp_eth.h_dest));
+	struct ethhdr *eth = XFW_PKT_PTR(ctx, 0, struct ethhdr);
+	VERIFY_TRUE_OR_RETURN((void *)(eth + 1) <= d_end, -EFBIG);
+
+	struct ethhdr tmp_eth = *eth;
+	memcpy(eth->h_dest, tmp_eth.h_source, sizeof(tmp_eth.h_source));
+	memcpy(eth->h_source, tmp_eth.h_dest, sizeof(tmp_eth.h_dest));
 
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
-		uint64_t ip_csum = csum_unfold(ctx->iph4->check);
-		uint16_t ip_len = bpf_ntohs(ctx->iph4->tot_len) + d_len;
-		ipv4_set_ttl_csum(ctx, &ip_csum);
-		ipv4_set_tot_len_csum(ctx, ip_len, &ip_csum);
-		ctx->iph4->check = csum_fold(ip_csum);
+		struct iphdr *iph4 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr);
+		VERIFY_TRUE_OR_RETURN((void *)(iph4 + 1) <= ctx->hdr_cur.end,
+				      -EINVAL);
+		uint64_t ip_csum = csum_unfold(iph4->check);
+		uint16_t ip_len = bpf_ntohs(iph4->tot_len) + d_len;
+		ipv4_set_ttl_csum(iph4, &ip_csum);
+		ipv4_set_tot_len_csum(iph4, ip_len, &ip_csum);
+		iph4->check = csum_fold(ip_csum);
 
-		SWAP(ctx->iph4->saddr, ctx->iph4->daddr);
+		SWAP(iph4->saddr, iph4->daddr);
 		/* TODO #224: don't clear IP options for now - is this OK? */
 
-		tcp_ipv4_csum_update(ctx, csum);
+		tcp_ipv4_csum_update(iph4, th, csum);
 	}
 	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
-		VERIFY_TRUE_OR_RETURN((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end,
+		struct ipv6hdr *iph6 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
+		VERIFY_TRUE_OR_RETURN((void *)(iph6 + 1) <= ctx->hdr_cur.end,
 				      -EINVAL);
-		ctx->iph6->hop_limit = XFW_DEFAULT_TTL;
-		uint16_t payload_len = bpf_ntohs(ctx->iph6->payload_len);
-		ctx->iph6->payload_len = bpf_htons(payload_len + d_len);
+		iph6->hop_limit = XFW_DEFAULT_TTL;
+		uint16_t payload_len = bpf_ntohs(iph6->payload_len);
+		iph6->payload_len = bpf_htons(payload_len + d_len);
 
-		SWAP(ctx->iph6->saddr, ctx->iph6->daddr);
+		SWAP(iph6->saddr, iph6->daddr);
 
-		tcp_ipv6_csum_update(ctx, csum);
+		tcp_ipv6_csum_update(iph6, th, csum);
 	}
 
 	return 0;
@@ -573,26 +583,32 @@ tcp_syncookies_make_synack(XfwGlobalCtx *ctx, uint32_t cookie, uint16_t mss,
  * - Returns a pointer to a `bpf_sock` if found, or NULL if no matching socket exists.
  */
 static __always_inline struct bpf_sock *
-tcp_sk_listen_lookup(const XfwGlobalCtx *ctx)
+tcp_sk_listen_lookup(const XfwGlobalCtx *ctx, struct tcphdr *th)
 {
 	struct bpf_sock_tuple t;
 	size_t tlen;
 
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
+		struct iphdr *iph4 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr);
+		VERIFY_TRUE_OR_RETURN((void *)(iph4 + 1) <= ctx->hdr_cur.end,
+				      NULL);
 		tlen = sizeof(t.ipv4);
-		t.ipv4.sport = ctx->th->source;
-		t.ipv4.dport = ctx->th->dest;
-		t.ipv4.saddr = ctx->iph4->saddr;
-		t.ipv4.daddr = ctx->iph4->daddr;
+		t.ipv4.sport = th->source;
+		t.ipv4.dport = th->dest;
+		t.ipv4.saddr = iph4->saddr;
+		t.ipv4.daddr = iph4->daddr;
 	}
 	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
-		VERIFY_TRUE_OR_RETURN((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end,
+		struct ipv6hdr *iph6 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
+		VERIFY_TRUE_OR_RETURN((void *)(iph6 + 1) <= ctx->hdr_cur.end,
 				      NULL);
 		tlen = sizeof(t.ipv6);
-		t.ipv6.sport = ctx->th->source;
-		t.ipv6.dport = ctx->th->dest;
-		xfw_ipv6_addr_cpy(t.ipv6.saddr, &ctx->iph6->saddr);
-		xfw_ipv6_addr_cpy(t.ipv6.daddr, &ctx->iph6->daddr);
+		t.ipv6.sport = th->source;
+		t.ipv6.dport = th->dest;
+		xfw_ipv6_addr_cpy(t.ipv6.saddr, &iph6->saddr);
+		xfw_ipv6_addr_cpy(t.ipv6.daddr, &iph6->daddr);
 	}
 	else {
 		return NULL;
@@ -609,7 +625,7 @@ tcp_sk_listen_lookup(const XfwGlobalCtx *ctx)
  * are tolerated where possible.
  */
 static __always_inline int
-tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
+tcp_syncookies_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
 	XfwTcpSynCookieTs *ts = __tcp_get_tcp_syncookie_ts();
 	XFW_ASSERT(ts);
@@ -618,10 +634,12 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 	    && !tcp_syncookies_passive_mode(ctx, ts))
 		return XFW_CTX_CONTINUE;
 
-	uint32_t iph_len = ctx->ipver == bpf_ntohs(ETH_P_IP)
-			   ? sizeof(struct iphdr)
-			   : sizeof(struct ipv6hdr);
-	XFW_ASSERT(ctx->iph && ctx->iph + iph_len <= ctx->hdr_cur.end);
+	const bool is_ip4 = ctx->ipver == bpf_htons(ETH_P_IP);
+	void *iph = is_ip4 ?
+		(void *)XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr) :
+		(void *)XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
+	uint32_t iph_len = is_ip4 ? sizeof(struct iphdr) : sizeof(struct ipv6hdr);
+	XFW_ASSERT(iph && iph + iph_len <= ctx->hdr_cur.end);
 
 	/*
 	 * The kernel syncookie helper expects a minimal SYN header. Temporarily
@@ -632,9 +650,9 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 	 * Passive mode keeps using the parsed option data. Make the emitted
 	 * option profile configurable later.
 	 */
-	uint16_t old_doff = ctx->th->doff;
-	ctx->th->doff = (sizeof(struct tcphdr) / 4) & 0xF;
-	struct bpf_sock *sk = tcp_sk_listen_lookup(ctx);
+	uint16_t old_doff = th->doff;
+	th->doff = (sizeof(struct tcphdr) / 4) & 0xF;
+	struct bpf_sock *sk = tcp_sk_listen_lookup(ctx, th);
 	if (unlikely(!sk)) {
 		/* Treat a SYN for a non-listening or absent socket as flooding. */
 		ts->last_gen_jiff = ctx->ts_jiff;
@@ -643,10 +661,10 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 					 "No listening socket");
 	}
 
-	int64_t seq_mss = bpf_tcp_gen_syncookie(sk, ctx->iph, iph_len, ctx->th,
+	int64_t seq_mss = bpf_tcp_gen_syncookie(sk, iph, iph_len, th,
 						sizeof(struct tcphdr));
 	bpf_sk_release(sk);
-	ctx->th->doff = old_doff & 0xF;
+	th->doff = old_doff & 0xF;
 
 	/*
 	 * The kernel tcp_get_syncookie_mss() may decide to not to
@@ -666,7 +684,7 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 	}
 
 	XfwTCPOpts opts = { 0 };
-	long r = tcp_parse_opts(ctx, &opts);
+	long r = tcp_parse_opts(ctx, th, &opts);
 	if (unlikely(r)) {
 		XFW_CTX_DBG("Cannot parse TCP options, %d", r);
 		count_traffic_stat(ctx, XFW_SYNCOOKIE_FAILED);
@@ -674,7 +692,7 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
 					 "bad TCP options in SYN");
 	}
 
-	r = tcp_syncookies_make_synack(ctx, (uint32_t)seq_mss,
+	r = tcp_syncookies_make_synack(ctx, th, (uint32_t)seq_mss,
 				       (uint16_t)(seq_mss >> 32), &opts);
 	if (unlikely(r)) {
 		count_traffic_stat(ctx, XFW_SYNCOOKIE_FAILED);
@@ -693,10 +711,10 @@ tcp_syncookies_syn_filter(XfwGlobalCtx *ctx)
  *  - DROP if SYN cookie is invalid or host socket not found
  */
 static __always_inline int
-tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx)
+tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th)
 {
 	/* Lookup socket to validate ACK against SYN cookie */
-	struct bpf_sock *sk = tcp_sk_listen_lookup(ctx);
+	struct bpf_sock *sk = tcp_sk_listen_lookup(ctx, th);
 	if (!sk) {
 		count_traffic_stat(ctx, XFW_SYNCOOKIE_FAILED);
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYNCOOKIE_FAILED,
@@ -723,7 +741,11 @@ tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx)
 	 * https://groups.google.com/g/clang-built-linux/c/Ehb-mZnip-E/m/nRWGW24PBAAJ
 	 */
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
-		int r = bpf_tcp_raw_check_syncookie_ipv4(ctx->iph4, ctx->th);
+		struct iphdr *iph4 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr);
+		/* This check is just to satisfy the verifier. */
+		XFW_ASSERT((void *)(iph4 + 1) <= ctx->hdr_cur.end);
+		int r = bpf_tcp_raw_check_syncookie_ipv4(iph4, th);
 		if (r < 0) {
 			count_traffic_stat(ctx, XFW_SYNCOOKIE_FAILED);
 			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYNCOOKIE_FAILED,
@@ -731,10 +753,12 @@ tcp_syncookies_ack_filter(const XfwGlobalCtx *ctx)
 		}
 	}
 	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
+		struct ipv6hdr *iph6 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
 		/* This check is just to satisfy the verifier. */
-		XFW_ASSERT((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end);
+		XFW_ASSERT((void *)(iph6 + 1) <= ctx->hdr_cur.end);
 
-		int r = bpf_tcp_raw_check_syncookie_ipv6(ctx->iph6, ctx->th);
+		int r = bpf_tcp_raw_check_syncookie_ipv6(iph6, th);
 		if (r < 0) {
 			count_traffic_stat(ctx, XFW_SYNCOOKIE_FAILED);
 			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYNCOOKIE_FAILED,

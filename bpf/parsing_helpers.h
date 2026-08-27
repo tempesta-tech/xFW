@@ -80,6 +80,41 @@ typedef struct {
 
 #define VLAN_VID_MASK 0x0fff /* VLAN Identifier */
 
+/*
+ * Maximum size of an IPv6 extension header supported by the parser.
+ *
+ * The Hdr Ext Len field limits an extension header to 2048 bytes.
+ * See RFC 8200, Sections 4.3, 4.4 and 4.6.
+ */
+#define IPV6_EXT_HDR_MAXLEN	((UINT8_MAX + 1) * 8)
+
+#define L3_OFF_MAX						\
+	(sizeof(struct ethhdr)					\
+	 + VLAN_MAX_DEPTH * sizeof(struct vlan_hdr))
+
+STATIC_ASSERT(L3_OFF_MAX <= UINT8_MAX,
+	      "L3 offset does not fit into uint8_t");
+
+
+/*
+ * Maximum supported offset of an L4 header from the beginning of
+ * the Ethernet frame.
+ *
+ * The offset consists of the maximum L3 header offset, the IPv6
+ * header, and the maximum supported chain of IPv6 extension headers.
+ *
+ * The bound is derived from the parser limits VLAN_MAX_DEPTH and
+ * IPV6_EXT_MAX_CHAIN and is also used to constrain packet pointer
+ * arithmetic for the BPF verifier.
+ */
+#define L4_OFF_MAX						\
+	(L3_OFF_MAX						\
+	 + sizeof(struct ipv6hdr)				\
+	 + IPV6_EXT_MAX_CHAIN * IPV6_EXT_HDR_MAXLEN)
+
+STATIC_ASSERT(L4_OFF_MAX <= UINT16_MAX,
+	      "L4 offset does not fit into uint16_t");
+
 #define CUR_CHECK(cur, len, bad_retval)					\
 do {									\
 	if (unlikely((cur)->pos + (len) > (cur)->end))			\
@@ -122,7 +157,7 @@ proto_is_vlan(uint16_t pn)
 
 /* Parse Ethernet and advance past supported VLAN tags; *ethhdr remains L2. */
 static __always_inline int
-parse_ethhdr(XfwHdrCursor *cur, struct ethhdr **ethhdr)
+parse_ethhdr(XfwHdrCursor *cur)
 {
 	struct ethhdr *eth = cur->pos;
 	int hdrsize = sizeof(*eth);
@@ -133,7 +168,6 @@ parse_ethhdr(XfwHdrCursor *cur, struct ethhdr **ethhdr)
 	/* Make sure the fixed Ethernet header is inside packet bounds. */
 	CUR_ADVANCE(cur, hdrsize, -EINVAL);
 
-	*ethhdr = eth;
 	vlh = cur->pos;
 	h_proto = eth->h_proto;
 

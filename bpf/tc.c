@@ -42,28 +42,42 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
+		struct iphdr *iph4;
+
 		count_traffic_stat(ctx, XFW_IP4_TOTAL_EGRESS);
-		int proto = parse_iphdr(&ctx->hdr_cur, &ctx->iph4);
+		int proto = parse_iphdr(&ctx->hdr_cur, &iph4);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP4_BADHDR_EGRESS);
 
+		ptrdiff_t ip_off = (void *)iph4 - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (ip_off < 0 || ip_off > L3_OFF_MAX)
+			return XFW_MAKE_CTX_PASS(ctx, XFW_IP4_BADHDR_EGRESS);
+
+		ctx->ip_off = ip_off;
 		ctx->l4_proto = (u8)proto;
-		xfw_ipv4_to_ipv6_mapped(ctx->iph4->daddr, ctx->ilog_addr.addr32);
-		ipv4_populate_lpm_key(ctx->iph4->daddr, &prot_net_key->addr4);
+		xfw_ipv4_to_ipv6_mapped(iph4->daddr, ctx->ilog_addr.addr32);
+		ipv4_populate_lpm_key(iph4->daddr, &prot_net_key->addr4);
 		*prot_net_map = SELECT_SHADOW_MAP(MAP_NET_IP4_BASENAME,
 						   ctx->cfg->amap_prot_net);
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
 	}
 	case bpf_ntohs(ETH_P_IPV6): {
+		struct ipv6hdr	*iph6;
+
 		count_traffic_stat(ctx, XFW_IP6_TOTAL_EGRESS);
-		int proto = parse_ip6hdr(&ctx->hdr_cur, &ctx->iph6);
+		int proto = parse_ip6hdr(&ctx->hdr_cur, &iph6);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP6_BADHDR_EGRESS);
 
+		ptrdiff_t ip_off = (void *)iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (ip_off < 0 || ip_off > L3_OFF_MAX)
+			return XFW_MAKE_CTX_PASS(ctx, XFW_IP6_BADHDR_EGRESS);
+
+		ctx->ip_off = (uint8_t)ip_off;
 		ctx->l4_proto = (u8)proto;
-		ctx->ilog_addr.in6 = ctx->iph6->daddr;
-		ipv6_populate_lpm_key(&ctx->iph6->daddr, &prot_net_key->addr6);
+		ctx->ilog_addr.in6 = iph6->daddr;
+		ipv6_populate_lpm_key(&iph6->daddr, &prot_net_key->addr6);
 		*prot_net_map = SELECT_SHADOW_MAP(MAP_NET_IP6_BASENAME,
 						   ctx->cfg->amap_prot_net);
 		/* It is a regular case, don't need to add any statistic */
@@ -84,19 +98,33 @@ out_process_l4(XfwGlobalCtx *ctx)
 {
 	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
+		struct tcphdr *th;
+
 		count_traffic_stat(ctx, XFW_TCP_TOTAL_EGRESS);
-		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
+		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &th) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_TCP_BADHDR_EGRESS);
+
+		ptrdiff_t l4_off = (void *)th - xfw_ctx_data_bgn(ctx->ctx);
+		if (l4_off < 0 || l4_off > L4_OFF_MAX)
+			return XFW_MAKE_CTX_PASS(ctx, XFW_TCP_BADHDR_EGRESS);
+		ctx->l4_off = l4_off;
 
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
 	}
 	case XFW_L4_PROTO_UDP: {
+		struct udphdr *uh;
+
 		count_traffic_stat(ctx, XFW_UDP_TOTAL_EGRESS);
-		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
+		if (unlikely(parse_udphdr(&ctx->hdr_cur, &uh) <= 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_UDP_BADHDR_EGRESS);
 
-		egress_dns_filter(ctx);
+		ptrdiff_t l4_off = (void *)uh - xfw_ctx_data_bgn(ctx->ctx);
+		if (l4_off < 0 || l4_off > L4_OFF_MAX)
+			return XFW_MAKE_CTX_PASS(ctx, XFW_UDP_BADHDR_EGRESS);
+		ctx->l4_off = l4_off;
+
+		egress_dns_filter(ctx, uh);
 
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;
@@ -149,7 +177,7 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 	 * dropped by the xdp.c filter.
 	 */
 
-	int ipver = parse_ethhdr(&ctx->hdr_cur, &ctx->eth);
+	int ipver = parse_ethhdr(&ctx->hdr_cur);
 	if (unlikely(ipver < 0))
 		return XFW_MAKE_CTX_PASS(ctx, XFW_ETH_BADHDR_EGRESS);
 	ctx->ipver = ipver;
