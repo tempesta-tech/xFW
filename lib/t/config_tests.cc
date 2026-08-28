@@ -486,7 +486,9 @@ INSTANTIATE_TEST_SUITE_P(
 		"hash_salt=12345 retry_count=3 unknown=1",
 		/* Invalid edit operations must be rejected. */
 		"/add hash_salt=12345 retry_count=3",
-		"/replace hash_salt=12345 retry_count=3"
+		"/replace hash_salt=12345 retry_count=3",
+		/* `max_delay` can't be equal to zero. */
+		"hash_salt=12345 retry_count=3 time_min=0 max_delay=0"
 	)
 );
 

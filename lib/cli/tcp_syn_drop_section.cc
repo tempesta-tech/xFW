@@ -56,9 +56,8 @@ TcpSynDropSection::commit()
 	 * the protection against predictable hash collisions.
 	 */
 	if (!hash_salt_.has_value()) {
-		throw Except(
-			"tcp_syn_drop requires the 'hash_salt' parameter."
-		);
+		throw Except("tcp_syn_drop requires the 'hash_salt' "
+			     "parameter.");
 	}
 
 	/*
@@ -66,15 +65,13 @@ TcpSynDropSection::commit()
 	 * explicitly configured.
 	 */
 	if (!retry_count_.has_value()) {
-		throw Except(
-			"tcp_syn_drop requires the 'retry_count' parameter."
-		);
+		throw Except("tcp_syn_drop requires the 'retry_count' "
+			     "parameter.");
 	}
 
 	if (!retry_count_.value()) {
-		throw Except(
-			"tcp_syn_drop: 'retry_count' must be greater than zero."
-		);
+		throw Except("tcp_syn_drop: 'retry_count' must be greater "
+			     "than zero.");
 	}
 
 	const uint64_t time_min_ms =
@@ -86,6 +83,11 @@ TcpSynDropSection::commit()
 	const uint64_t block_timeout_ms =
 		block_timeout_ms_.value_or(TCP_SYN_DROP_DEFAULT_BLOCK_TIMEOUT_MS);
 
+	if (!max_delay_ms) {
+		throw Except("tcp_syn_drop: 'max_delay' must be greater "
+			     "than zero.");
+	}
+
 	/*
 	 * The valid retransmission window is defined as:
 	 *
@@ -95,10 +97,8 @@ TcpSynDropSection::commit()
 	 * retransmission could ever satisfy the condition.
 	 */
 	if (time_min_ms > max_delay_ms) {
-		throw Except(
-			"tcp_syn_drop: 'time_min' ({}) must not exceed "
-			"'max_delay' ({}).", time_min_ms, max_delay_ms
-		);
+		throw Except("tcp_syn_drop: 'time_min' ({}) must not exceed "
+			     "'max_delay' ({}).", time_min_ms, max_delay_ms);
 	}
 
 	xfw_conf_.tcp_syn_drop_.emplace(hash_salt_.value(),

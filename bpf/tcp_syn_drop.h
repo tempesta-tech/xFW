@@ -95,6 +95,7 @@ typedef struct XfwSynRetry {
 	 */
 	uint64_t	state;
 	uint32_t	retry_count;
+	uint32_t	reserved;
 } XfwSynRetry;
 
 /*
@@ -166,6 +167,23 @@ xfw_hash_ipv6_syn(const struct ipv6hdr *ipv6,
 	*hash = syn_xxh64_ipv6(&tuple, salt);
 }
 
+static __always_inline void
+xfw_retry_entry_set_blocked_until(const XfwRulesCfgTcpSynDrop *cfg,
+				  XfwSynRetry *entry, uint64_t now)
+{
+	if (cfg->block_timeout_jiff) {
+		entry->blocked_until =
+			now + cfg->block_timeout_jiff;
+		/*
+		 * Publish the updated fields before returning the entry to
+		 * ACTIVE state.
+		 */
+		__sync_swap(&entry->state, XFW_SYN_RETRY_STATE_ACTIVE);
+	} else {
+		WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_BLOCKED);
+	}
+}
+
 /*
  * Move a tuple from the large pending map to the smaller validated map.
  *
@@ -173,17 +191,22 @@ xfw_hash_ipv6_syn(const struct ipv6hdr *ipv6,
  * not remove the only existing protection state.
  */
 static __always_inline bool
-xfw_promote_syn(uint64_t hash, uint64_t now,
-		const XfwRulesCfgTcpSynDrop *cfg)
+xfw_promote_syn(const XfwRulesCfgTcpSynDrop *cfg, uint64_t hash, uint64_t now)
 {
 	XfwSynRetry retry = {
 		.jtxtstamp = now,
-		.max_delay = cfg->max_delay_jiff * 2,
+		.max_delay = cfg->max_delay_jiff,
 		.blocked_until = 0,
 		.state = XFW_SYN_RETRY_STATE_ACTIVE,
 		.retry_count = 1,
+		.reserved = 0,
 	};
 
+	if (retry.retry_count == cfg->retry_count)
+		xfw_retry_entry_set_blocked_until(cfg, &retry, now);
+	else
+		/* Increase max_delay only if `retry` is not blocked */
+		retry.max_delay = retry.max_delay * 2;
 	/*
 	 * BPF_NOEXIST is not required for serialization of concurrent
 	 * promotions: ownership of the pending entry is already protected by
@@ -286,7 +309,7 @@ xfw_process_pending_filter(const XfwGlobalCtx *ctx, XfwSynPending *entry,
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
 
-	if (!xfw_promote_syn(hash, now, syn_cfg)) {
+	if (!xfw_promote_syn(syn_cfg, hash, now)) {
 		/*
 		 * Restore PENDING entry state if no retry entry was created,
 		 * otherwise this entry was removed from the LRU hash table.
@@ -297,7 +320,8 @@ xfw_process_pending_filter(const XfwGlobalCtx *ctx, XfwSynPending *entry,
 		 * bypass SYN validation.
 		 */
 		WRITE_ONCE(entry->state, XFW_SYN_PENDING_STATE_PENDING);
-		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_HASH_COLLISION_BLOCKED);
+		return XFW_MAKE_CTX_DROP(ctx,
+					 XFW_DROP_SYN_HASH_COLLISION_BLOCKED);
 	}
 
 	return XFW_CTX_CONTINUE;
@@ -481,7 +505,7 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 	if (entry->jtxtstamp + syn_cfg->time_min_jiff > now
 	    || now > entry->jtxtstamp + entry->max_delay)
 	{
-	    	/*
+		/*
 		 * A SYN outside the retransmission window is permanently
 		 * blocked, as required by the design.
 		 */
@@ -490,25 +514,22 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 	}
 
 	entry->retry_count++;
-	/*
-	 * The SYN that reaches `retry_count` is still passed upstream. At the
-	 * same time, put the entry into the blocked state so that every
-	 * following SYN is handled by the checks above and never reaches
-	 * retry_count++ again.
-	 *
-	 * Therefore, for a valid retry-map entry `retry_count` cannot grow past
-	 * syn_cfg->retry_count.
-         */
 
-	if (entry->retry_count == syn_cfg->retry_count) {
-		if (syn_cfg->block_timeout_jiff) {
-			entry->blocked_until =
-				now + syn_cfg->block_timeout_jiff;
-			WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_ACTIVE);
-		} else {
-			WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_BLOCKED);
-		}
-		return XFW_CTX_CONTINUE;
+	/*
+	 * A SYN that makes the counter exactly reach the configured limit is
+	 * still passed upstream, while the entry is put into the blocked state.
+	 *
+	 * Retry-map entries persist across configuration updates. If the limit is
+	 * reduced below an entry's stored counter, retry_count may therefore
+	 * exceed the current configuration value. In that case, block the entry
+	 * and drop the current SYN. Further SYNs are handled by the blocked-entry
+	 * checks above.
+	 */
+	if (entry->retry_count >= syn_cfg->retry_count) {
+		xfw_retry_entry_set_blocked_until(syn_cfg, entry, now);
+		return unlikely(entry->retry_count > syn_cfg->retry_count)
+			? XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED)
+			: XFW_CTX_CONTINUE;
 	}
 
 	/*
@@ -518,7 +539,11 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 	 */
 	entry->max_delay = entry->max_delay * 2;
 	entry->jtxtstamp = now;
-	WRITE_ONCE(entry->state, XFW_SYN_RETRY_STATE_ACTIVE);
+	/*
+	 * Publish the updated fields before returning the entry to
+	 * ACTIVE state.
+	 */
+	__sync_swap(&entry->state, XFW_SYN_RETRY_STATE_ACTIVE);
 
 	return XFW_CTX_CONTINUE;
 }
@@ -551,10 +576,10 @@ tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	 * All tuples that have already passed the initial retransmission
 	 * timing validation are promoted from the large pending map to this
 	 * smaller map.
- 	 *
- 	 * This map therefore contains legitimate TCP connection attempts that
- 	 * are already in the retransmission tracking stage.
- 	 *
+	 *
+	 * This map therefore contains legitimate TCP connection attempts that
+	 * are already in the retransmission tracking stage.
+	 *
 	 * If the tuple is found here, all further processing (timing
 	 * validation, retry counting and blocking) is performed by
 	 * `xfw_process_retry_filter`.

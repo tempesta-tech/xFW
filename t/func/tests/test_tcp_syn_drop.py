@@ -95,6 +95,15 @@ def syn_packet(seq: int) -> TCP:
     )
 
 
+async def test_retry_count_exceeds_max_delay(
+    xfw: XFW,
+):
+    with pytest.raises(ValueError, match="retry_count is too large for max_delay"):
+        await xfw.rules_set(
+            "xfw { " "tcp_syn_drop hash_salt=12345 retry_count=1000 " "time_min=1 max_delay=1; " "}"
+        )
+
+
 async def complete_initial_syn_validation(
     client: TcpRawClient,
     server: TcpRawServer,
@@ -236,15 +245,22 @@ async def test_second_syn_after_max_delay_blocks_tuple(
     await expect_no_reply(tcp_syn_drop_client)
 
 
+@pytest.mark.parametrize(
+    "retry_count",
+    [
+        pytest.param(1, id="retry-count-1"),
+        pytest.param(3, id="retry-count-3"),
+    ],
+)
 async def test_retry_count_blocks_following_syns(
     xfw: XFW,
+    retry_count,
     tcp_syn_drop_client: TcpRawClient,
     tcp_raw_server: TcpRawServer,
     start_tcp_raw_server_and_raw_clients,
 ):
     time_min = 1000
     max_delay = 3000
-    retry_count = 3
     seq = random.randrange(1, 2**31)
 
     await xfw.rules_set(
@@ -283,6 +299,59 @@ async def test_retry_count_blocks_following_syns(
     #
     await asyncio.sleep(time_min / 1000 + 0.2)
 
+    await tcp_syn_drop_client.send_packet(packet)
+    assert await tcp_raw_server.receive_packet() is None
+
+
+async def test_retry_count_reduction_blocks_existing_entry(
+    xfw: XFW,
+    tcp_syn_drop_client: TcpRawClient,
+    tcp_raw_server: TcpRawServer,
+    start_tcp_raw_server_and_raw_clients,
+):
+    time_min = 1000
+    max_delay = 5000
+    seq = random.randrange(1, 2**31)
+
+    await xfw.rules_set(
+        "xfw { "
+        f"tcp_syn_drop hash_salt=12345 "
+        f"time_min={time_min} "
+        f"max_delay={max_delay} "
+        f"retry_count=4 "
+        f"block_timeout=0; "
+        "}"
+    )
+
+    packet = syn_packet(seq)
+    await complete_initial_syn_validation(tcp_syn_drop_client, tcp_raw_server, packet, time_min)
+
+    # Advance the existing retry entry to retry_count=2.
+    await asyncio.sleep(time_min / 1000 + 0.2)
+    await tcp_syn_drop_client.send_packet(packet)
+
+    received = await tcp_raw_server.receive_packet()
+    assert received is not None
+    assert tcp_raw_server.has_flag(received, "S")
+
+    # Maps retain their entries across configuration updates. Lowering the
+    # limit below the entry's current retry_count must block the next SYN.
+    await xfw.rules_set(
+        "xfw { "
+        f"tcp_syn_drop hash_salt=12345 "
+        f"time_min={time_min} "
+        f"max_delay={max_delay} "
+        f"retry_count=1 "
+        f"block_timeout=0; "
+        "}"
+    )
+
+    await asyncio.sleep(time_min / 1000 + 0.2)
+    await tcp_syn_drop_client.send_packet(packet)
+    assert await tcp_raw_server.receive_packet() is None
+
+    # The entry must remain blocked after handling the first SYN under the
+    # reduced limit.
     await tcp_syn_drop_client.send_packet(packet)
     assert await tcp_raw_server.receive_packet() is None
 

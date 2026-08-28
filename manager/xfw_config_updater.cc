@@ -484,13 +484,13 @@ XfwConfigUpdater::prepare_syncookie_filter()
 {
 	using namespace TempestaRPC;
 
-	if (!msg_.syncookie())
-		return;
-
 	if (msg_flags_.test(XFWOpt::XFWOpt_TCP_SYNCOOKIE_FILTER_OFF)) {
 		config_.syncookie_filter_.reset();
 		return;
 	}
+
+	if (!msg_.syncookie())
+		return;
 
 	config_.syncookie_filter_.emplace(msg_.syncookie()->passive_timer(),
 		msg_.syncookie()->flood_timer());
@@ -501,15 +501,18 @@ XfwConfigUpdater::prepare_tcp_syn_drop_filter()
 {
 	using namespace TempestaRPC;
 
-	if (!msg_.tcp_syn_drop())
-		return;
-
 	if (msg_flags_.test(XFWOpt::XFWOpt_TCP_SYN_DROP_FILTER_OFF)) {
 		config_.tcp_syn_drop_filter_.reset();
 		return;
 	}
 
+	if (!msg_.tcp_syn_drop())
+		return;
+
 	const auto *filter = msg_.tcp_syn_drop();
+
+	verify(filter->max_delay() > 0,
+	       "tcp_syn_drop: max_delay must be greater than zero");
 
 	verify(filter->time_min() <= filter->max_delay(),
 	       "tcp_syn_drop: time_min must not exceed max_delay");
