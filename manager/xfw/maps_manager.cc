@@ -199,7 +199,7 @@ reconcile_ratelimit_bucket(XfwActionRule *new_rule,
 		new_rule->rlimit.bucket_idx = cfg_rule->rlimit.bucket_idx;
 		return;
 	}
-	
+
 	/* Transition: rate limit → rate limit with different named index.
 	 * Old bucket is no longer valid and must be replaced.
 	 */
@@ -496,7 +496,7 @@ BpfMapsManager::set_icmp_rules(const XfwConfig::IcmpRules &rules,
 
 	if (new_rules.size() > XFW_MAX_ICMP_RULES)
 		throw std::runtime_error("icmp-filter rule limit exceeded");
-	
+
 	// Return buckets from removed rules to the pool.
 	for (const auto &[key, rule] : active_map) {
 		if (new_rules.find(key) == new_rules.end())
@@ -544,7 +544,7 @@ BpfMapsManager::set_dst_rules(const XfwConfig::NetIps &rules,
 				it.second.ratelimit_index_);
 		assert(it.second.nets_.empty());
 		for (auto &rule: it.second.net4s_) {
-			xfw_ipv4_to_ipv6_mapped(rule.addr_, key.addr.addr32);
+			xfw_assign_ip4_addr(rule.addr_, key.addr.addr32);
 			key.port = rule.port_;
 			reconcile_ratelimit_bucket(&r, find_ptr(active_map, key), tx);
 			auto [ign, inserted] = new_rules.try_emplace(key, r);
@@ -655,7 +655,7 @@ BpfMapsManager::get_config()
 	XfwFilterCfg cfg;
 	if (cfg_map_.get(cfg) == 0) [[likely]]
 		return cfg;
-		
+
 	throw Except("XfwFilterCfg load failed, map fd: {}", MAP_CFG_STR);
 }
 

@@ -1,7 +1,12 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+import asyncio
 
 import pytest
+from scapy.layers.inet import UDP
+from scapy.layers.inet6 import IPv6
+from scapy.layers.l2 import Ether
+from scapy.packet import Raw
 
 from framework.cmp import check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
@@ -338,20 +343,37 @@ async def test_src_block_only_one_protocol_subtype(
         ), f"Server {new_server.ip_testing}:{new_server.port} is not allowed"
 
 
-async def test_src_block_by_ip_mapped(
-    xfw: XFW,
-    udp_ip4_client: RegularKernelSocketNetworkStateful,
-    udp_ip4_mapped_ip6_server: RegularKernelSocketNetworkStateful,
-):
+async def test_src_block_by_ip_mapped(xfw, ether_raw_client, ether_raw_server, config):
+    """
+    The test sends a custom L2 Ethernet frame containing an IPv6 header where the
+    source IP is an IPv4-mapped IPv6 address (e.g., `::ffff:x.x.x.x`). It ensures that
+    the XFW firewall correctly parses this specific address format.
+    """
+    await ether_raw_server.start()
+    await ether_raw_client.start()
+
+    src_mac, dst_mac = await asyncio.gather(
+        ether_raw_client.get_mac_address(),
+        ether_raw_server.get_mac_address(),
+    )
+
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_ip ip4: allow; }}
-            src=extended_group ip4.udp : block {{
-                {udp_ip4_client.ip_testing}
+            defaults {{ src_ip : allow; }}
+            src=extended_group ip6.udp : block {{
+                {ether_raw_client.ip_mapped}
             }}
         }}
         """)
 
+    packet = (
+        Ether(dst=dst_mac, src=src_mac)
+        / IPv6(src=ether_raw_client.ip_mapped, dst=config.backend_ipv6)
+        / UDP()
+        / Raw(b"payload")
+    )
+
+    await ether_raw_client.send_packet(packet)
     assert (
-        await check_connection(udp_ip4_client, udp_ip4_mapped_ip6_server) is False
-    ), f"Client {udp_ip4_client.ip_testing} is not blocked"
+        await ether_raw_server.receive_message(b"payload") is None
+    ), f"XFW doesn't block the client with IP {ether_raw_client.ip_mapped}"

@@ -309,9 +309,16 @@ async def test_src_allowed_by_ip_mapped(
     udp_ip4_client: RegularKernelSocketNetworkStateful,
     udp_ip4_mapped_ip6_server: RegularKernelSocketNetworkStateful,
 ):
+    """
+    Verify that an IPv4 source allow rule correctly permits traffic to a mapped IPv6 server.
+
+    This test ensures that when the global policy blocks all traffic by source IP,
+    an explicit IPv4 allow rule successfully passes traffic from an IPv4 client,
+    even though the destination server processes it via an IPv6-mapped socket.
+    """
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_ip ip4: block; }}
+            defaults {{ src_ip : block; }}
             src=extended_group ip4.udp : allow {{
                 {udp_ip4_client.ip_testing}
             }}

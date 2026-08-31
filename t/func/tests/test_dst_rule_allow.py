@@ -130,16 +130,24 @@ async def test_dst_allow_only_one_protocol_subtype(
         ), f"Server {new_server.ip_testing}:{new_server.port} is not blocked"
 
 
-@pytest.mark.skip("ISSUE: 336 (escudo)")
 async def test_dst_allowed_ip_mapped(
     xfw: XFW,
     udp_ip4_client: RegularKernelSocketNetworkStateful,
     udp_ip4_mapped_ip6_server: RegularKernelSocketNetworkStateful,
 ):
+    """
+    This test ensures that even though the server application binds to an IPv6 address
+    handling mapped IPv4 traffic, the xfw correctly intercepts and allows the packet
+    at the network layer as standard IPv4 UDP traffic.
+
+    The network stack automatically converts IPv4 packets from the client into IPv6-mapped
+    format for the server (and vice versa). As a result, the packet is transmitted over
+    the network using the IPv4 protocol. Therefore, the dst rule is written for the ip4.
+    """
     await xfw.rules_set(f"""
         xfw {{
             defaults {{ dst: block; }}
-            dst ip6.udp : allow {{
+            dst ip4.udp : allow {{
                 {udp_ip4_mapped_ip6_server.ip_testing}:{udp_ip4_mapped_ip6_server.port}
             }}
         }}

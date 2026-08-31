@@ -34,34 +34,57 @@ SHADOW_MAP(MAP_DST_BASENAME, BPF_MAP_TYPE_HASH, XFW_MAX_DST_RULES, XfwDstKey,
 static __always_inline bool
 populate_dst_info(const XfwGlobalCtx *ctx, XfwDstKey *key, __u8 *default_idx)
 {
+	VERIFY_TRUE_OR_RETURN(ctx->l4_off <= L4_OFF_MAX, false);
 	key->proto = (uint8_t)ctx->l4_proto;
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
+		struct iphdr *iph4 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr);
+		VERIFY_TRUE_OR_RETURN((void *)(iph4 + 1) <= ctx->hdr_cur.end,
+				      false);
 		key->ipver = XFW_IP_VER_4;
-		xfw_ipv4_to_ipv6_mapped(ctx->iph4->daddr, key->addr.addr32);
+		xfw_assign_ip4_addr(iph4->daddr, key->addr.addr32);
 		if (ctx->l4_proto == XFW_L4_PROTO_TCP) {
-			key->port = ctx->th->dest;
+			struct tcphdr *th =
+				XFW_PKT_PTR(ctx, ctx->l4_off, struct tcphdr);
+			VERIFY_TRUE_OR_RETURN((void *)(th + 1) <= ctx->hdr_cur.end,
+					      false);
+			key->port = th->dest;
 			*default_idx = XFW_DEFAULT_DST_TCP_IP4;
 			return true;
 		}
 		if (ctx->l4_proto == XFW_L4_PROTO_UDP) {
-			key->port = ctx->uh->dest;
+			struct udphdr *uh =
+				XFW_PKT_PTR(ctx, ctx->l4_off, struct udphdr);
+			VERIFY_TRUE_OR_RETURN((void *)(uh + 1) <= ctx->hdr_cur.end,
+					      false);
+			key->port = uh->dest;
 			*default_idx = XFW_DEFAULT_DST_UDP_IP4;
 			return true;
 		}
 		return false;
 	}
 	if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
-		VERIFY_TRUE_OR_RETURN((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end,
+		struct ipv6hdr *iph6 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
+		VERIFY_TRUE_OR_RETURN((void *)(iph6 + 1) <= ctx->hdr_cur.end,
 				      false);
 		key->ipver = XFW_IP_VER_6;
-		key->addr.in6 = ctx->iph6->daddr;
+		key->addr.in6 = iph6->daddr;
 		if (ctx->l4_proto == XFW_L4_PROTO_TCP) {
-			key->port = ctx->th->dest;
+			struct tcphdr *th =
+				XFW_PKT_PTR(ctx, ctx->l4_off, struct tcphdr);
+			VERIFY_TRUE_OR_RETURN((void *)(th + 1) <= ctx->hdr_cur.end,
+					      false);
+			key->port = th->dest;
 			*default_idx = XFW_DEFAULT_DST_TCP_IP6;
 			return true;
 		}
 		if (ctx->l4_proto == XFW_L4_PROTO_UDP) {
-			key->port = ctx->uh->dest;
+			struct udphdr *uh =
+				XFW_PKT_PTR(ctx, ctx->l4_off, struct udphdr);
+			VERIFY_TRUE_OR_RETURN((void *)(uh + 1) <= ctx->hdr_cur.end,
+					      false);
+			key->port = uh->dest;
 			*default_idx = XFW_DEFAULT_DST_UDP_IP6;
 			return true;
 		}

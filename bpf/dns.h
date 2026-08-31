@@ -34,8 +34,8 @@
 /* Limit on answers count for verificator */
 #define MAX_ANCOUNT			100
 
-/* IPv4/IPv6 max len is 60, UDP len is 8*/
-#define L3_L4_HDRS_MAXLEN		68
+/* IPv4 max len is 60, UDP len is 8*/
+#define L3_L4_IPV4_UDP_HDRS_MAXLEN	68
 
 /* Necessary for verifier */
 /* RFC 6891 (6.2.5)*/
@@ -78,13 +78,13 @@ typedef struct XfwDnsRR {
  * We fill it to pass some info to global functions or tail calls.
  *
  * @cur_pos	- Current position of cursor (offset)
- * @ip_pos	- Offset of ip hdr in packet
+ * @ip_off	- Offset of ip hdr in packet
  * @is_ipv4	- 1 if L3 proto is IPv4, else 0 (in dns filter only IPv6)
  * @unused	- Currently unused field to match size of metadata
  */
 typedef struct {
 	uint16_t	cur_pos;
-	uint16_t	ip_pos;
+	uint16_t	ip_off;
 	uint16_t	is_ipv4;
 	uint16_t	unused;
 } __attribute__((packed)) XfwPacketMetadata;
@@ -354,13 +354,13 @@ init_dns_ctx(XfwDnsCtx *dns_ctx, XfwMd *ctx, XfwPerCpuStats *global_stats)
 	XfwPacketMetadata *md = (void *)(long)ctx->data_meta;
 	/* Limiting is important for verifier */
 	if (unlikely((void *)(md + 1) > dns_ctx->hdr_cur.pos
-		     || md->cur_pos > L3_L4_HDRS_MAXLEN))
+		     || md->cur_pos > L3_OFF_MAX + L3_L4_IPV4_UDP_HDRS_MAXLEN))
 		return -1; /* internal error */
 	dns_ctx->hdr_cur.pos += md->cur_pos;
 
-	if (unlikely(md->ip_pos > L3_L4_HDRS_MAXLEN))
+	if (unlikely(md->ip_off > L3_OFF_MAX))
 		return -1;
-	void *ip_hdr = (void *)(long)ctx->data + md->ip_pos;
+	void *ip_hdr = (void *)(long)ctx->data + md->ip_off;
 	if (md->is_ipv4) {
 		struct iphdr *ipv4 = ip_hdr;
 		if (unlikely((void*)(ipv4 + 1) > dns_ctx->hdr_cur.end))
@@ -410,28 +410,27 @@ ingress_dns_filter_global(XfwMd *ctx, XfwPerCpuStats *global_stats)
 }
 
 static __always_inline int
-ingress_dns_filter(XfwGlobalCtx *ctx)
+ingress_dns_filter(XfwGlobalCtx *ctx, struct udphdr *uh)
 {
 	if (unlikely(!ctx->cfg->rules.dns.enabled))
 		return XFW_CTX_CONTINUE;
 
-	if (ctx->uh->dest != bpf_htons(DNS_PORT) &&
-	    ctx->uh->source != bpf_htons(DNS_PORT))
+	if (uh->dest != bpf_htons(DNS_PORT) &&
+	    uh->source != bpf_htons(DNS_PORT))
 		return XFW_CTX_CONTINUE;
 
 	XfwMd* xdp_ctx = ctx->ctx;
-
 	uint16_t cur_pos = ctx->hdr_cur.pos - XFW_CTX_DATA_BGN(ctx->ctx);
-	uint16_t is_ipv4, ip_pos;
-	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
+	uint16_t is_ipv4;
+
+	switch (ctx->ipver) {
+	case bpf_htons(ETH_P_IP):
 		is_ipv4 = 1;
-		ip_pos = (void*)ctx->iph4 - XFW_CTX_DATA_BGN(ctx->ctx);
-	}
-	else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
+		break;
+	case bpf_htons(ETH_P_IPV6):
 		is_ipv4 = 0;
-		ip_pos = (void*)ctx->iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
-	}
-	else {
+		break;
+	default:
 		return XFW_CTX_CONTINUE;
 	}
 
@@ -442,7 +441,7 @@ ingress_dns_filter(XfwGlobalCtx *ctx)
 	}
 
 	md->cur_pos = cur_pos;
-	md->ip_pos = ip_pos;
+	md->ip_off = ctx->ip_off;
 	md->is_ipv4 = is_ipv4;
 
 	if (unlikely(!ctx->g_stats)) {
@@ -454,12 +453,13 @@ ingress_dns_filter(XfwGlobalCtx *ctx)
 }
 
 static __always_inline void
-egress_dns_filter(XfwGlobalCtx *ctx)
+egress_dns_filter(XfwGlobalCtx *ctx, struct udphdr *uh)
 {
 	if (unlikely(!ctx->cfg->rules.dns.enabled))
 		return;
 
-	if (ctx->uh->dest != bpf_htons(DNS_PORT) && ctx->uh->source != bpf_htons(DNS_PORT))
+	if (uh->dest != bpf_htons(DNS_PORT)
+	    && uh->source != bpf_htons(DNS_PORT))
 		return;
 
 	XfwDnsHdr *dh = parse_dnshdr(&ctx->hdr_cur);
@@ -471,7 +471,8 @@ egress_dns_filter(XfwGlobalCtx *ctx)
 
 	if (qr == DNS_QUERY) { /* Is query */
 		uint8_t zero = 0;
-		bpf_map_update_elem(&MAP_DNS_EGR_FD_REF, &dh->id, &zero, BPF_NOEXIST);
+		bpf_map_update_elem(&MAP_DNS_EGR_FD_REF, &dh->id,
+				    &zero, BPF_NOEXIST);
 		return;
 	}
 

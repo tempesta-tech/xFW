@@ -29,7 +29,8 @@ fi
 
 declare project_path=""
 # 1) User-provided path (may be empty)
-declare xfw_path="${TEMPESTA_XFW_PATH:-}"
+declare xfw_var_name="TEMPESTA_XFW_PATH"
+declare xfw_path="${!xfw_var_name:-}"
 # 2) Default path
 declare default_path="/opt/tempesta"
 declare -r xfw_bpf_path="/sys/fs/bpf/xfw"
@@ -43,9 +44,6 @@ if [ -n "$xfw_path" ] && [ -d "$xfw_path" ]; then
 	project_path="$xfw_path"
 elif [ -d "$default_path" ]; then
 	project_path="$default_path"
-else
-	echo "Error: neither \$xfw_path nor $default_path exist" >&2
-	exit 1
 fi
 
 declare -r mgr_name="tfw_mgr"
@@ -175,7 +173,7 @@ read_config()
 
 	local event_logging_flag="${cfg[event-logging]:-on}"
 	case "$event_logging_flag" in
-		on) 
+		on)
 			is_event_logging_on=1 ;;
 		off)
 			is_event_logging_on=0 ;;
@@ -531,7 +529,7 @@ start_mgr()
 	fi
 
 	read_config
-	
+
 	# We can't use exec, because we can lose an error.
 	"$mgr_bin_path" $mgr_args
 	rc=$?
@@ -728,6 +726,28 @@ write_version()
 if [ "$(id -u)" -ne 0 ]; then
 	exec sudo -E "$0" "$@"
 	exit 99
+fi
+
+# if installation is not found allow only --check-req and --help
+if [[ -z "$project_path" ]]; then
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--check-req)
+			check_requirements || exit 1
+			exit 0
+			;;
+		--help)
+			usage
+			exit 0
+			;;
+		*)
+			echo "Error: xFW installation directory in $default_path" \
+			      "not found. Set $xfw_var_name to a valid" \
+			      "directory or install xFW" >&2
+			exit 1
+			;;
+		esac
+	done
 fi
 
 while [[ $# -gt 0 ]]; do

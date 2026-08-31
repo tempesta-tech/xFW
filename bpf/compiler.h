@@ -17,6 +17,10 @@
 #define UINT8_MAX		255
 #endif
 
+#ifndef UINT16_MAX
+#define UINT16_MAX		65535
+#endif
+
 #ifndef UINT64_MAX
 #define UINT64_MAX		18446744073709551615ULL
 #endif

@@ -73,7 +73,7 @@
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, MAX_INCIDENTS_PER_CPU);
-	__type(key, IncidentKey);
+	__type(key, struct in6_addr);
 	__type(value, IncidentLogStat);
 	// Inner def can't be pinned; fd will be stored in array-of-maps
 } MAP_LOG_BASENAME_REF SEC(".maps");

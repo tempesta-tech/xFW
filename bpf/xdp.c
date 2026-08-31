@@ -91,25 +91,6 @@ create_metadata(XfwGlobalCtx *ctx, struct xdp_md *xdp)
 	return XFW_CTX_CONTINUE;
 }
 
-/* Rewrite IPv4-mapped IPv6 LPM keys so IPv4 source rules can handle them. */
-static __always_inline int
-try_convert_ipv6_to_ipv4(XfwIpLpmKey *key)
-{
-	if (key->addr6.addr[0] == 0 && key->addr6.addr[1] == 0
-	    && (key->addr6.addr[2] == 0
-		|| key->addr6.addr[2] == bpf_htonl(0xffff)))
-	{
-		__be32 ip4 = key->addr6.addr[3];
-		key->addr4.prefixlen = key->addr6.prefixlen - 96;
-		key->addr4.addr = ip4;
-
-		XFW_CTX_DBG("IPv4-mapped source key matched the IPv4 rule tree");
-
-		return 0;
-	}
-	return -1;
-}
-
 static __always_inline uint8_t
 icmp_default_by_proto(uint8_t l4_proto)
 {
@@ -244,14 +225,7 @@ static __always_inline void
 populate_src_info(const XfwGlobalCtx *ctx, void **src_ip_map,
 		  XfwIpLpmKey *ip_lpm, uint8_t *src_default)
 {
-	/*
-	 * Handle special case of IPv6 address with embedded IPv4.
-	 * This was firstly introduced for geoip matching.
-	 * src filter treats those ipv6 addresses as ipv4.
-	 * So for consistency we use ipv4 defaults in this case.
-	 */
-	if (ctx->ipver == bpf_htons(ETH_P_IPV6)
-	    && try_convert_ipv6_to_ipv4(ip_lpm) < 0)
+	if (ctx->ipver == bpf_htons(ETH_P_IPV6))
 	{
 		if (ctx->l4_proto == XFW_L4_PROTO_UDP) {
 			*src_default = XFW_DEFAULT_SRC_IP_UDP_IP6;
@@ -396,32 +370,45 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 {
 	switch (ctx->ipver) {
 	case bpf_ntohs(ETH_P_IP): {
+		struct iphdr *iph4;
+
 		count_traffic_stat(ctx, XFW_IP4_TOTAL_INGRESS);
-		int proto = parse_iphdr(&ctx->hdr_cur, &ctx->iph4);
+		int proto = parse_iphdr(&ctx->hdr_cur, &iph4);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_BADHDR_INGRESS);
 
+		ptrdiff_t ip_off = (void *)iph4 - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (ip_off < 0 || ip_off > L3_OFF_MAX)
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_BADHDR_INGRESS);
+
+		ctx->ip_off = (uint8_t)ip_off;
 		/* Any MF bit or non-zero fragment offset means fragmented IPv4. */
-		if ((bpf_htons(ctx->iph4->frag_off) & 0x3fff) != 0)
+		if ((bpf_htons(iph4->frag_off) & 0x3fff) != 0)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_FRAGMENTED_INGRESS);
 
 		ctx->l4_proto = (u8)proto;
-		xfw_ipv4_to_ipv6_mapped(ctx->iph4->saddr, ctx->ilog_addr.addr32);
-		ipv4_populate_lpm_key(ctx->iph4->saddr, &src_ip_key->addr4);
+		xfw_ipv4_to_ipv6_mapped(iph4->saddr, ctx->ilog_addr.addr32);
+		ipv4_populate_lpm_key(iph4->saddr, &src_ip_key->addr4);
 		return XFW_CTX_CONTINUE;
 	}
 	case bpf_ntohs(ETH_P_IPV6): {
+		struct ipv6hdr	*iph6;
+
 		count_traffic_stat(ctx, XFW_IP6_TOTAL_INGRESS);
-		int proto = parse_ip6hdr(&ctx->hdr_cur, &ctx->iph6);
+		int proto = parse_ip6hdr(&ctx->hdr_cur, &iph6);
 		if (unlikely(proto < 0)) {
 			if (proto == -EFBIG)
 				return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_FRAGMENTED_INGRESS);
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_BADHDR_INGRESS);
 		}
+		ptrdiff_t ip_off = (void *)iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (ip_off < 0 || ip_off > L3_OFF_MAX)
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_BADHDR_INGRESS);
 
+		ctx->ip_off = (uint8_t)ip_off;
 		ctx->l4_proto = (u8)proto;
-		ctx->ilog_addr.in6 = ctx->iph6->saddr;
-		ipv6_populate_lpm_key(&ctx->iph6->saddr, &src_ip_key->addr6);
+		ctx->ilog_addr.in6 = iph6->saddr;
+		ipv6_populate_lpm_key(&iph6->saddr, &src_ip_key->addr6);
 
 		return XFW_CTX_CONTINUE;
 	}
@@ -442,11 +429,11 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
  * connection trusted.
  */
 static __always_inline int
-tcp_rcv_syn_filter(XfwGlobalCtx *ctx)
+tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
 	/* If a SYN cookie was generated, processing stops immediately. */
 	if (ctx->cfg->rules.syncookie.enabled)
-		CHAIN(tcp_syncookies_syn_filter, ctx);
+		CHAIN(tcp_syncookies_syn_filter, ctx, th);
 
 	CHAIN(syn_rlimit, ctx);
 
@@ -467,7 +454,8 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx)
  * 4. If valid, trust the connection on ingress side.
  */
 static __always_inline int
-tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
+tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th,
+		   const XfwSockAddr *addr)
 {
 	/* Fast path - no SYN cookies. */
 	if (!ctx->cfg->rules.syncookie.enabled)
@@ -485,7 +473,7 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 		return XFW_CTX_CONTINUE;
 
 	/* Perform SYN-cookie-specific ACK validation */
-	CHAIN(tcp_syncookies_ack_filter, ctx);
+	CHAIN(tcp_syncookies_ack_filter, ctx, th);
 
 	/*
 	 * This is the scenario where a SYN cookie was issued and successfully
@@ -530,15 +518,14 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
  * - SYN flood protection is enforced when required (xdp.c),
  * - connections using SYN cookies are correctly validated and added to the
  * trusted set in XDP.
- * 
+ *
  * TODO #19: It may be necessary to move some authentication logic to a separate
  * xdp.c for upstream connections.
  */
 static __always_inline int
-tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
+tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
+		 const XfwSockAddr *addr)
 {
-	const struct tcphdr *th = ctx->th;
-
 	/* FIN: track connection for closing. */
 	if (th->fin) {
 		count_traffic_stat(ctx, XFW_FIN);
@@ -569,13 +556,13 @@ tcp_flags_filter(XfwGlobalCtx *ctx, const XfwSockAddr *addr)
 	/* SYN-only. Authenticate the connection if all checks pass. */
 	if (th->syn) {
 		count_traffic_stat(ctx, XFW_SYN);
-		return tcp_rcv_syn_filter(ctx);
+		return tcp_rcv_syn_filter(ctx, th);
 	}
 
 	/* ACK-only: validate SYN-ACK cookies or authenticate normally.*/
 	if (th->ack) {
 		count_traffic_stat(ctx, XFW_ACK);
-		return tcp_rcv_ack_filter(ctx, addr);
+		return tcp_rcv_ack_filter(ctx, th, addr);
 	}
 
 	/* Default: authenticate any remaining TCP packets. */
@@ -594,30 +581,44 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 
 	switch (ctx->l4_proto) {
 	case XFW_L4_PROTO_TCP: {
+		struct tcphdr *th;
+
 		count_traffic_stat(ctx, XFW_TCP_TOTAL_INGRESS);
-		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &ctx->th) <= 0))
+		if (unlikely(parse_tcphdr(&ctx->hdr_cur, &th) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_BADHDR_INGRESS);
 
-		CHAIN(tcp_anomaly_filter, ctx);
+		ptrdiff_t l4_off = (void *)th - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (l4_off < 0 || l4_off > L4_OFF_MAX)
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_BADHDR_INGRESS);
+		ctx->l4_off = (uint16_t)l4_off;
 
-		CHAIN(src_filter, ctx, ctx->th->source, src_ip_key);
-		
+		CHAIN(tcp_anomaly_filter, ctx, th);
+
+		CHAIN(src_filter, ctx, th->source, src_ip_key);
+
 		const XfwSockAddr addr = {
 			.addr = ctx->ilog_addr,
-			.port = ctx->th->source
+			.port = th->source
 		};
-		return tcp_flags_filter(ctx, &addr);
+		return tcp_flags_filter(ctx, th, &addr);
 	}
 	case XFW_L4_PROTO_UDP: {
+		struct udphdr *uh;
+
 		count_traffic_stat(ctx, XFW_UDP_TOTAL_INGRESS);
-		if (unlikely(parse_udphdr(&ctx->hdr_cur, &ctx->uh) <= 0))
+		if (unlikely(parse_udphdr(&ctx->hdr_cur, &uh) <= 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_UDP_BADHDR_INGRESS);
 
-		if (ctx->uh->source == 0 || ctx->uh->dest == 0)
+		ptrdiff_t l4_off = (void *)uh - XFW_CTX_DATA_BGN(ctx->ctx);
+		if (l4_off < 0 || l4_off > L4_OFF_MAX)
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_UDP_BADHDR_INGRESS);
+		ctx->l4_off = (uint16_t)l4_off;
+
+		if (uh->source == 0 || uh->dest == 0)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_UDP_ANOM_ZERO_PORT);
 
-		CHAIN(ingress_dns_filter, ctx);
-		return src_filter(ctx, ctx->uh->source, src_ip_key);
+		CHAIN(ingress_dns_filter, ctx, uh);
+		return src_filter(ctx, uh->source, src_ip_key);
 	};
 	case XFW_L4_PROTO_ICMP:
 	case XFW_L4_PROTO_ICMPV6: {
@@ -667,7 +668,7 @@ xfw_xdp_filter(struct XfwGlobalCtx *ctx)
 		return XFW_MAKE_CTX_PASS(ctx, XFW_PRELOAD_INGRESS);
 	}
 
-	int ipver = parse_ethhdr(&ctx->hdr_cur, &ctx->eth);
+	int ipver = parse_ethhdr(&ctx->hdr_cur);
 	if (unlikely(ipver < 0))
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_ETH_BADHDR_INGRESS);
 	ctx->ipver = ipver;

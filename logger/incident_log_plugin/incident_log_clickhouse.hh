@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include <netinet/in.h>
 #include <string_view>
 
 #include "../../bpf_uapi/incident_log_types.h"
@@ -21,6 +22,6 @@ public:
 
 public:
 	void
-	append_event(const IncidentKey &key, const IncidentLogStat &value,
+	append_event(const in6_addr &key, const IncidentLogStat &value,
 		     uint64_t drop_cnt);
 };

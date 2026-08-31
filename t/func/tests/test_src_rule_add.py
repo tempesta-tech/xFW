@@ -356,35 +356,3 @@ async def test_src_add_block_by_geoip_country(
     assert (
         await check_connection(client, server) is False
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
-
-
-async def test_src_add_block_by_ip_mapped(
-    xfw: XFW,
-    udp_ip4_client: RegularKernelSocketNetworkStateful,
-    udp_ip4_mapped_ip6_server: RegularKernelSocketNetworkStateful,
-):
-    await udp_ip4_mapped_ip6_server.start()
-    await udp_ip4_client.start()
-
-    new_ip = udp_ip4_client.generate_new_address()
-
-    await xfw.rules_set(f"""
-        xfw {{
-            defaults {{ src_ip ip4: allow; }}
-            src=extended_group ip4.udp : block {{
-                {udp_ip4_client.ip_format(new_ip)}
-            }}
-        }}
-        """)
-
-    await xfw.rules_patch(f"""
-        xfw {{
-            src=extended_group/add ip4.udp {{
-                {udp_ip4_client.ip_testing}
-            }}
-        }}
-        """)
-
-    assert (
-        await check_connection(udp_ip4_client, udp_ip4_mapped_ip6_server) is False
-    ), f"Client {udp_ip4_client.ip_testing} is not blocked"
