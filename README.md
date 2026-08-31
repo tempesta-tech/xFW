@@ -15,11 +15,12 @@ and DNS floods.
 
 **Quick links**
 
-- [GitHub](https://github.com/tempesta-tech/xFW)
 - [Get started](#quick-start)
 - [Documentation](https://tempesta-tech.com/tempesta-escudo/knowledge-base/XFW/)
 - [Benchmarks](#performance)
 - [DDoS protection use cases](https://tempesta-tech.com/tempesta-escudo/knowledge-base/DDoS-Protection-Use-Cases/)
+- [Netdev 0x1A talk](https://www.youtube.com/watch?v=aTq9v_9CYVM)
+
 
 ## Why Tempesta xFW?
 
@@ -63,6 +64,16 @@ the [`tfw` CLI](https://tempesta-tech.com/tempesta-escudo/knowledge-base/Command
 to configure xFW, or use the
 [C client library](https://tempesta-tech.com/tempesta-escudo/knowledge-base/Client-library/)
 to build xFW control flows into an application.
+
+
+## Conference talk
+
+Watch the [Netdev 0x1A talk](https://www.youtube.com/watch?v=aTq9v_9CYVM) for a technical
+overview of xFW's deployment architectures, XDP/TC design, DDoS filtering and rate-limiting
+techniques, observability, and performance evaluation.
+
+[![Watch the Tempesta xFW talk at Netdev 0x1A](https://img.youtube.com/vi/aTq9v_9CYVM/hqdefault.jpg)](https://www.youtube.com/watch?v=aTq9v_9CYVM)
+
 
 ## Features
 
