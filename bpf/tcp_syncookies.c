@@ -844,7 +844,7 @@ pass:
 
 SEC("xdp")
 int
-xfw_xdp_tcp_syncookies(struct xdp_md *xdp)
+xdp_tcp_syncookies(struct xdp_md *xdp)
 {
 	XfwGlobalCtx ctx;
 	VERIFY_TRUE_OR_RETURN(xfw_ctx_init_from_metadata(&ctx, xdp),

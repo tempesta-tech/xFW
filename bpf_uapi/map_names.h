@@ -15,10 +15,15 @@
 #define MAP_PRIMARY_IDX		0
 #define MAP_SECONDARY_IDX 	1
 
-enum {
+/*
+ * Stable indices of standalone BPF modules in the global program array.
+ * Add a unique index for every new tail-called module. XFW_PROG_MAX must
+ * remain the last entry because it defines the program-array size.
+ */
+typedef enum XfwProgArrayIndex {
 	XFW_PROG_TCP_SYNCOOKIES_FILTER = 0,
 	XFW_PROG_MAX
-};
+} XfwProgArrayIndex;
 
 static inline uint8_t
 next_map_idx(uint8_t idx)

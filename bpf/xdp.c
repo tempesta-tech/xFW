@@ -14,7 +14,6 @@
 #include "ctx.h"
 #include "dns.h"
 #include "dst.h"
-#include "module_filter.h"
 #include "filter.h"
 #include "parsing_helpers.h"
 #include "tcp_anomaly_filter.h"
@@ -42,6 +41,14 @@ SHADOW_MAP(MAP_ICMP_BASENAME, BPF_MAP_TYPE_HASH, XFW_MAX_ICMP_RULES, XfwIcmpKey,
 	    XfwActionRule, 0);
 
 struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__type(key, __u32);
+	__type(value, __u32);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+	__uint(max_entries, XFW_PROG_MAX);
+} MAP_PROG_ARRAY_REF SEC(".maps");
+
+struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
 	__type(key, XfwIp); /* IPv4/6 address */
 	__type(value, XfwRLimitSlidingWindow);
@@ -67,6 +74,43 @@ struct {
 	}								\
 	r;								\
 })
+
+/**
+ * Define a dispatcher for an XDP tail-call module.
+ *
+ * The caller must reserve packet metadata before parsing and invoke the
+ * dispatcher only after the required L3/L4 context fields have been
+ * populated. No operation between metadata reservation and this call may
+ * invalidate data_meta. Under these preconditions,
+ * xfw_set_packet_metadata() must succeed; failure indicates an internal
+ * invariant violation.
+ *
+ * A successful bpf_tail_call() transfers control to the selected module
+ * and does not return.
+ *
+ * @index       - Module program index in MAP_PROG_ARRAY_REF.
+ */
+static __always_inline int
+xdp_call_module(XfwGlobalCtx *ctx, XfwProgArrayIndex index)
+{
+	XFW_ASSERT(xfw_set_packet_metadata(ctx));
+
+	uint16_t cur_pos = (uint16_t)(ctx->hdr_cur.pos -
+		XFW_CTX_DATA_BGN(ctx->ctx));
+	bpf_tail_call(ctx->ctx, &MAP_PROG_ARRAY_REF, index);
+
+	/*
+	 * Reinitialize packet cursor after `bpf_tail_call`, because the
+	 * verifier may lose packet-pointer types stored in the global
+	 * context.
+	 */
+	INIT_CURSOR_FROM_BPF_CONTEXT(ctx->ctx, &ctx->hdr_cur);
+	ctx->hdr_cur.pos += cur_pos;
+	/*
+	 * Tail call failed, continue normal XDP processing.
+	 */
+	return XFW_CTX_CONTINUE;	
+}
 
 static __always_inline int
 create_metadata(XfwGlobalCtx *ctx, struct xdp_md *xdp)
@@ -434,7 +478,7 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx)
 
 	/* If a SYN cookie was generated, processing stops immediately. */
 	if (ctx->cfg->rules.syncookie.enabled)
-		CHAIN(xdp_tcp_syncookies_module_filter, ctx);
+		CHAIN(xdp_call_module, ctx, XFW_PROG_TCP_SYNCOOKIES_FILTER);
 
 	/* We do not add the connection to the trusted set here.
 	 * The trusted entry will be created later in tc.c, which is less
@@ -516,8 +560,10 @@ tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
 	/* ACK-only: validate SYN-ACK cookies or authenticate normally.*/
 	if (th->ack) {
 		count_traffic_stat(ctx, XFW_ACK);
-		if (ctx->cfg->rules.syncookie.enabled)
-			CHAIN(xdp_tcp_syncookies_module_filter, ctx);
+		if (ctx->cfg->rules.syncookie.enabled) {
+			CHAIN(xdp_call_module, ctx,
+			      XFW_PROG_TCP_SYNCOOKIES_FILTER);
+		}
 	}
 
 	/* Default: authenticate any remaining TCP packets. */

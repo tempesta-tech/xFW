@@ -39,10 +39,15 @@ STATIC_ASSERT(sizeof(XfwPacketMetadata) % 4 == 0,
 STATIC_ASSERT(L4_OFF_MAX + TCP_MAXLEN <= UINT16_MAX,
 	      "Packet cursor offset does not fit into uint16_t");
 
+/*
+ * Pass the global packet-processing context to modules by storing its
+ * transferable fields in packet metadata. A module uses this metadata to
+ * reconstruct the complete XfwGlobalCtx with xfw_ctx_init_from_metadata().
+ */
 static __always_inline bool
 xfw_set_packet_metadata(const XfwGlobalCtx *ctx)
 {
-	XfwMd* xdp_ctx = ctx->ctx;
+	XfwMd *xdp_ctx = ctx->ctx;
 
 	XfwPacketMetadata *md = (void *)(long)xdp_ctx->data_meta;
 	if (unlikely((void *)(md + 1) > (void *)(long)xdp_ctx->data)) {
@@ -72,6 +77,12 @@ xfw_set_packet_metadata(const XfwGlobalCtx *ctx)
 	return true;
 }
 
+/*
+ * Restore the complete global packet-processing context for a module from
+ * metadata provided by the main program. Individual modules may use only a
+ * subset of its fields, but restoring the entire context here keeps the
+ * module interface uniform and avoids module-specific initialization paths.
+ */
 static __always_inline bool
 xfw_ctx_init_from_metadata(XfwGlobalCtx *ctx, XfwMd *pkt_ctx)
 {
@@ -113,6 +124,12 @@ xfw_ctx_init_from_metadata(XfwGlobalCtx *ctx, XfwMd *pkt_ctx)
 	return true;
 }
 
+/*
+ * Determine whether an enabled standalone module requires packet metadata.
+ * Extend this predicate for every new standalone module that reconstructs
+ * XfwGlobalCtx from metadata; otherwise the main program will not prepare
+ * the context required by that module.
+ */
 static __always_inline bool
 is_metadata_creation_necessary(const XfwGlobalCtx *ctx)
 {

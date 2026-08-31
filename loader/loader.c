@@ -23,54 +23,7 @@
 #include <bpf/libbpf.h>
 
 #include "../bpf_uapi/map_names.h"
-
-#ifndef XFW_LIB_DIR
-#error "XFW_LIB_DIR is not defined; check the loader build configuration"
-#endif
-
-#define XFW_BPF_LIB_DIR XFW_LIB_DIR "/" "bpf"
-
-#define ARRAY_SIZE(array) \
-	(sizeof(array) / sizeof((array)[0]))
-
-typedef struct MapDesc {
-	const char *name;
-} MapDesc;
-
-typedef struct XfwProgram {
-	const char *name;
-	const char *obj_path;
-	const char *prog_name;
-	const char *prog_pin_name;
-
-	/*
-	 * Expected BPF program type.
-	 */
-	enum bpf_prog_type prog_type;
-
-	/*
-	 * Maps that must be explicitly reused from another BPF object.
-	 *
-	 * This is intended for modules whose maps are not automatically
-	 * reused through LIBBPF_PIN_BY_NAME and pin_root_path.
-	 */
-	const MapDesc *reuse_maps;
-	size_t reuse_maps_cnt;
-
-	/*
-	 * Open the BPF object with pin_root_path.
-	 *
-	 * Maps declared with LIBBPF_PIN_BY_NAME will be automatically
-	 * created or reused under pin_root.
-	 */
-	bool pin_maps;
-
-	/*
-	 * Register the loaded program in the global tail-call program array.
-	 */
-	bool register_in_prog_array;
-	uint32_t prog_array_idx;
-} XfwProgram;
+#include "program_descriptors.h"
 
 static const XfwProgram main_xdp = {
 	.name = "xdp",
@@ -80,9 +33,7 @@ static const XfwProgram main_xdp = {
 	.prog_type = BPF_PROG_TYPE_XDP,
 	.reuse_maps = NULL,
 	.reuse_maps_cnt = 0,
-	/*
-	 * The main XDP object creates and owns the shared maps.
-	 */
+	/* The main XDP object creates and owns the shared maps. */
 	.pin_maps = true,
 	.register_in_prog_array = false,
 };
@@ -116,63 +67,41 @@ static const XfwProgram main_tc = {
 	.register_in_prog_array = false,
 };
 
-static const MapDesc xdp_tcp_syncookies_maps[] = {
-	{ .name = MAP_GLBL_STAT_STR },
-	{ .name = MAP_CFG_STR },
-	{ .name = MAP_LOG_ACTIVE_FD_STR },
-	{ .name = MAP_LOG_EVENTS_STR },
-	{ .name = MAP_LOG_EV_CNT_STR },
-	{ .name = MAP_RATELIMIT_STR },
-	{ .name = MAP_TCP_CONN_STR },
-	{ .name = MAP_DST_STR(MAP_PRIMARY_IDX) },
-	{ .name = MAP_DST_STR(MAP_SECONDARY_IDX) },
-};
-
-static const XfwProgram xdp_tcp_syncookies_module = {
-	.name = "xdp_tcp_syncookies",
-	.obj_path = XFW_BPF_LIB_DIR "/" "xdp_tcp_syncookies.o",
-	.prog_name = "xfw_xdp_tcp_syncookies",
-	.prog_pin_name = "xdp_tcp_syncookies",
-	.prog_type = BPF_PROG_TYPE_XDP,
-	.reuse_maps = xdp_tcp_syncookies_maps,
-	.reuse_maps_cnt = ARRAY_SIZE(xdp_tcp_syncookies_maps),
-	.pin_maps = true,
-	.register_in_prog_array = true,
-	.prog_array_idx = XFW_PROG_TCP_SYNCOOKIES_FILTER,
-};
-
 static const XfwProgram *programs[] = {
 	&main_xdp,
 	&main_tc,
-	&xdp_tcp_syncookies_module,
+	&tcp_syncookies_module,
 };
 
 static void
 usage(const char *prog)
 {
+	size_t i;
+
 	fprintf(stderr,
 		"Usage:\n"
 		"  %s load <program> <pin-root>\n"
 		"  %s unload <program> <pin-root>\n"
 		"  %s attach tc <pin-root> <device>\n"
-		"  %s detach tc <pin-root> <device>\n"
-		"\n"
-		"Programs:\n"
-		"  xdp\n"
-		"  tc\n"
-		"  xdp_tcp_syncookies"
+		"  %s detach tc <pin-root> <device>\n",
+		prog, prog, prog, prog);
+
+	fprintf(stderr, "\nPrograms:\n");
+	for (i = 0; i < ARRAY_SIZE(programs); i++)
+		fprintf(stderr, "  %s\n", programs[i]->name);
+
+	fprintf(stderr,
 		"\n"
 		"Examples:\n"
 		"  %s load xdp /sys/fs/bpf/xfw\n"
 		"  %s load tc /sys/fs/bpf/xfw\n"
-		"  %s load xdp_tcp_syncookies /sys/fs/bpf/xfw\n"
+		"  %s load <module> /sys/fs/bpf/xfw\n"
 		"  %s attach tc /sys/fs/bpf/xfw enp1s0\n"
 		"  %s detach tc /sys/fs/bpf/xfw enp1s0\n"
 		"  %s unload xdp /sys/fs/bpf/xfw\n"
 		"  %s unload tc /sys/fs/bpf/xfw\n"
-		"  %s unload xdp_tcp_syncookies /sys/fs/bpf/xfw\n",
-		prog, prog, prog, prog, prog, prog,
-		prog, prog, prog, prog, prog, prog);
+		"  %s unload <module> /sys/fs/bpf/xfw\n",
+		prog, prog, prog, prog, prog, prog, prog, prog);
 }
 
 static const XfwProgram *
