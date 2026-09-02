@@ -1,95 +1,57 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 import asyncio
-from contextlib import asynccontextmanager
 
-import pytest
 from scapy.data import ETH_P_ARP
 from scapy.layers.l2 import ARP, Ether
 
-from framework.utils import compare_metrics_diff
-from framework.xfw import XFW
-
-
-@pytest.fixture
-def ingress_total_metrics_counters() -> list[str]:
-    return [
-        "xfw_ip4_total_ingress_packets",
-        "xfw_ip4_total_ingress_bytes",
-        "xfw_ip6_total_ingress_packets",
-        "xfw_ip6_total_ingress_bytes",
-        "xfw_tcp_total_ingress_packets",
-        "xfw_tcp_total_ingress_bytes",
-        "xfw_udp_total_ingress_packets",
-        "xfw_udp_total_ingress_bytes",
-    ]
-
-
-@pytest.fixture
-def ingress_downstream_metrics_counters() -> list[str]:
-    return [
-        "xfw_total_downstream_ingress_packets",
-        "xfw_total_downstream_ingress_bytes",
-        "xfw_passed_downstream_ingress_packets",
-        "xfw_passed_downstream_ingress_bytes",
-    ]
-
-
-@pytest.fixture
-def ingress_gre_metrics_counters() -> list[str]:
-    return [
-        "xfw_gre_ingress_packets",
-        "xfw_gre_ingress_bytes",
-    ]
-
-
-@pytest.fixture
-def ingress_icmp_metrics_counters() -> list[str]:
-    return [
-        "xfw_icmp_total_ingress_packets",
-        "xfw_icmp_total_ingress_bytes",
-    ]
-
-
-@pytest.fixture
-def pre_load_metrics_counters() -> list[str]:
-    """
-    Need to compare only metrics from the list to prevent comparing egress metrics.
-    Egress traffic is accounted even if no rules are loaded.
-    """
-    return [
-        "xfw_arp_ingress_packets",
-        "xfw_arp_ingress_bytes",
-        "xfw_preload_ingress_packets",
-        "xfw_preload_ingress_bytes",
-    ]
+from framework.metrics import PrometheusMetricsDiff
 
 
 def get_expected_total_ingress_counters(
     packets_n: int, protocol: str, ip_version: str
-) -> dict[str, int | list[int]]:
+) -> PrometheusMetricsDiff:
     match protocol, ip_version:
         case "tcp", "ip4":
-            packets_n, bytes_n = 10, 710
-        case "tcp", "ip6":
-            packets_n, bytes_n = 10, 910
-        case "udp", "ip4":
-            packets_n, bytes_n = 10, 470
-        case "udp", "ip6":
-            packets_n, bytes_n = [10, 13], [670, 900]
+            return PrometheusMetricsDiff(
+                xfw_ip4_total_ingress_packets=packets_n,
+                xfw_ip4_total_ingress_bytes=packets_n * 71,
+                xfw_tcp_total_ingress_packets=packets_n,
+                xfw_tcp_total_ingress_bytes=packets_n * 71,
+            )
 
-    return {
-        f"xfw_{ip_version}_total_ingress_packets": packets_n,
-        f"xfw_{ip_version}_total_ingress_bytes": bytes_n,
-        f"xfw_{protocol}_total_ingress_packets": packets_n,
-        f"xfw_{protocol}_total_ingress_bytes": bytes_n,
-    }
+        case "tcp", "ip6":
+            return PrometheusMetricsDiff(
+                xfw_ip6_total_ingress_packets=packets_n,
+                xfw_ip6_total_ingress_bytes=packets_n * 91,
+                xfw_tcp_total_ingress_packets=packets_n,
+                xfw_tcp_total_ingress_bytes=packets_n * 91,
+            )
+
+        case "udp", "ip4":
+            return PrometheusMetricsDiff(
+                xfw_ip4_total_ingress_packets=packets_n,
+                xfw_ip4_total_ingress_bytes=packets_n * 47,
+                xfw_udp_total_ingress_packets=packets_n,
+                xfw_udp_total_ingress_bytes=packets_n * 47,
+            )
+
+        case "udp", "ip6":
+            return PrometheusMetricsDiff(
+                xfw_ip6_total_ingress_packets=[packets_n, packets_n + 3],
+                xfw_ip6_total_ingress_bytes=[packets_n * 67, (packets_n + 3) * 67],
+                xfw_udp_total_ingress_packets=[packets_n, packets_n + 3],
+                xfw_udp_total_ingress_bytes=[packets_n * 67, (packets_n + 3) * 67],
+            )
+
+        case _:
+            raise ValueError(f"Unsupported protocol/ip combo: {protocol}, {ip_version}")
 
 
 async def test_total_ingress_metrics(
     protocol,
     ip_version,
-    ingress_total_metrics_counters,
+    metric_analyzer,
     xfw,
     server,
     client,
@@ -105,23 +67,19 @@ async def test_total_ingress_metrics(
 
     await xfw.rules_set("xfw {}")
 
-    async with xfw.metrics_diff(ingress_total_metrics_counters) as diff:
+    async with metric_analyzer.expected_metrics_diff(
+        xfw=xfw,
+        expected_metrics=get_expected_total_ingress_counters(packets_n, protocol, ip_version),
+    ):
         await asyncio.gather(
             *[client.ping() for _ in range(int(packets_n / 2))]
             + [client_2.ping() for _ in range(int(packets_n / 2))]
         )
-
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=ingress_total_metrics_counters,
-        all_metrics=diff,
-        diff_metrics=get_expected_total_ingress_counters(packets_n, protocol, ip_version),
-    )
-
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+        await asyncio.gather(*[server.receive_message() for _ in range(packets_n)])
 
 
 async def test_downstream_ingress_metrics(
-    ingress_downstream_metrics_counters,
+    metric_analyzer,
     xfw,
     tcp_ip4_client,
     tcp_ip4_server,
@@ -137,28 +95,24 @@ async def test_downstream_ingress_metrics(
 
     await xfw.rules_set("xfw {}")
 
-    async with xfw.metrics_diff(ingress_downstream_metrics_counters) as diff:
+    async with metric_analyzer.expected_metrics_diff(
+        xfw=xfw,
+        expected_metrics=PrometheusMetricsDiff(
+            xfw_total_downstream_ingress_packets=packets_n,
+            xfw_total_downstream_ingress_bytes=packets_n * 71,
+            xfw_passed_downstream_ingress_packets=packets_n,
+            xfw_passed_downstream_ingress_bytes=packets_n * 71,
+        ),
+    ):
         await asyncio.gather(
             *[tcp_ip4_client.ping() for _ in range(int(packets_n / 2))]
             + [client_2.ping() for _ in range(int(packets_n / 2))]
         )
-
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=ingress_downstream_metrics_counters,
-        all_metrics=diff,
-        diff_metrics={
-            "xfw_total_downstream_ingress_packets": packets_n,
-            "xfw_total_downstream_ingress_bytes": 710,
-            "xfw_passed_downstream_ingress_packets": packets_n,
-            "xfw_passed_downstream_ingress_bytes": 710,
-        },
-    )
-
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+        await asyncio.gather(*[tcp_ip4_server.receive_message() for _ in range(packets_n)])
 
 
 async def test_gre_ingress_metrics(
-    ingress_gre_metrics_counters,
+    metric_analyzer,
     ip_version,
     xfw,
     gre_raw_client,
@@ -175,26 +129,22 @@ async def test_gre_ingress_metrics(
 
     await xfw.rules_set("xfw { ip_proto { 47, 58 } }")
 
-    async with xfw.metrics_diff(ingress_gre_metrics_counters) as diff:
+    async with metric_analyzer.expected_metrics_diff(
+        xfw=xfw,
+        expected_metrics=PrometheusMetricsDiff(
+            xfw_gre_ingress_packets=packets_n,
+            xfw_gre_ingress_bytes=packets_n * 43 if ip_version == "ip4" else packets_n * 63,
+        ),
+    ):
         await asyncio.gather(
             *[gre_raw_client.ping() for _ in range(int(packets_n / 2))]
             + [client_2.ping() for _ in range(int(packets_n / 2))]
         )
-
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=ingress_gre_metrics_counters,
-        all_metrics=diff,
-        diff_metrics={
-            "xfw_gre_ingress_packets": packets_n,
-            "xfw_gre_ingress_bytes": 430 if ip_version == "ip4" else 630,
-        },
-    )
-
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+        await asyncio.gather(*[gre_raw_server.receive_packet() for _ in range(packets_n)])
 
 
 async def test_icmp_ingress_metrics(
-    ingress_icmp_metrics_counters,
+    metric_analyzer,
     ip_version,
     xfw,
     udp_server,
@@ -217,26 +167,26 @@ async def test_icmp_ingress_metrics(
 
     await xfw.rules_set("xfw {}")
 
-    async with xfw.metrics_diff(ingress_icmp_metrics_counters) as diff:
+    expected_packets_n = packets_n if ip_version == "ip4" else [packets_n, packets_n + 3]
+    expected_bytes_n = (
+        packets_n * 42 if ip_version == "ip4" else [packets_n * 62, (packets_n + 3) * 62]
+    )
+    async with metric_analyzer.expected_metrics_diff(
+        xfw=xfw,
+        expected_metrics=PrometheusMetricsDiff(
+            xfw_icmp_total_ingress_packets=expected_packets_n,
+            xfw_icmp_total_ingress_bytes=expected_bytes_n,
+        ),
+    ):
         await asyncio.gather(
             *[icmp_raw_client.ping() for _ in range(int(packets_n / 2))]
             + [client_2.ping() for _ in range(int(packets_n / 2))]
         )
-
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=ingress_icmp_metrics_counters,
-        all_metrics=diff,
-        diff_metrics={
-            "xfw_icmp_total_ingress_packets": packets_n if ip_version == "ip4" else [10, 13],
-            "xfw_icmp_total_ingress_bytes": 420 if ip_version == "ip4" else [620, 900],
-        },
-    )
-
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+        await asyncio.gather(*[udp_server.receive_message() for _ in range(packets_n)])
 
 
 async def test_ingress_preload_metrics(
-    pre_load_metrics_counters: list[str],
+    metric_analyzer,
     xfw,
     udp_ip4_client,
     udp_ip4_server,
@@ -245,21 +195,21 @@ async def test_ingress_preload_metrics(
     await udp_ip4_server.start()
     await udp_ip4_client.start()
 
-    async with xfw.metrics_diff(pre_load_metrics_counters) as diff:
+    async with metric_analyzer.expected_metrics_diff(
+        xfw=xfw,
+        expected_metrics=PrometheusMetricsDiff(
+            xfw_preload_ingress_packets=11,
+            xfw_preload_ingress_bytes=512,
+            xfw_arp_ingress_packets=0,
+            xfw_arp_ingress_bytes=0,
+        ),
+    ):
         await asyncio.gather(*[udp_ip4_client.ping() for _ in range(10)])
-
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=pre_load_metrics_counters,
-        all_metrics=diff,
-        diff_metrics=dict(xfw_preload_ingress_packets=11, xfw_preload_ingress_bytes=512),
-        strict=True,
-    )
-
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+        await asyncio.gather(*[udp_ip4_server.receive_message() for _ in range(10)])
 
 
 async def test_arp_ingress_metrics(
-    pre_load_metrics_counters,
+    metric_analyzer,
     xfw,
     config,
     logging_level,
@@ -287,15 +237,16 @@ async def test_arp_ingress_metrics(
     packet = Ether(dst=dst_mac, src=src_mac, type=ETH_P_ARP)
     arp_part = bytes(ARP(op=1, pdst=ether_raw_server.ip))
 
-    async with xfw.metrics_diff(pre_load_metrics_counters) as diff:
+    async with metric_analyzer.expected_metrics_diff(
+        xfw=xfw,
+        expected_metrics=PrometheusMetricsDiff(
+            xfw_preload_ingress_packets=0,
+            xfw_preload_ingress_bytes=0,
+            xfw_arp_ingress_packets=packets_n,
+            xfw_arp_ingress_bytes=bytes_n,
+        ),
+    ):
         await asyncio.gather(
             *[ether_raw_client.send_packet(packet / arp_part) for _ in range(packets_n)]
         )
-
-    invalid_metrics = compare_metrics_diff(
-        compare_metrics=pre_load_metrics_counters,
-        all_metrics=diff,
-        diff_metrics={"xfw_arp_ingress_packets": packets_n, "xfw_arp_ingress_bytes": bytes_n},
-    )
-
-    assert invalid_metrics == [], f"Some metrics are different: {invalid_metrics}"
+        await asyncio.gather(*[ether_raw_server.receive_packet() for _ in range(packets_n)])

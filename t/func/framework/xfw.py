@@ -342,56 +342,6 @@ class XFW(NetworkStateful):
         """
         await asyncio.sleep(3)
 
-    async def metrics(self) -> dict[str, int]:
-        client = self.http_client()
-        response = await client.get("/metrics")
-
-        if response.status_code != 200:
-            raise ValueError("Failed to get metrics")
-
-        metrics = {}
-
-        for metric in response.text.split("\n"):
-            if metric.startswith("#"):
-                continue
-
-            pair = metric.split(" ")
-
-            if len(pair) != 2:
-                continue
-
-            key, value = pair
-            metrics[key] = int(value)
-
-        return metrics
-
-    @asynccontextmanager
-    async def metrics_diff(
-        self, metrics: list[str] = None, wait_softirq: bool = False, non_zero: bool = False
-    ) -> AsyncGenerator[dict[str, int], None]:
-        metrics_before = await self.metrics()
-
-        if metrics:
-            diff = {metric: 0 for metric in metrics}
-        else:
-            diff = {}
-            metrics = set(metrics_before.keys())
-
-        yield diff
-
-        if wait_softirq:
-            await self.wait_softirq()
-
-        metrics_after = await self.metrics()
-
-        for metric in metrics:
-            metric_delta = metrics_after[metric] - metrics_before[metric]
-
-            if non_zero and not metric_delta:
-                continue
-
-            diff[metric] = metric_delta
-
     async def set_http_port(self, port: int):
         self.http_port = port
 
