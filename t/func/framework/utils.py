@@ -27,7 +27,7 @@ from scapy.layers.inet6 import Raw
 from framework.logger import get_logger
 
 if TYPE_CHECKING:
-    from framework.stateful import RegularKernelSocketNetworkStateful
+    from framework.stateful import SocketBaseNetworkStateful
 
 logger = get_logger("utils")
 
@@ -35,10 +35,10 @@ logger = get_logger("utils")
 class ClonerCallable(Protocol):
     def __call__(
         self,
-        cloner: RegularKernelSocketNetworkStateful,
+        cloner: SocketBaseNetworkStateful,
         amount: int,
-        fabric: Optional[Type[RegularKernelSocketNetworkStateful]] = None,
-    ) -> list[RegularKernelSocketNetworkStateful]: ...
+        fabric: Optional[Type[SocketBaseNetworkStateful]] = None,
+    ) -> list[SocketBaseNetworkStateful]: ...
 
 
 class RetryException(Exception):
@@ -116,54 +116,6 @@ async def run_in_background(coroutines: list[Coroutine[Any, Any, Any]], timeout:
         return
 
     raise TimeoutError(f"Task is still undone after {timeout} seconds")
-
-
-def compare_metrics_diff(
-    compare_metrics: list[str],
-    all_metrics: dict[str, int],
-    diff_metrics: dict[str, Union[int, tuple[int, int]]],
-    strict: bool = False,
-) -> list[InvalidMetric]:
-    not_all_metrics_registered = {i for i in diff_metrics.keys()} - {i for i in compare_metrics}
-
-    if not_all_metrics_registered:
-        raise ValueError(
-            f"Not all metrics from diff_metrics were registered: {not_all_metrics_registered}"
-        )
-
-    invalid_metrics = []
-
-    for metric in compare_metrics:
-        if metric not in diff_metrics:
-            continue
-
-        is_range = isinstance(diff_metrics[metric], list)
-
-        if is_range:
-            if not (diff_metrics[metric][0] <= all_metrics[metric] < diff_metrics[metric][1]):
-                invalid_metrics.append(
-                    InvalidMetric(
-                        name=metric, value=all_metrics[metric], expected=diff_metrics[metric]
-                    )
-                )
-        elif diff_metrics[metric] != all_metrics[metric]:
-            invalid_metrics.append(
-                InvalidMetric(name=metric, value=all_metrics[metric], expected=diff_metrics[metric])
-            )
-
-    if not strict:
-        return invalid_metrics
-
-    for metric in all_metrics:
-        if metric in diff_metrics:
-            continue
-
-        if all_metrics[metric] == 0:
-            continue
-
-        invalid_metrics.append(InvalidMetric(name=metric, value=all_metrics[metric], expected=0))
-
-    return invalid_metrics
 
 
 def metrics_increased(
