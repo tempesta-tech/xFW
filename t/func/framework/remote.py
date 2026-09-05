@@ -2,12 +2,21 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import asyncio
+import inspect
 import os
 import time
 import typing
 
 from config import TestingModel
 from framework.rpc.client import RpcClient
+from framework.rpc.protocol import (
+    SENTINEL_CLICKHOUSE,
+    SENTINEL_LOOP,
+    TYPE_ASYNC,
+    TYPE_ATTR,
+    TYPE_DEF,
+    TYPE_NEW,
+)
 
 
 class RemoteCommandExecutingError(Exception):
@@ -21,222 +30,234 @@ class RemotePythonInterpreter:
     Base wrapper class that proxies local method calls to a remote machine
     via the RPC client.
 
-    Overrides __getattribute__ to intercept method calls. If the method name
-    is listed in `remote_methods`, it wraps the call with `remote_call`.
+    Overrides __getattribute__ to intercept method calls. Each call is
+    sent as a structured request (id, type, name, params) and the reply
+    is matched by id.
 
     Only simple types (int, str, bool, None) are supported
     as arguments and return values.
-
-    Multiline commands are allowed and must end with the delimiter '>>>'.
-
-    The remote execution result is automatically converted back to a simple
-    Python type before being returned.
     """
 
     remote_methods = ()
+    _simple_types = (str, int, float, bool, type(None))
 
     def __init__(
         self,
         *args,
+        original_local_class=typing.Any,
         rpc_connection: RpcClient = None,
         working_dir: str = None,
         python_path: str = None,
         **kwargs,
     ) -> None:
+        self.args = args
         self.kwargs = kwargs
-        self.logger = self.kwargs.pop("logger")
         self.kwargs.pop("testing_model")
 
-        self.timeout = self.kwargs.get("timeout")
+        self.logger = self.kwargs["logger"]
+
+        self.original_class = original_local_class
+        self.original_class.__init__ = self.patched_init
+        self.original_obj = self.original_class(*self.args, **self.kwargs)
+        self.original_class.__getattribute__ = self.patched_getattribute()
+
         self.working_dir = working_dir
         self.python_path = python_path
         self.remote_process = False
         self.rpc_connection = rpc_connection
-        self.remote_var = f"obj_{self.__class__.__name__}_{os.urandom(2).hex()}"
-        self.remote_class_name = self.__class__.__name__.replace("Remote", "")
+        self.remote_var = f"obj_{original_local_class.__name__}_{os.urandom(2).hex()}"
+        self.remote_class_name = original_local_class.__name__
 
-    async def exec_remote_cmd(self, cmd: str) -> typing.Optional[str]:
+    def get_new_obj(self):
         """
-        Send the 'cmd' to the RPC-Server for executing
+        тут надо создавать новое подключение и обьект на удаленной стороне
         """
-        self.logger.info(f"exec command: {cmd}")
-        cmd = f"{cmd}<<<"
-        self.rpc_connection.writer.write(cmd.encode())
-        await self.rpc_connection.writer.drain()
+        return self.original_obj
 
+    async def exec_remote_cmd(
+        self,
+        req_type: str,
+        name: str,
+        params: list = None,
+        kwargs: dict = None,
+        target: str = None,
+    ) -> typing.Any:
+        """
+        Send a structured call to the RPC server.
+        """
+        target = self.remote_var if target is None else target
+        self.logger.info(f"exec type={req_type} target={target} name={name}")
         start_at = time.time()
-        output = None
-
-        try:
-            output = await self.read_output()
-        except TimeoutError:
-            ...
-        finally:
-            waited_time = time.time() - start_at
-            self.logger.debug(
-                f"output=`{output}`, waited = {waited_time:.3f}s, timeout={self.timeout}"
+        output = self.read_output(
+            await self.rpc_connection.call_async(
+                req_type, target=target, name=name, params=params, kwargs=kwargs
             )
-
+        )
+        waited_time = time.time() - start_at
+        self.logger.debug(f"output=`{output}`, waited = {waited_time:.3f}s")
         return output
 
-    def remote_call(self, method_name: str) -> typing.Any:
+    def exec_remote_cmd_sync(
+        self,
+        req_type: str,
+        name: str,
+        params: list = None,
+        kwargs: dict = None,
+        target: str = None,
+    ) -> typing.Any:
+        """
+        Send a structured call to the RPC server from synchronous code.
+        """
+        target = self.remote_var if target is None else target
+        self.logger.info(f"exec type={req_type} target={target} name={name}")
+        start_at = time.time()
+        output = self.read_output(
+            self.rpc_connection.call_sync(
+                req_type, target=target, name=name, params=params, kwargs=kwargs
+            )
+        )
+        waited_time = time.time() - start_at
+        self.logger.debug(f"output=`{output}`, waited = {waited_time:.3f}s")
+        return output
+
+    def __remote_call_method(self, method_name: str) -> typing.Any:
         """
         Wraps the called method with RPC execution.
         """
 
-        async def wrapper(*args, **kwargs):
-            params = self.create_method_params(args, kwargs)
-
-            if not self.remote_process:
-                await self.create_process()
-
-            return await self.exec_remote_cmd(
-                f"await {self.remote_var}.{method_name}({params})",
+        def wrapper(*args, **kwargs) -> typing.Any:
+            params, call_kwargs = self.collect_params(args, kwargs)
+            return self.exec_remote_cmd_sync(
+                TYPE_DEF, method_name, params=params, kwargs=call_kwargs
             )
 
         return wrapper
 
-    def __getattribute__(self, item):
+    def __remote_call_coroutine(self, method_name: str) -> typing.Any:
         """
-        Checks whether the called method is listed in `remote_methods`
-        and, if so, wraps it with `remote_call`.
+        Wraps the called method with RPC execution.
         """
-        remote_methods = object.__getattribute__(self, "remote_methods")
-        remote_call = object.__getattribute__(self, "remote_call")
 
-        if item not in remote_methods:
-            return object.__getattribute__(self, item)
-
-        return remote_call(item)
-
-    async def read_output(self):
-        """
-        Reads the reply from the RPC server.
-        If an error was returned, raises it.
-        If simple data was returned, converts it to the corresponding Python type.
-        """
-        try:
-            response = await asyncio.wait_for(
-                self.rpc_connection.reader.readuntil(b">>>"), timeout=self.timeout
+        async def wrapper(*args, **kwargs) -> typing.Any:
+            params, call_kwargs = self.collect_params(args, kwargs)
+            return await self.exec_remote_cmd(
+                TYPE_ASYNC, method_name, params=params, kwargs=call_kwargs
             )
 
-            if not response:
-                self.logger.debug("no response")
-                return None
+        return wrapper
 
-            result = response.decode()[:-3]
+    def __remote_call_attribute(self, method_name: str) -> typing.Any:
+        """
+        Fetch a remote attribute or property from synchronous code.
+        """
+        return self.exec_remote_cmd_sync(TYPE_ATTR, method_name)
 
-            if result == "None":
-                self.logger.debug("response is None")
-                return None
+    def patched_init(self, *_, **__):
+        pass
 
-            if result.isnumeric():
-                self.logger.debug("response is numeric")
-                return int(result)
+    def patched_getattribute(self):
+        """
+        Wrap methods, properties and instance attributes with a remote call.
+        """
 
-            if result in {"False", "True"}:
-                self.logger.debug("response is bool")
-                return result == "True"
+        def wrapper(obj, item: str):
+            target = inspect.getattr_static(self.original_class, item, None)
 
-            if "Traceback" in result:
-                if "TimeoutError" in result:
-                    raise TimeoutError("Remote command executed with timeout on RPC server side")
+            if inspect.iscoroutinefunction(target):
+                return self.__remote_call_coroutine(item)
 
-                raise RemoteCommandExecutingError(result)
+            if isinstance(target, (classmethod, staticmethod)) or inspect.isroutine(target):
+                return self.__remote_call_method(item)
 
-            self.logger.debug("response is str")
-            return result
+            return self.__remote_call_attribute(item)
 
-        except asyncio.TimeoutError:
-            self.logger.debug(f"response timeout: {self.timeout}")
+        return wrapper
+
+    def read_output(self, result: typing.Any):
+        """
+        Converts the RPC reply to the corresponding Python type.
+        If an error was returned, raises it.
+        """
+        if result is None:
+            self.logger.debug("response is None")
             return None
 
-    async def create_process(self):
+        if isinstance(result, bool):
+            self.logger.debug("response is bool")
+            return result
+
+        if isinstance(result, (int, float, list, dict)):
+            self.logger.debug(f"response is {type(result).__name__}")
+            return result
+
+        if not isinstance(result, str):
+            return result
+
+        if not result:
+            self.logger.debug("no response")
+            return None
+
+        if result == "None":
+            self.logger.debug("response is None")
+            return None
+
+        if result.isnumeric():
+            self.logger.debug("response is numeric")
+            return int(result)
+
+        if result in {"False", "True"}:
+            self.logger.debug("response is bool")
+            return result == "True"
+
+        if "Traceback" in result:
+            if "TimeoutError" in result:
+                raise TimeoutError("Remote command executed with timeout on RPC server side")
+
+            raise RemoteCommandExecutingError(result)
+
+        self.logger.debug("response is str")
+        return result
+
+    async def create_remote_object(self):
         """
         Create the instance of the class on the remote machine
         """
-        params = self.create_method_params(
+
+        self.logger.info(f"rpc current event loop id = {id(asyncio.get_running_loop())}")
+        params, kwargs = self.collect_params(
             (),
             self.kwargs,
             add_event_loop=True,
             add_testing_model=TestingModel.machine_local,
+            add_clickhouse="xfw" in self.remote_class_name.lower(),
         )
-        await self.exec_remote_cmd(f"{self.remote_var} = {self.remote_class_name}({params})")
+        await self.exec_remote_cmd(
+            TYPE_NEW, self.remote_class_name, params=params, kwargs=kwargs, target=self.remote_var
+        )
         self.remote_process = True
 
-    @staticmethod
-    def create_method_params(
-        args: tuple, kwargs: dict, add_event_loop: bool = False, add_testing_model: int = None
-    ) -> str:
+    @classmethod
+    def collect_params(
+        cls,
+        args: tuple,
+        kwargs: dict,
+        add_event_loop: bool = False,
+        add_testing_model: int = None,
+        add_clickhouse: bool = False,
+    ) -> tuple[list, dict]:
         """
-        Creates a string representation of the method's *args and **kwargs for execution.
+        Collect JSON-serializable *args and **kwargs for an RPC call.
         """
-        params = ""
-        args_formatters = {str: '"""{v}"""'}
-        kwargs_formatters = {
-            str: '{k}="""{v}"""',
-        }
-
-        first_time = True
-
-        for arg in args:
-            formatter = args_formatters.get(arg.__class__, "{v}")
-
-            if first_time:
-                params += formatter.format(v=arg)
-                first_time = False
-            else:
-                params += ","
-                params += formatter.format(v=arg)
-
-        first_time = True
-
-        for k, v in kwargs.items():
-            formatter = kwargs_formatters.get(v.__class__, "{k}={v}")
-
-            if first_time:
-                params += formatter.format(k=k, v=v)
-                first_time = False
-            else:
-                params += ","
-                params += formatter.format(k=k, v=v)
+        params = [arg for arg in args if isinstance(arg, cls._simple_types)]
+        call_kwargs = {k: v for k, v in kwargs.items() if isinstance(v, cls._simple_types)}
 
         if add_event_loop:
-            params += ",loop=loop"
+            call_kwargs["loop"] = SENTINEL_LOOP
 
-        if add_testing_model:
-            params += f",testing_model={add_testing_model}"
+        if add_testing_model is not None:
+            call_kwargs["testing_model"] = int(add_testing_model)
 
-        return params
+        if add_clickhouse:
+            call_kwargs["clickhouse_client"] = SENTINEL_CLICKHOUSE
 
-    async def run_start(self):
-        """
-        Rewrites the `run_start` method to use a shared RPC call for
-        all network classes in the user-defined async server.
-        """
-        await self.create_process()
-        self.logger.debug(f"remote process with interpreter created, var = {self.remote_var}")
-
-        await self.exec_remote_cmd(f"await {self.remote_var}.start()")
-
-
-class RemoteServer(RemotePythonInterpreter):
-    """
-    Base remote server class for all user-defined servers.
-    Defines the list of high-level RPC commands and overrides the `receive` method.
-    """
-
-    remote_methods = [
-        "run_stop",
-        "start",
-        "stop",
-        "restart",
-        # tcp / udp
-        "receive_message",
-    ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    async def receive(self, *_, **__) -> typing.Optional[str]:
-        return await self.exec_remote_cmd(f"await {self.remote_var}.receive()")
+        return params, call_kwargs

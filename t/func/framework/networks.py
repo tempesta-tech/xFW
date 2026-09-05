@@ -12,7 +12,7 @@ from config import ConfigSettings
 from framework.utils import run_cmd
 
 
-class BaseNetwork(metaclass=abc.ABCMeta):
+class BaseNetwork:
     def __init__(self, logger: logging.Logger, config: ConfigSettings):
         self.logger = logger
         self.config = config

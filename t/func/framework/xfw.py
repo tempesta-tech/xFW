@@ -12,7 +12,6 @@ from typing import AsyncGenerator, Iterator, Optional
 import httpx
 
 from framework.clickhouse import ClickhouseClient
-from framework.remote import RemoteServer
 from framework.stateful import NetworkStateful, State
 from framework.utils import (
     RetryException,
@@ -457,26 +456,3 @@ class XFW(NetworkStateful):
             assert code == 0, f"Can not set MTU: {stderr}"
 
             self.logger.info(f"MTU changed to {size}")
-
-
-class XFWRemote(RemoteServer, XFW):
-    remote_methods = [
-        "start",
-        "stop",
-        "restart",
-        "rules_set",
-        "rules_push_config",
-        "rules_push_config_short",
-        "rules_push_config_inline",
-        "rules_push_patch",
-        "rules_push_patch_short",
-        "rules_push_patch_inline",
-        "set_http_port",
-        "set_config",
-        "syncookies_read_kern_stats",
-        "set_mtu",
-    ]
-
-    def __init__(self, *args, **kwargs) -> None:
-        RemoteServer.__init__(self, *args, **kwargs)
-        XFW.__init__(self, *args, **kwargs)

@@ -9,16 +9,12 @@ from abc import ABC
 from typing import Optional
 
 from framework.asyn.tcp_base import BaseTcpStateful
-from framework.remote import RemoteServer
 from framework.stateful import IP4Mixin, IP6Mixin
 
 __all__ = [
     "TcpServer",
     "TcpV4Server",
     "TcpV6Server",
-    "TcpServerRemote",
-    "TcpV4ServerRemote",
-    "TcpV6ServerRemote",
 ]
 
 
@@ -69,7 +65,7 @@ class ServerTransport(asyncio.Transport):
         return super().get_protocol()
 
 
-class TcpServer(BaseTcpStateful, ABC):
+class TcpServer(BaseTcpStateful):
     def __init__(self, *args, echo_mode: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         self.server: asyncio.Server = None
@@ -151,12 +147,3 @@ class TcpV4Server(IP4Mixin, TcpServer): ...
 
 
 class TcpV6Server(IP6Mixin, TcpServer): ...
-
-
-class TcpV4ServerRemote(RemoteServer, TcpV4Server): ...
-
-
-class TcpV6ServerRemote(RemoteServer, TcpV6Server): ...
-
-
-class TcpServerRemote(RemoteServer): ...

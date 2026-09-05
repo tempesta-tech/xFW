@@ -15,7 +15,7 @@ __all__ = [
 ]
 
 
-class DnsUdpClient(BaseDnsStateful, ABC):
+class DnsUdpClient(BaseDnsStateful):
     async def reply_for_non_existing_query(self) -> bool:
         message: DNSRecord = await self.receive_dns_record()
 

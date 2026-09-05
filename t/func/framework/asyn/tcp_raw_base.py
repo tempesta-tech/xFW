@@ -18,7 +18,7 @@ __all__ = [
 ]
 
 
-class BaseTcpRawStateful(RawSocketNetworkStateful, abc.ABC):
+class BaseTcpRawStateful(RawSocketNetworkStateful):
     iptables_binary_name: str
     socket_proto = socket.IPPROTO_TCP
 

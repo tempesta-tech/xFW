@@ -14,7 +14,7 @@ from framework.stateful import IP4Mixin, IP6Mixin, RawSocketNetworkStateful
 __all__ = ["UdpRawClient", "UdpIpV4RawClient", "UdpIpV6RawClient"]
 
 
-class UdpRawClient(RawSocketNetworkStateful, ABC):
+class UdpRawClient(RawSocketNetworkStateful):
     socket_proto = socket.IPPROTO_UDP
 
     def __init__(self, *args, auto_add_host: bool = True, **kwargs):

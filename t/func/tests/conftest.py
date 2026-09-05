@@ -7,10 +7,10 @@ pytest_plugins = [
     "tests.fixtures.common",
     "tests.fixtures.network",
     # other utils and hooks
+    "tests.fixtures.rpc",
     "tests.fixtures.clickhouse",
     "tests.fixtures.xfw",
     "tests.fixtures.clonners",
-    "tests.fixtures.rpc",
     "tests.fixtures.rules",
     "tests.fixtures.hooks",
     # client and servers

@@ -14,12 +14,11 @@ from framework.rpc.client import RpcClient
 async def udp_ip4_server(
     config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> UdpServer:
-    new_server = server_fabric(
+    new_server = await server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=UdpV4Server,
-        remote_class=UdpV4ServerRemote,
     )
     yield new_server
     await new_server.stop()
@@ -29,12 +28,11 @@ async def udp_ip4_server(
 async def udp_ip6_server(
     config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> UdpServer:
-    new_server = server_fabric(
+    new_server = await server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=UdpV6Server,
-        remote_class=UdpV6ServerRemote,
     )
     yield new_server
     await new_server.stop()
@@ -88,12 +86,11 @@ async def udp_ip4_mapped_ip6_server(
     logging_level: int,
     rpc_connection,
 ) -> UdpServer:
-    new_server = server_fabric(
+    new_server = await server_fabric(
         config=config,
         logging_level=logging_level,
         local_class=UdpV6ServerMappedIP,
         rpc_connection=rpc_connection,
-        remote_class=UdpV6ServerRemote,
         force_ip4=True,
     )
     yield new_server

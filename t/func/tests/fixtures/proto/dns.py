@@ -20,12 +20,11 @@ async def dns_udp_ip4_server(
     # XFW currently hardcoded to 53 port
     # port=config.backend_port,
 
-    new_server = server_fabric(
+    new_server = await server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=DnsUdpV4Server,
-        remote_class=DnsUdpV4ServerRemote,
         port=53,
     )
     yield new_server
@@ -42,12 +41,11 @@ async def dns_udp_ip6_server(
     # XFW currently hardcoded to 53 port
     # port=config.backend_port,
 
-    new_server = server_fabric(
+    new_server = await server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=DnsUdpV6Server,
-        remote_class=DnsUdpV6ServerRemote,
         port=53,
     )
     yield new_server

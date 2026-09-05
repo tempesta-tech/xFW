@@ -6,6 +6,7 @@ from typing import Type, TypeVar, Union
 
 from config import ConfigSettings, NetworkType, TestingModel
 from framework.logger import get_logger
+from framework.remote import RemotePythonInterpreter
 
 TClient = TypeVar("TClient")
 TLocalServer = TypeVar("TLocalServer")
@@ -63,12 +64,11 @@ def client_fabric(
     return local_class(**params)
 
 
-def server_fabric(
+async def server_fabric(
     config: ConfigSettings,
     logging_level: int,
     rpc_connection,
     local_class: Type[TLocalServer],
-    remote_class: Type[TRemoteServer],
     port: int = None,
     force_ip4: bool = False,
     **extra_params,
@@ -77,11 +77,6 @@ def server_fabric(
     Creates the server instance based on the configuration
     and local/server class
     """
-    cls = local_class
-
-    if config.testing_model != TestingModel.same_host:
-        cls = remote_class
-
     bind_ip4 = force_ip4 or (local_class.socket_family == socket.AF_INET)
 
     if bind_ip4:
@@ -122,16 +117,22 @@ def server_fabric(
         else:
             params["ipv6_testing"] = config.backend_ipv6_host
 
-    return cls(**params)
+    if config.testing_model == TestingModel.same_host:
+        print("using server regular local object: ", local_class)
+        return local_class(**params)
+
+    remote = RemotePythonInterpreter(**params, original_local_class=local_class)
+    await remote.create_remote_object()
+    print("using server remote fabric to create a object: ", remote.get_new_obj())
+    return remote.get_new_obj()
 
 
-def xfw_fabric(
+async def xfw_fabric(
     config: ConfigSettings,
     logging_level: int,
     rpc_connection,
     clickhouse_client,
     local_class: Type[TLocalServer],
-    remote_class: Type[TRemoteServer],
     geo: bool = False,
     **extra_params,
 ) -> Union[TLocalServer, TRemoteServer]:
@@ -139,10 +140,6 @@ def xfw_fabric(
     Creates the XFW instance based on the configuration,
     local/server class and the geoip feature
     """
-    cls = local_class
-
-    if config.testing_model != TestingModel.same_host:
-        cls = remote_class
 
     params = dict(
         build_dir=config.xfw_build_dir,
@@ -169,4 +166,11 @@ def xfw_fabric(
     if geo:
         params["geolite2_db_path"] = config.xfw_geolite2_country_db_path
 
-    return cls(**params)
+    if config.testing_model == TestingModel.same_host:
+        print("using regular local object: ", local_class)
+        return local_class(**params)
+
+    remote = RemotePythonInterpreter(**params, original_local_class=local_class)
+    await remote.create_remote_object()
+    print("using remote fabric to create a object: ", remote.get_new_obj())
+    return remote.get_new_obj()

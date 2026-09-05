@@ -13,7 +13,7 @@ from framework.stateful import IP4Mixin, IP6Mixin, RawSocketNetworkStateful
 __all__ = ["TcpRawClient", "TcpIpV4RawClient", "TcpIpV6RawClient"]
 
 
-class TcpRawClient(BaseTcpRawStateful, RawSocketNetworkStateful, ABC):
+class TcpRawClient(BaseTcpRawStateful, RawSocketNetworkStateful):
 
     @property
     def valid_syn_packet(self) -> TCP:

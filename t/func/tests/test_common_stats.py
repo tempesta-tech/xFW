@@ -340,7 +340,7 @@ async def test_ingress_stats(
     )
     client.socket_proto = sock_proto
 
-    server = server_fabric(
+    server = await server_fabric(
         config=config,
         logging_level=logging_level,
         local_class=InvalidEthTypeRawServer,
@@ -529,7 +529,7 @@ async def test_egress_stats(
     logging_level: int,
     rpc_connection,
 ):
-    server = server_fabric(
+    server = await server_fabric(
         rpc_connection=rpc_connection,
         config=config,
         logging_level=logging_level,

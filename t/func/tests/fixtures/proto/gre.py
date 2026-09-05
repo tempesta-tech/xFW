@@ -42,12 +42,11 @@ async def gre_ip6_raw_client(
 async def gre_ip4_raw_server(
     config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> UdpServer:
-    new_server = server_fabric(
+    new_server = await server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=GreRawV4Server,
-        remote_class=GreRawV4Server,
     )
     yield new_server
     await new_server.stop()
@@ -57,12 +56,11 @@ async def gre_ip4_raw_server(
 async def gre_ip6_raw_server(
     config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
 ) -> UdpServer:
-    new_server = server_fabric(
+    new_server = await server_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=GreRawV6Server,
-        remote_class=GreRawV6Server,
     )
     yield new_server
     await new_server.stop()

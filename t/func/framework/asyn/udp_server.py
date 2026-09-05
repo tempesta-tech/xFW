@@ -1,14 +1,12 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 import asyncio
-import ipaddress
 import logging
 import socket
 from abc import ABC
 from typing import Optional
 
 from framework.asyn.udp_base import BaseUdpProtocol, BaseUdpStateful
-from framework.remote import RemoteServer
 from framework.stateful import IP4Mixin, IP6Mixin
 
 __all__ = [
@@ -16,8 +14,6 @@ __all__ = [
     "UdpV4Server",
     "UdpV6Server",
     "UdpV6ServerMappedIP",
-    "UdpV4ServerRemote",
-    "UdpV6ServerRemote",
 ]
 
 
@@ -37,7 +33,7 @@ class UdpServerProtocol(BaseUdpProtocol):
             self.transport.sendto(data, addr)
 
 
-class UdpServer(BaseUdpStateful, ABC):
+class UdpServer(BaseUdpStateful):
     protocol: UdpServerProtocol
     transmitting_protocol = UdpServerProtocol
 
@@ -81,9 +77,3 @@ class UdpV6ServerMappedIP(UdpServer, IP6Mixin):
     @property
     def ip_testing(self):
         return self.ipv4
-
-
-class UdpV4ServerRemote(RemoteServer, UdpV4Server): ...
-
-
-class UdpV6ServerRemote(RemoteServer, UdpV6Server): ...

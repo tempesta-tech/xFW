@@ -4,7 +4,6 @@
 # All imports need to prepare the env and preload all reqs
 
 import asyncio
-import copy
 import dataclasses
 import time
 import traceback
@@ -14,9 +13,23 @@ from framework.logger import *
 logger = get_logger("server")
 
 from framework.asyn import *
+from framework.clickhouse import ClickhouseClient
 from framework.cmp import *
 from framework.namespaces import *
 from framework.networks import *
+from framework.rpc.protocol import (
+    FRAME_END,
+    SENTINEL_CLICKHOUSE,
+    SENTINEL_LOOP,
+    TYPE_ASYNC,
+    TYPE_ATTR,
+    TYPE_DEF,
+    TYPE_NEW,
+    TYPE_SHUTDOWN,
+    RpcRequest,
+    RpcResponse,
+    encode_result,
+)
 from framework.utils import *
 from framework.xfw import *
 
@@ -24,52 +37,28 @@ from framework.xfw import *
 @dataclasses.dataclass
 class RpcServer:
     """
-    The RpcServer receives code via TCP and executes it
-    in a persistent context that is preserved throughout the
+    The RpcServer receives structured RPC calls via TCP and executes
+    them in a persistent context that is preserved throughout the
     entire session.
 
-    Commands are separated by the delimiter '<<<', which allows
-    sending multiline code blocks.
+    Each request is a JSON object framed by a newline:
 
-    Since the server maintains all variables in a shared context,
-    name collisions are possible. Use unique variable names to
-    avoid them.
+        {"id": 1, "type": "def", "target": "obj_...", "name": "ip_format",
+         "params": ["2001::2"], "kwargs": {}}
 
-    The two main command types the server can process:
-        - with `await`
-        - without `await`
+    Types:
+        attr     - read ``target.name``
+        def      - call ``target.name(*params, **kwargs)``
+        async    - await ``target.name(*params, **kwargs)``
+        new      - ``target = name(*params, **kwargs)`` in the session context
+        shutdown - stop the server
 
-    Commands starting with `await` are executed in the server's
-    event loop as a newly created coroutine. The result of the
-    command is the result of the awaited expression. This is
-    typically used for calling async methods or updating properties
-    with coroutines. Example:
-
-    ```python
-        await server.execute(10, "hello")
-    ```
-
-    Commands without await are useful for creating variables,
-    instantiating objects, or performing synchronous operations.
-    The result of such a block must be assigned to the variable
-    res, which is then returned to the client. Multiline example:
-
-    ```python
-        server = Server(host="hello", port=1234)
-        res = server.start()
-    ```
+    The matching response is ``{"id": ..., "result": ...}`` (or ``error``).
+    The client matches replies by ``id``.
 
     Currently, only simple return types are supported:
     str, int, bool, None, lists/dicts of these types,
     as well as JSON-serializable objects.
-
-    This covers ~95% of use cases. For the remaining 5%, convert
-    complex objects to simple types — e.g., instead of returning
-    a full TCP packet object, return a flag indicating receipt,
-    or encode the data as JSON/base64.
-
-    The server accepts the special message `__SHUTDOWN__`,
-    which shuts it down.
     """
 
     host: str
@@ -77,38 +66,53 @@ class RpcServer:
     cmd_timeout: float
     server: asyncio.Server = None
     stop_if_not_connections_sec: int = 10
-    shutdown_message: str = "__SHUTDOWN__"
     client_connected: bool = False
     stop_task: asyncio.Task = None
+    clickhouse_client: ClickhouseClient = None
 
-    async def execute_code(self, global_ctx: dict, code: str) -> tuple[str, str, float]:
+    def _resolve_kwargs(self, kwargs: dict, global_ctx: dict) -> dict:
+        resolved = {}
+        for key, value in kwargs.items():
+            if value == SENTINEL_LOOP:
+                resolved[key] = global_ctx["loop"]
+            elif value == SENTINEL_CLICKHOUSE:
+                resolved[key] = self.clickhouse_client
+            else:
+                resolved[key] = value
+        return resolved
+
+    async def execute_request(self, global_ctx: dict, req: RpcRequest) -> tuple[str, object, float]:
         """
-        Executes the code synchronously or asynchronously.
-        Returns the result or an error.
+        Executes a structured RPC request. Returns a log label, the result
+        (or a traceback string), and elapsed time.
         """
         start_at = time.time()
-        res = None
-        cmd = copy.copy(code)
+        label = f"{req.type} {req.target}.{req.name}".strip(".")
 
         try:
-            if not cmd.startswith("await"):
-                local_ctx = {}
-                exec(cmd, global_ctx, local_ctx)
-                global_ctx.update(local_ctx)
-                res = local_ctx.get("res")
-            else:
-                cmd = f"async def coro(): return {cmd}"
-                exec(cmd, global_ctx)
-                coro = globals()["coro"]
-                # this timeout should be greater then inner
-                res = await asyncio.wait_for(coro(), timeout=self.cmd_timeout)
-                cmd += "\nawait coro()"
+            kwargs = self._resolve_kwargs(req.kwargs, global_ctx)
 
+            if req.type == TYPE_ATTR:
+                res = getattr(global_ctx[req.target], req.name)
+            elif req.type == TYPE_DEF:
+                res = getattr(global_ctx[req.target], req.name)(*req.params, **kwargs)
+            elif req.type == TYPE_ASYNC:
+                res = await asyncio.wait_for(
+                    getattr(global_ctx[req.target], req.name)(*req.params, **kwargs),
+                    timeout=self.cmd_timeout,
+                )
+            elif req.type == TYPE_NEW:
+                cls = global_ctx.get(req.name)
+                if cls is None:
+                    cls = globals()[req.name]
+                global_ctx[req.target] = cls(*req.params, **kwargs)
+                res = None
+            else:
+                raise ValueError(f"unknown rpc type: {req.type}")
         except Exception:
             res = traceback.format_exc()
 
-        finally:
-            return cmd, str(res), time.time() - start_at
+        return label, res, time.time() - start_at
 
     async def handle_client(
         self,
@@ -118,9 +122,9 @@ class RpcServer:
         """
         Accepts new client connections and processes incoming messages.
 
-        Checks for the special `__SHUTDOWN__` message to stop the server.
+        Checks for the special shutdown request to stop the server.
 
-        Sets the `client_connected` flag to prevent the server from stopping
+        Sets the ``client_connected`` flag to prevent the server from stopping
         if no client has ever connected.
         """
         self.client_connected = True
@@ -133,47 +137,52 @@ class RpcServer:
 
         try:
             while True:
-                data = await reader.readuntil(b"<<<")
+                data = await reader.readuntil(FRAME_END.encode())
 
                 if not data:
                     break
 
-                data = data[:-3]
-                message = data.decode()
-                message = message.strip()
-
+                message = data.decode().strip()
                 if not message:
                     logger.info(f"{self} Skipped empty string from {formatted_addr}")
                     continue
 
-                if message == self.shutdown_message:
-                    logger.info(f"Received {self.shutdown_message} code from {formatted_addr}")
+                req = RpcRequest.decode(message)
+
+                if req.type == TYPE_SHUTDOWN:
+                    logger.info(f"Received shutdown from {formatted_addr} id={req.id}")
+                    writer.write(RpcResponse(id=req.id, result=None).encode())
+                    await writer.drain()
                     writer.close()
                     await writer.wait_closed()
                     return await self.shutdown()
 
                 logger.info(f"================================================")
-                logger.info(f"Received code from {formatted_addr}")
-                logger.info(f"------------------- CODE -----------------------")
+                logger.info(f"Received call from {formatted_addr}")
+                logger.info(f"id={req.id} type={req.type} target={req.target} name={req.name}")
+                logger.info(f"params={req.params} kwargs={req.kwargs}")
+                logger.info(f"------------------- EXEC -----------------------")
 
-                code, result, exec_time = await self.execute_code(global_ctx, message)
+                label, result, exec_time = await self.execute_request(global_ctx, req)
 
-                for line in code.split("\n"):
-                    logger.info(line)
-
+                logger.info(label)
                 logger.info(f"------------------------------------------------")
 
-                if "Traceback" in result:
+                error = None
+                encoded = None
+                if isinstance(result, str) and "Traceback" in result:
+                    error = result
                     logger.info(f"Exec.Time={exec_time:.3f}s")
                     logger.info(f"------------------ ERROR -----------------------")
                     for line in result.split("\n"):
                         logger.info(line)
                 else:
-                    logger.info(f"Exec.Time={exec_time:.3f}s, Result={result}")
+                    encoded = encode_result(result)
+                    logger.info(f"Exec.Time={exec_time:.3f}s, Result={encoded}")
 
                 logger.info(f"------------------------------------------------\n\n")
 
-                writer.write(f"{result}>>>".encode())
+                writer.write(RpcResponse(id=req.id, result=encoded, error=error).encode())
                 await writer.drain()
 
         except (asyncio.CancelledError, TimeoutError):
@@ -227,6 +236,7 @@ class RpcServer:
         self.server = await asyncio.start_server(
             client_connected_cb=self.handle_client, host=self.host, port=self.port
         )
+        await self.clickhouse_client.connect()
 
         if self.stop_if_not_connections_sec:
             loop = asyncio.get_event_loop()

@@ -8,7 +8,7 @@ from framework.asyn import *
 from framework.clickhouse import ClickhouseClient
 from framework.fabrics import xfw_fabric
 from framework.rpc.client import RpcClient
-from framework.xfw import XFW, XFWRemote
+from framework.xfw import XFW
 
 
 @pytest.fixture
@@ -18,12 +18,11 @@ async def xfw(
     rpc_connection: Optional[RpcClient],
     clickhouse_client: ClickhouseClient,
 ) -> XFW:
-    xfw = xfw_fabric(
+    xfw = await xfw_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=XFW,
-        remote_class=XFWRemote,
         clickhouse_client=clickhouse_client,
     )
     try:
@@ -40,12 +39,11 @@ async def xfw_geoip(
     rpc_connection: Optional[RpcClient],
     clickhouse_client: ClickhouseClient,
 ) -> XFW:
-    xfw = xfw_fabric(
+    xfw = await xfw_fabric(
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
         local_class=XFW,
-        remote_class=XFWRemote,
         geo=True,
         clickhouse_client=clickhouse_client,
     )

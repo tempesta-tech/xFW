@@ -13,7 +13,7 @@ __all__ = [
 ]
 
 
-class BaseTcpStateful(RegularKernelSocketNetworkStateful, ABC):
+class BaseTcpStateful(RegularKernelSocketNetworkStateful):
     socket_type = socket.SOCK_STREAM
     transport: asyncio.Transport
 

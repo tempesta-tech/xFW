@@ -120,6 +120,7 @@ async def test_raw_socket_tcp_traffic_collisions(
     await tcp_raw_client_2.stop()
 
 
+@pytest.mark.only_on_same_host
 async def test_tcp_retransmission_delay(network):
     namespace = network.config.client_namespace
 
