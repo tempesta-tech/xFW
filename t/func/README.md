@@ -432,3 +432,31 @@ cp .nat.env .env
 pytest -c=profiles/host.nat.long.ini
 pytest -c=profiles/host.nat.short.ini
 ```
+
+
+## Fast and Normal modes
+
+Originally, each test required the xfw fixture that restarts the xfw application. This guaranteed a clean test 
+environment, as every test recreated sockets, cleared connections, and so on. However, each xfw restart takes 
+about 1 second. With over 1,000 tests, a significant amount of time was spent just on application reloads.
+
+The Fast mode uses a rules reset instead of a full xfw restart. The rules reset is a PUSH command with 
+the empty rule `xfw {}`. It is important to understand that even this empty rule 
+still activates some internal filters (for example, udp_anomaly_filter), unlike a full restart which stops 
+all filtration. In addition, some metrics may still be collected and can affect the final results.
+
+This mode is potentially dangerous and should only be used with a full understanding of the above behaviour. 
+The main advantage is that a rules reset completes in milliseconds, eliminating the long pauses caused by 
+application restarts. This makes Fast mode especially useful for Pull Request checks - the total time 
+of various PR checks can be reduced from about 3 hours to around 30 minutes.
+
+How to run Normal mode (default):
+
+```bash
+pytest
+```
+
+How to run Fast mode:
+```bash
+pytest --xfw-use-rule-reset
+```

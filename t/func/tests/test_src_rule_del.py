@@ -275,7 +275,7 @@ async def test_src_del_block_by_multiple_port_range(
 
 
 async def test_src_replace_block_by_geoip_country(
-    xfw_geoip: XFW,
+    xfw: XFW,
     protocol: str,
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
@@ -285,14 +285,14 @@ async def test_src_replace_block_by_geoip_country(
     true_if_allowed: bool,
     error_message: str,
 ):
-    await xfw_geoip.rules_set(f"""
+    await xfw.rules_set(f"""
         xfw {{
             defaults {{ src_ip {ip_version}: {src_defaults}; }}
             src=extended_group {ip_version}.{protocol} : block {{ rs }}
         }}
         """)
 
-    await xfw_geoip.rules_patch(f"""
+    await xfw.rules_patch(f"""
         xfw {{
             src=extended_group/del {ip_version}.{protocol};
         }}

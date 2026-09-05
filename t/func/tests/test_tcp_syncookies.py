@@ -207,31 +207,27 @@ def tcp_syncookie_client(request, ip_version):
 
 
 @pytest.fixture
-async def xfw_with_forced_syncookie(xfw: XFW) -> AsyncGenerator[XFW, None]:
+async def xfw_with_forced_syncookie(xfw_restarted: XFW) -> AsyncGenerator[XFW, None]:
     """
     While `sysctl-tcp-syncookies: 2` is not practical, it's required for the
     test to get a deterministic kernel behavior always requireing a syncookie
     generation.
     """
-    original_mode = await xfw.syncookies_value_get()
-    await xfw.set_config(f"""{{
-        "devices": "{xfw.network_interface}",
+    original_mode = await xfw_restarted.syncookies_value_get()
+    await xfw_restarted.set_config(f"""{{
+        "devices": "{xfw_restarted.network_interface}",
         "devices-mode": "skb",
         "verbose": true,
-        "mgr-args": "--listen {xfw.ipv4} --port {xfw.port}",
+        "mgr-args": "--listen {xfw_restarted.ipv4} --port {xfw_restarted.port}",
         "sysctl-tcp-max-syn-backlog": 1,
         "sysctl-tcp-syncookies": 2
         }}""")
-    await xfw.restart()
+    await xfw_restarted.restart()
 
-    # We need to call metrics here to exclude syncookie statistics changes in the tests.
-    # We just make the first request to xfw immediately after the launch.
-    await xfw.metrics()
+    yield xfw_restarted
 
-    yield xfw
-
-    await xfw.stop()
-    await xfw.syncookies_value_set(original_mode)
+    await xfw_restarted.stop()
+    await xfw_restarted.syncookies_value_set(original_mode)
 
 
 @pytest.fixture
@@ -255,6 +251,7 @@ async def group_of_clients(
         await client.stop()
 
 
+@pytest.mark.not_in_fast_mode
 @pytest.mark.parametrize(
     "tcp_syncookies_parameter",
     [
@@ -332,6 +329,7 @@ async def test_normal_connection(
     check_stats(diff, (0, 0, 0))
 
 
+@pytest.mark.not_in_fast_mode
 @pytest.mark.parametrize(
     "ip_version,send_options,expected_options",
     [
@@ -725,6 +723,7 @@ _FLOOD_GENERATED_MAX_VALUE = [
 _FLOOD_GENERATED_MIN_VALUE = [0, _FLOOD_GENERATED_DELTA]
 
 
+@pytest.mark.not_in_fast_mode
 @pytest.mark.parametrize(
     "option,packets_amount,duration,packet,expected_xfw,expected_kernel",
     [
@@ -877,6 +876,7 @@ _SYNCOOKIE_SMALL_FRACTION_VAL_RANGE = [0, _HANDSHAKE_FLOOD_GENERATED * 0.1]
 _SYNCOOKIE_WHOLE_VAL_RANGE = [0, _HANDSHAKE_FLOOD_GENERATED]
 
 
+@pytest.mark.not_in_fast_mode
 @pytest.mark.parametrize(
     "option,handshakes,duration,expected_xfw,expected_kernel",
     [
@@ -971,6 +971,7 @@ async def test_normal_connection_under_handshake_flood(
     check_stats(diff, expected_xfw)
 
 
+@pytest.mark.not_in_fast_mode
 async def test_artificial_flood_timer(
     xfw_with_forced_syncookie: XFW,
     tcp_server: TcpServer,
@@ -1065,6 +1066,7 @@ async def test_artificial_flood_timer(
     )
 
 
+@pytest.mark.not_in_fast_mode
 async def test_flood_allowed_by_del_rule(
     xfw_with_forced_syncookie: XFW,
     tcp_server: TcpServer,

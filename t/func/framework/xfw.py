@@ -301,6 +301,9 @@ class XFW(NetworkStateful):
         self.logger.info(f"push rules: {new_rules}")
         await self.__rules_push(f'--patch-inline "{new_rules}"')
 
+    async def rules_reset(self):
+        return await self.rules_push_config_inline("xfw {}")
+
     def __add_to_rules_net_directive(self, rules: str, ip4: str = None, ip6: str = None):
         ip_version = "ip4" if ip4 else "ip6"
         ip = ip4 or ip6

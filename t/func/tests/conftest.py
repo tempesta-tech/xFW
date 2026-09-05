@@ -7,6 +7,7 @@ pytest_plugins = [
     "tests.fixtures.common",
     "tests.fixtures.network",
     # other utils and hooks
+    "tests.fixtures.parameters",
     "tests.fixtures.clickhouse",
     "tests.fixtures.xfw",
     "tests.fixtures.clonners",
