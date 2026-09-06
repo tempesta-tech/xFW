@@ -6,17 +6,17 @@ from typing import Any
 import pytest
 
 from framework.asyn import *
-from framework.stateful import RegularKernelSocketNetworkStateful
+from framework.stateful import SocketBaseNetworkStateful
 from framework.utils import ClonerCallable
 
 
 @pytest.fixture(scope="function")
 async def server_cloner() -> ClonerCallable:
-    _clones: list[RegularKernelSocketNetworkStateful] = []
+    _clones: list[SocketBaseNetworkStateful] = []
 
     def wrapper(
-        cloner: RegularKernelSocketNetworkStateful, amount: int, fabric: Optional[Any] = None
-    ) -> list[RegularKernelSocketNetworkStateful]:
+        cloner: SocketBaseNetworkStateful, amount: int, fabric: Optional[Any] = None
+    ) -> list[SocketBaseNetworkStateful]:
         nonlocal _clones
 
         ports = cloner.generate_new_ports(amount)
@@ -69,11 +69,11 @@ async def client_cloner(server_cloner) -> ClonerCallable:
         traffic to already closed server sockets, avoiding intermittent
         'ConnectionResetError' exceptions or hung test processes.
     """
-    _clones: list[RegularKernelSocketNetworkStateful] = []
+    _clones: list[SocketBaseNetworkStateful] = []
 
     def wrapper(
-        cloner: RegularKernelSocketNetworkStateful, amount: int, fabric: Optional[Any] = None
-    ) -> list[RegularKernelSocketNetworkStateful]:
+        cloner: SocketBaseNetworkStateful, amount: int, fabric: Optional[Any] = None
+    ) -> list[SocketBaseNetworkStateful]:
         nonlocal _clones
 
         ports = cloner.generate_new_ports(amount)
