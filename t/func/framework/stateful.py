@@ -199,6 +199,12 @@ class NetworkStateful(Stateful, abc.ABC):
         return f"::ffff:{self.ipv4}"
 
     @property
+    def ip_clickhouse(self) -> str:
+        if self.is_ip4:
+            return f"::ffff:{self.ip}"
+        return self.ip
+
+    @property
     def ip_testing(self) -> str:
         """
         Return the ip address that used in the

@@ -1,12 +1,16 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+import datetime
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, fields
+from enum import IntFlag
+from ipaddress import IPv4Address, IPv6Address
 from typing import AsyncGenerator, Generic, Optional, Self, Union
 
 from typing_extensions import TypeVar
 
+from framework.clickhouse import ClickhouseClient
 from framework.utils import run_cmd
 from framework.xfw import XFW
 
@@ -99,6 +103,10 @@ class InvalidMetric:
     name: str
     value: int
     expected: int | list[int]
+
+
+@dataclass
+class ClickhouseSingleMetric(BaseSingleMetric): ...
 
 
 @dataclass
@@ -413,3 +421,21 @@ class MetricsAnalyzer:
         invalid_metrics = expected_metrics.invalid_metrics
         if strict:
             assert len(invalid_metrics) == 0, f"Some metrics are different: {invalid_metrics}"
+
+    @asynccontextmanager
+    async def expected_clickhouse_metric_diff(
+        self,
+        clickhouse_client: ClickhouseClient,
+        ip_to_search: str,
+        expected_metric: property,
+    ) -> AsyncGenerator:
+        start_time = datetime.datetime.now(datetime.timezone.utc)
+        yield
+
+        await clickhouse_client.wait_for_number_of_records(
+            expected_records_n=1, expected_ip=ip_to_search, timestamp=start_time
+        )
+        records = await clickhouse_client.records_with(addr=ip_to_search, timestamp=start_time)
+        record = (await clickhouse_client.records_all())[-1]
+        # assert record.packets == 1
+        # assert metric.__get__(record)
