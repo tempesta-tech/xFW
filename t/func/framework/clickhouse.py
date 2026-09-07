@@ -68,6 +68,9 @@ class ClickhouseClient:
             dropped_events=db_record[5],
         )
 
+    async def current_timestamp(self) -> datetime.datetime:
+        return await self.client.command("SELECT now64(3)")  # type: ignore
+
     async def records_delete(self) -> None:
         """
         Delete all log records
@@ -106,6 +109,30 @@ class ClickhouseClient:
             )
         )
 
+    async def records_with(
+        self, addr: str | None = None, timestamp: datetime.datetime | None = None
+    ) -> typing.List[LogRecord]:
+        conditions = ""
+        where_clauses = []
+
+        if addr is not None:
+            where_clauses.append(f"addr = '{addr}'")
+
+        if timestamp is not None:
+            where_clauses.append(f"timestamp >= '{timestamp}'")
+
+        if where_clauses:
+            conditions = "WHERE " + " AND ".join(where_clauses)
+        print(f"{conditions = }")
+
+        results = await self.client.query(f"SELECT * FROM {self.table} {conditions}")
+        return list(
+            map(
+                lambda x: self.__build_log_record(x),
+                results.result_rows,
+            )
+        )
+
     async def records_last(self) -> typing.Optional[LogRecord]:
         """
         Read the data of tfw_logger daemon file
@@ -130,7 +157,7 @@ class ClickhouseClient:
         table schemas
         """
         self.logger.debug(f"dropped the table {self.table}")
-        return await self.client.command(f"drop table if exists {self.table}")
+        return await self.client.command(f"drop table if exists {self.table}")  # type: ignore
 
     @retry_on_failure(AssertionError)
     async def wait_for_number_of_records(self, expected_records_n: int, msg: str = "") -> None:
@@ -142,3 +169,11 @@ class ClickhouseClient:
         assert len(records) == expected_records_n, (
             msg or f"Current number of records: {len(records)}"
         )
+
+    @retry_on_failure(AssertionError)
+    async def wait_for_new_records(
+        self, timestamp: datetime.datetime, addr: str | None = None
+    ) -> None:
+        """ """
+        records = await self.records_with(addr=addr, timestamp=timestamp)
+        assert len(records) >= 1
