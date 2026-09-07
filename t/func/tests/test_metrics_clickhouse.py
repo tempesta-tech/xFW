@@ -4,8 +4,45 @@ from typing import Callable
 
 import pytest
 
-from framework.clickhouse import LogRecord
 from framework.metrics import ClickhouseSingleMetric
+
+from .test_icmp import ICMP_BLOCKING_TYPES_STR
+
+
+@pytest.fixture
+async def xfw_blocked_by_icmp(xfw, ip_version):
+    await xfw.rules_set(f"""
+        xfw {{ 
+            defaults {{ icmp: allow; }}
+            icmp {ip_version}: block {{ {ICMP_BLOCKING_TYPES_STR} }}
+        }}
+        """)
+
+
+@pytest.fixture
+async def xfw_blocked_by_icmp_ratelimit(xfw, ip_version):
+    await xfw.rules_set(f"""
+        xfw {{
+            ratelimit=test pps=0 bps=5000;
+            defaults {{ icmp: allow; }}
+            icmp {ip_version}: ratelimit=test {{ {ICMP_BLOCKING_TYPES_STR} }}
+        }}
+        """)
+
+
+@pytest.fixture
+async def xfw_blocked_by_icmp_defaults(xfw):
+    await xfw.rules_set(f"xfw {{ defaults {{ icmp: block; }} }}")
+
+
+@pytest.fixture
+async def xfw_blocked_by_icmp_defaults_ratelimit(xfw):
+    await xfw.rules_set(f"""
+        xfw {{
+            ratelimit=test pps=0 bps=5000;
+            defaults {{ icmp: ratelimit=test; }}
+        }}
+        """)
 
 
 @pytest.fixture
@@ -118,7 +155,55 @@ def xfw_setup(request):
 
 
 @pytest.mark.parametrize(
-    "xfw_setup, expected_property",
+    "xfw_setup, expected_metric",
+    [
+        pytest.param(
+            "xfw_blocked_by_icmp",
+            ClickhouseSingleMetric.blocked_by_icmp_block,
+            id="blocked-by-icmp-0-bit",
+        ),
+        pytest.param(
+            "xfw_blocked_by_icmp_ratelimit",
+            ClickhouseSingleMetric.blocked_by_icmp_ratelimit,
+            id="blocked-by-icmp-ratelimit-3-bit",
+        ),
+        pytest.param(
+            "xfw_blocked_by_icmp_defaults",
+            ClickhouseSingleMetric.blocked_by_defaults_icmp_block,
+            id="blocked-by-icmp-defaults-4-bit",
+        ),
+        pytest.param(
+            "xfw_blocked_by_icmp_defaults_ratelimit",
+            ClickhouseSingleMetric.blocked_by_defaults_icmp_ratelimit,
+            id="blocked-by-icmp-defaults-ratelimit-5-bit",
+        ),
+    ],
+    indirect=["xfw_setup"],
+)
+async def test_icmp(
+    xfw_setup,
+    expected_metric: Callable,
+    xfw,
+    icmp_raw_client,
+    udp_server,
+    clickhouse_client,
+    metric_analyzer,
+):
+    await udp_server.start()
+    await icmp_raw_client.start()
+    await clickhouse_client.connect()
+
+    async with metric_analyzer.expected_clickhouse_metric_diff(
+        clickhouse_client, ip_to_search=icmp_raw_client.ip_clickhouse
+    ) as metric:
+        await icmp_raw_client.ping()
+        assert await icmp_raw_client.pong() is False
+
+    assert expected_metric(metric)
+
+
+@pytest.mark.parametrize(
+    "xfw_setup, expected_metric",
     [
         pytest.param(
             "xfw_blocked_by_src_port",
@@ -164,7 +249,7 @@ def xfw_setup(request):
     indirect=["xfw_setup"],
 )
 async def test_src(
-    xfw_setup, expected_property: Callable, xfw, client, server, clickhouse_client, metric_analyzer
+    xfw_setup, expected_metric: Callable, xfw, client, server, clickhouse_client, metric_analyzer
 ):
     await clickhouse_client.connect()
 
@@ -174,4 +259,4 @@ async def test_src(
         await client.ping()
         assert await server.receive_block()
 
-    assert expected_property(metric)
+    assert expected_metric(metric)
