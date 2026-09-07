@@ -46,6 +46,37 @@ async def xfw_blocked_by_icmp_defaults_ratelimit(xfw):
 
 
 @pytest.fixture
+async def xfw_blocked_by_dst(xfw, ip_version, protocol, client, server):
+    await server.start()
+    await client.start()
+
+    await xfw.rules_set(f"""
+        xfw {{ 
+            defaults {{ dst : allow; }}
+            dst {ip_version}.{protocol} : block {{
+                {server.ip_testing}:{server.port}
+            }}
+        }}
+        """)
+
+
+@pytest.fixture
+async def xfw_blocked_by_dst_ratelimit(xfw, ip_version, protocol, client, server):
+    await server.start()
+    await client.start()
+
+    await xfw.rules_set(f"""
+        xfw {{ 
+            defaults {{ dst : allow; }}
+            ratelimit=test pps=0 bps=500;
+            dst {ip_version}.{protocol} : ratelimit=test {{
+                {server.ip_testing}:{server.port}
+            }}
+        }}
+        """)
+
+
+@pytest.fixture
 async def xfw_blocked_by_src_port(xfw, ip_version, protocol, client, server):
     await server.start()
     await client.start()
@@ -198,6 +229,36 @@ async def test_icmp(
     ) as metric:
         await icmp_raw_client.ping()
         assert await icmp_raw_client.pong() is False
+
+    assert expected_metric(metric)
+
+
+@pytest.mark.parametrize(
+    "xfw_setup, expected_metric",
+    [
+        pytest.param(
+            "xfw_blocked_by_dst",
+            ClickhouseSingleMetric.blocked_by_dst_block,
+            id="blocked-by-dst-6-bit",
+        ),
+        pytest.param(
+            "xfw_blocked_by_dst_ratelimit",
+            ClickhouseSingleMetric.rate_limited_by_dst_ratelimit,
+            id="blocked-by-dst-ratelimit-7-bit",
+        ),
+    ],
+    indirect=["xfw_setup"],
+)
+async def test_dst(
+    xfw_setup, expected_metric: Callable, xfw, client, server, clickhouse_client, metric_analyzer
+):
+    await clickhouse_client.connect()
+
+    async with metric_analyzer.expected_clickhouse_metric_diff(
+        clickhouse_client, ip_to_search=client.ip_clickhouse
+    ) as metric:
+        await client.ping()
+        assert await server.receive_block()
 
     assert expected_metric(metric)
 
