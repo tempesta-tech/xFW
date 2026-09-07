@@ -3,10 +3,31 @@
 from typing import Callable
 
 import pytest
+from scapy.layers.inet import TCP
 
 from framework.metrics import ClickhouseSingleMetric
 
 from .test_icmp import ICMP_BLOCKING_TYPES_STR
+
+
+@pytest.fixture
+async def xfw_blocked_by_tcp_flags_syn(xfw):
+    await xfw.rules_set(f"""
+        xfw {{
+            ratelimit=test pps=0 bps=1000;
+            tcp_flags syn : ratelimit=test;
+        }}
+        """)
+
+
+@pytest.fixture
+async def xfw_blocked_by_tcp_flags_rst(xfw):
+    await xfw.rules_set(f"""
+        xfw {{
+            ratelimit=test pps=0 bps=1000;
+            tcp_flags rst : ratelimit=test;
+        }}
+        """)
 
 
 @pytest.fixture
@@ -183,6 +204,47 @@ async def xfw_ratelimit_by_src_ip_defaults(xfw, ip_version, protocol, client, se
 @pytest.fixture
 def xfw_setup(request):
     return request.getfixturevalue(request.param)
+
+
+@pytest.mark.parametrize(
+    "xfw_setup, expected_metric, blocking_packet",
+    [
+        pytest.param(
+            "xfw_blocked_by_tcp_flags_syn",
+            ClickhouseSingleMetric.blocked_by_tcp_flags_syn_ratelimit,
+            TCP(flags="S"),
+            id="blocked-by-tcp-flags-syn-1-bit",
+        ),
+        pytest.param(
+            "xfw_blocked_by_tcp_flags_rst",
+            ClickhouseSingleMetric.blocked_by_tcp_flags_rst_ratelimit,
+            TCP(flags="R"),
+            id="blocked-by-tcp-flags-rst-2-bit",
+        ),
+    ],
+    indirect=["xfw_setup"],
+)
+async def test_tcp_flags(
+    xfw_setup,
+    expected_metric: Callable,
+    blocking_packet: TCP,
+    xfw,
+    tcp_raw_client,
+    tcp_raw_server,
+    clickhouse_client,
+    metric_analyzer,
+):
+    await clickhouse_client.connect()
+    await tcp_raw_server.start()
+    await tcp_raw_client.start()
+
+    async with metric_analyzer.expected_clickhouse_metric_diff(
+        clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
+    ) as metric:
+        await tcp_raw_client.send_packet(blocking_packet)
+        assert await tcp_raw_server.receive_block()
+
+    assert expected_metric(metric)
 
 
 @pytest.mark.parametrize(
