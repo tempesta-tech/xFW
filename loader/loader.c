@@ -23,50 +23,9 @@
 #include <bpf/libbpf.h>
 
 #include "../bpf_uapi/map_names.h"
+#include "program_descriptors.h"
 
-#ifndef XFW_LIB_DIR
-#error "XFW_LIB_DIR is not defined; check the loader build configuration"
-#endif
-
-#define XFW_BPF_LIB_DIR XFW_LIB_DIR "/" "bpf"
-
-#define ARRAY_SIZE(array) \
-	(sizeof(array) / sizeof((array)[0]))
-
-struct map_desc {
-	const char *name;
-};
-
-struct xfw_program {
-	const char *name;
-	const char *obj_path;
-	const char *prog_name;
-	const char *prog_pin_name;
-
-	/*
-	 * Expected BPF program type.
-	 */
-	enum bpf_prog_type prog_type;
-
-	/*
-	 * Maps that must be explicitly reused from another BPF object.
-	 *
-	 * This is intended for modules whose maps are not automatically
-	 * reused through LIBBPF_PIN_BY_NAME and pin_root_path.
-	 */
-	const struct map_desc *reuse_maps;
-	size_t reuse_maps_cnt;
-
-	/*
-	 * Open the BPF object with pin_root_path.
-	 *
-	 * Maps declared with LIBBPF_PIN_BY_NAME will be automatically
-	 * created or reused under pin_root.
-	 */
-	bool pin_maps;
-};
-
-static const struct xfw_program main_xdp = {
+static const XfwProgram main_xdp = {
 	.name = "xdp",
 	.obj_path = XFW_BPF_LIB_DIR "/" "xdp.o",
 	.prog_name = "xfw_xdp",
@@ -74,13 +33,12 @@ static const struct xfw_program main_xdp = {
 	.prog_type = BPF_PROG_TYPE_XDP,
 	.reuse_maps = NULL,
 	.reuse_maps_cnt = 0,
-	/*
-	 * The main XDP object creates and owns the shared maps.
-	 */
+	/* The main XDP object creates and owns the shared maps. */
 	.pin_maps = true,
+	.register_in_prog_array = false,
 };
 
-static const struct map_desc tc_maps[] = {
+static const MapDesc tc_maps[] = {
 	{ .name = MAP_GLBL_STAT_STR },
 	{ .name = MAP_CFG_STR },
 	{ .name = MAP_LOG_ACTIVE_FD_STR },
@@ -93,7 +51,7 @@ static const struct map_desc tc_maps[] = {
 	{ .name = MAP_DST_STR(MAP_SECONDARY_IDX) },
 };
 
-static const struct xfw_program main_tc = {
+static const XfwProgram main_tc = {
 	.name = "tc",
 	.obj_path = XFW_BPF_LIB_DIR "/" "tc.o",
 	.prog_name = "xfw_tc",
@@ -106,39 +64,47 @@ static const struct xfw_program main_tc = {
 	 * created and pinned under the common pin root.
 	 */
 	.pin_maps = true,
+	.register_in_prog_array = false,
 };
 
-static const struct xfw_program *programs[] = {
+static const XfwProgram *programs[] = {
 	&main_xdp,
 	&main_tc,
+	&tcp_syncookies_module,
 };
 
 static void
 usage(const char *prog)
 {
+	size_t i;
+
 	fprintf(stderr,
 		"Usage:\n"
 		"  %s load <program> <pin-root>\n"
 		"  %s unload <program> <pin-root>\n"
 		"  %s attach tc <pin-root> <device>\n"
-		"  %s detach tc <pin-root> <device>\n"
-		"\n"
-		"Programs:\n"
-		"  xdp\n"
-		"  tc\n"
+		"  %s detach tc <pin-root> <device>\n",
+		prog, prog, prog, prog);
+
+	fprintf(stderr, "\nPrograms:\n");
+	for (i = 0; i < ARRAY_SIZE(programs); i++)
+		fprintf(stderr, "  %s\n", programs[i]->name);
+
+	fprintf(stderr,
 		"\n"
 		"Examples:\n"
 		"  %s load xdp /sys/fs/bpf/xfw\n"
 		"  %s load tc /sys/fs/bpf/xfw\n"
+		"  %s load <module> /sys/fs/bpf/xfw\n"
 		"  %s attach tc /sys/fs/bpf/xfw enp1s0\n"
 		"  %s detach tc /sys/fs/bpf/xfw enp1s0\n"
+		"  %s unload xdp /sys/fs/bpf/xfw\n"
 		"  %s unload tc /sys/fs/bpf/xfw\n"
-		"  %s unload xdp /sys/fs/bpf/xfw\n",
-		prog, prog, prog, prog,
-		prog, prog, prog, prog, prog, prog);
+		"  %s unload <module> /sys/fs/bpf/xfw\n",
+		prog, prog, prog, prog, prog, prog, prog, prog);
 }
 
-static const struct xfw_program *
+static const XfwProgram *
 find_program(const char *name)
 {
 	size_t i;
@@ -277,7 +243,7 @@ out:
 }
 
 static int
-attach_tc(const struct xfw_program *desc, const char *pin_root,
+attach_tc(const XfwProgram *desc, const char *pin_root,
 	  const char *device)
 {
 	LIBBPF_OPTS(bpf_link_create_opts, opts);
@@ -347,8 +313,6 @@ attach_tc(const struct xfw_program *desc, const char *pin_root,
 	       desc->prog_name, device);
 	printf("TCX link pin: %s\n", link_pin);
 
-	err = 0;
-
 out:
 	if (link_fd >= 0)
 		close(link_fd);
@@ -359,7 +323,7 @@ out:
 }
 
 static int
-detach_tc(const struct xfw_program *desc, const char *pin_root,
+detach_tc(const XfwProgram *desc, const char *pin_root,
 	  const char *device)
 {
 	char link_pin[PATH_MAX];
@@ -374,7 +338,7 @@ detach_tc(const struct xfw_program *desc, const char *pin_root,
 	}
 
 	err = make_tc_link_pin_path(link_pin, sizeof(link_pin),
-				     pin_root, device);
+				    pin_root, device);
 	if (err)
 		return err;
 
@@ -399,6 +363,91 @@ detach_tc(const struct xfw_program *desc, const char *pin_root,
 	return 0;
 }
 
+static int
+register_tail_call_program(const struct bpf_program *prog,
+			   const char *pin_root, __u32 key)
+{
+	char prog_array_pin[PATH_MAX];
+	int prog_array_fd;
+	int prog_fd;
+	int err;
+
+	err = make_pin_path(prog_array_pin, sizeof(prog_array_pin),
+			    pin_root, MAP_PROG_ARRAY_STR);
+	if (err)
+		return err;
+
+	prog_fd = bpf_program__fd(prog);
+	if (prog_fd < 0) {
+		fprintf(stderr, "Failed to get program fd: %s\n",
+			strerror(-prog_fd));
+		return prog_fd;
+	}
+
+	prog_array_fd = bpf_obj_get(prog_array_pin);
+	if (prog_array_fd < 0) {
+		err = -errno;
+		fprintf(stderr, "Failed to open prog array '%s': %s\n",
+			prog_array_pin, strerror(-err));
+		return err;
+	}
+
+	/*
+	 * Register the newly loaded program in the global PROG_ARRAY so that
+	 * it can be reached via bpf_tail_call().
+	 */
+	if (bpf_map_update_elem(prog_array_fd, &key, &prog_fd, BPF_ANY)) {
+		err = -errno;
+		fprintf(stderr, "Failed to update prog array '%s' at index %u: %s\n",
+			prog_array_pin, key, strerror(-err));
+	}
+
+	close(prog_array_fd);
+	return err;
+}
+
+static int
+unregister_tail_call_program(const XfwProgram *desc, const char *pin_root)
+{
+	char prog_array_pin[PATH_MAX];
+	__u32 key = desc->prog_array_idx;
+	int prog_array_fd;
+	int err;
+
+	err = make_pin_path(prog_array_pin, sizeof(prog_array_pin),
+			    pin_root, MAP_PROG_ARRAY_STR);
+	if (err)
+		return err;
+
+	prog_array_fd = bpf_obj_get(prog_array_pin);
+	if (prog_array_fd < 0) {
+		if (errno == ENOENT)
+			return 0;
+
+		err = -errno;
+		fprintf(stderr, "Failed to open prog array '%s': %s\n",
+			prog_array_pin, strerror(-err));
+		return err;
+	}
+
+	/*
+	 * Remove the program from the tail-call dispatch table before
+	 * unpinning it.
+	 */
+	if (bpf_map_delete_elem(prog_array_fd, &key)) {
+		if (errno != ENOENT) {
+			err = -errno;
+			fprintf(stderr,
+				"Failed to remove program '%s' from "
+				"prog array index %u: %s\n",
+				desc->prog_name, key, strerror(-err));
+		}
+	}
+
+	close(prog_array_fd);
+	return err;
+}
+
 /*
  * Load and pin a BPF program.
  *
@@ -406,13 +455,14 @@ detach_tc(const struct xfw_program *desc, const char *pin_root,
  * maps declared with LIBBPF_PIN_BY_NAME under the specified directory.
  */
 static int
-load_program(const struct xfw_program *desc, const char *pin_root)
+load_program(const XfwProgram *desc, const char *pin_root)
 {
 	LIBBPF_OPTS(bpf_object_open_opts, opts);
 	struct bpf_object *obj = NULL;
 	struct bpf_program *prog;
 	char prog_pin[PATH_MAX];
 	char map_pin[PATH_MAX];
+	bool pinned = false;
 	size_t i;
 	int err;
 
@@ -493,18 +543,29 @@ load_program(const struct xfw_program *desc, const char *pin_root)
 			desc->prog_name, prog_pin, strerror(-err));
 		goto out;
 	}
+	pinned = true;
+
+	if (desc->register_in_prog_array) {
+		err = register_tail_call_program(prog, pin_root,
+						 desc->prog_array_idx);
+		if (err)
+			goto out;
+	}
 
 	printf("Loaded program '%s'\n", desc->prog_name);
 	printf("Program pin: %s\n", prog_pin);
 
 out:
+	if (err && pinned)
+		unlink(prog_pin);
+
 	bpf_object__close(obj);
 
 	return err;
 }
 
 static int
-unload_program(const struct xfw_program *desc, const char *pin_root)
+unload_program(const XfwProgram *desc, const char *pin_root)
 {
 	char prog_pin[PATH_MAX];
 	int err;
@@ -513,6 +574,12 @@ unload_program(const struct xfw_program *desc, const char *pin_root)
 			    pin_root, desc->prog_pin_name);
 	if (err)
 		return err;
+
+	if (desc->register_in_prog_array) {
+		err = unregister_tail_call_program(desc, pin_root);
+		if (err)
+			return err;
+	}
 
 	if (unlink(prog_pin)) {
 		if (errno == ENOENT)
@@ -531,7 +598,7 @@ unload_program(const struct xfw_program *desc, const char *pin_root)
 int
 main(int argc, char **argv)
 {
-	const struct xfw_program *desc;
+	const XfwProgram *desc;
 	const char *command;
 	const char *pin_root;
 	const char *device = NULL;

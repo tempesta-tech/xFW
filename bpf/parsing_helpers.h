@@ -95,7 +95,6 @@ typedef struct {
 STATIC_ASSERT(L3_OFF_MAX <= UINT8_MAX,
 	      "L3 offset does not fit into uint8_t");
 
-
 /*
  * Maximum supported offset of an L4 header from the beginning of
  * the Ethernet frame.

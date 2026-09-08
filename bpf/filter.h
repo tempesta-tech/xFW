@@ -62,6 +62,20 @@ do {									\
 		return r;						\
 } while (0)
 
+/*
+ * Run a filter and branch to the caller's common pass epilogue on PASS.
+ * The caller must define an integer variable named `r` and a `pass` label.
+ */
+#define CHAIN_PASS_ALL(filter, ...)					\
+do {									\
+	r = filter(__VA_ARGS__);					\
+	if (r == XFW_CTX_CONTINUE)					\
+		break;							\
+	if (r == XFW_CTX_PASS)						\
+		goto pass;						\
+	return r;							\
+} while (0)
+
 /**
  * Override XFW_CTX_DROP with XFW_CTX_PASS in case of evaluation mode enabled.
  * Should be called before passing the result to the kernel.
@@ -154,7 +168,7 @@ count_tx_stat(const XfwGlobalCtx *ctx, enum XfwTxStat reason)
  */
 static __always_inline bool
 xfw_is_within_rlimit(const XfwGlobalCtx *ctx, const XfwPacketRate *rate,
-                     XfwRLimitSlidingWindow *bucket)
+		     XfwRLimitSlidingWindow *bucket)
 {
 	const uint64_t window_idx = ctx->ts_jiff >> ctx->cfg->rl_window.shift;
 	const uint64_t offset = ctx->ts_jiff & ctx->cfg->rl_window.mask;
