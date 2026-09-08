@@ -331,7 +331,7 @@ class BaseDiffMetrics(BaseMetrics, ABC):
             diff: BaseSingleMetric = getattr(diff_metrics, f.name)
             expected_value = expected_metric.value
             if isinstance(expected_value, list):
-                is_valid = expected_value[0] <= diff.value <= expected_value[1]
+                is_valid = self._check_range_expected_value(expected_value, diff)
             else:
                 is_valid = diff.value == expected_value
 
@@ -341,6 +341,18 @@ class BaseDiffMetrics(BaseMetrics, ABC):
                         name=expected_metric.name, value=diff.value, expected=expected_value
                     )
                 )
+
+    @staticmethod
+    def _check_range_expected_value(
+        expected_value: list[int | None], diff: BaseSingleMetric
+    ) -> bool:
+        if len(expected_value) != 2:
+            raise ValueError(f"Incorrect number of expected values for {diff.name}")
+
+        if expected_value[-1] is None:
+            return diff.value >= expected_value[0]
+        else:
+            return expected_value[0] <= diff.value <= expected_value[1]
 
 
 @dataclass
@@ -391,8 +403,19 @@ class MetricsAnalyzer:
         wait_softirq: bool = False,
     ) -> AsyncGenerator[BaseDiffMetrics, None]:
         """
-        It calculates the difference between the metrics, records it in
-        `expected_metrics.diff_metrics`, and starts the validation process.
+        This context manager captures metrics before and after the execution of
+        the enclosed block, computes their difference, and stores it in
+        `expected_metrics.diff_metrics`. It then performs validation based on
+        the format of the values provided in `expected_metrics`.
+
+        The validation supports three distinct cases for each metric:
+        1. Exact match: If the expected value is an `int`, the actual difference
+           must exactly equal this value.
+        2. Range match: If a list `[min, max]` is provided, the actual difference
+           must fall within this inclusive range.
+        3. Minimum growth: If a list `[min, None]` is provided, the actual
+           difference must be greater than or equal to the specified minimum.
+
         """
         metrics_before = expected_metrics.metric_cls()
         await metrics_before.update(xfw)
