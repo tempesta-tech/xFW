@@ -19,6 +19,7 @@
 #include "tcp_anomaly_filter.h"
 #include "tcp_auth.h"
 #include "tcp_syncookies.h"
+#include "tcp_syn_drop.h"
 
 #define SHADOW_SRC_IP_MAP(basename, key_t)				\
 	SHADOW_MAP(basename, BPF_MAP_TYPE_LPM_TRIE, XFW_MAX_SRC_IP_RULES, \
@@ -431,11 +432,19 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 static __always_inline int
 tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
+	/*
+	 * Rate-limit SYNs before stateful validation to protect the SYN
+	 * tracking maps from excessive lookups, updates, and LRU churn
+	 * under high-rate floods with spoofed or random TCP tuples.
+	 */
+	CHAIN(syn_rlimit, ctx);
+
+	if (ctx->cfg->rules.tcp_syn_drop.enabled)
+		CHAIN(tcp_syn_drop_filter, ctx, th);
+
 	/* If a SYN cookie was generated, processing stops immediately. */
 	if (ctx->cfg->rules.syncookie.enabled)
 		CHAIN(tcp_syncookies_syn_filter, ctx, th);
-
-	CHAIN(syn_rlimit, ctx);
 
 	/* We do not add the connection to the trusted set here.
 	 * The trusted entry will be created later in tc.c, which is less

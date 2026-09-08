@@ -4,6 +4,7 @@
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
+#include <bit>
 #include <chrono>
 #include <fstream>
 #include <sys/utsname.h>
@@ -329,10 +330,45 @@ BpfMapsManager::set_simple_rules(const XfwConfig &config)
 	cfg.rules.dns.enabled = config.dns_filter_.enabled_;
 
 	cfg.rules.syncookie.enabled = config.syncookie_filter_.has_value();
+
 	if (cfg.rules.syncookie.enabled) {
+		auto secs_to_jiffies = [this](uint64_t secs) {
+			return secs * hz_;
+		};
 		const auto &data = config.syncookie_filter_.value();
-		cfg.rules.syncookie.flood_timer_jiff = data.flood_timer_ * hz_;
-		cfg.rules.syncookie.passive_timer_jiff = data.passive_timer_ * hz_;
+		cfg.rules.syncookie.flood_timer_jiff =
+			secs_to_jiffies(data.flood_timer_sec_);
+		cfg.rules.syncookie.passive_timer_jiff =
+			secs_to_jiffies(data.passive_timer_sec_);
+	}
+	cfg.rules.tcp_syn_drop.enabled = config.tcp_syn_drop_filter_.has_value();
+	if (cfg.rules.tcp_syn_drop.enabled) {
+		auto msecs_to_jiffies = [](uint64_t msecs, uint64_t hz) {
+			uint64_t product;
+
+			verify(!__builtin_mul_overflow(msecs, hz, &product),
+			       "tcp_syn_drop timeout is too large");
+			return product / 1000 + !!(product % 1000);
+		};
+		const auto &data = config.tcp_syn_drop_filter_.value();
+		cfg.rules.tcp_syn_drop.hash_salt = data.hash_salt_;
+		cfg.rules.tcp_syn_drop.time_min_jiff =
+			msecs_to_jiffies(data.time_min_ms_, hz_);
+		cfg.rules.tcp_syn_drop.max_delay_jiff =
+			msecs_to_jiffies(data.max_delay_ms_, hz_);
+		cfg.rules.tcp_syn_drop.block_timeout_jiff =
+			msecs_to_jiffies(data.block_timeout_ms_, hz_);
+		cfg.rules.tcp_syn_drop.retry_count = data.retry_count_;
+
+		/*
+		 * max_delay is doubled after every accepted retry except the
+		 * last one, which blocks the entry. For a non-zero uint64_t
+		 * value, countl_zero() is the number of safe doublings; add
+		 * one for the final retry which does not double max_delay.
+		 */
+		verify(data.retry_count_ <=
+		       std::countl_zero(cfg.rules.tcp_syn_drop.max_delay_jiff) + 1,
+		       "tcp_syn_drop: retry_count is too large for max_delay");
 	}
 
 	upload_config_changes(cfg, no_ratelimit_buckets);

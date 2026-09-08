@@ -52,8 +52,19 @@ std::ostream& operator<<(std::ostream &os, const XfwConf &obj) noexcept
 {
 	if (obj.syncookie_.has_value()) {
 		os << "tcp_syncookies: passive_timer="
-		   << obj.syncookie_.value().passive_timer_
-		   << " flood_timer=" << obj.syncookie_.value().flood_timer_ << "\n";
+		   << obj.syncookie_.value().passive_timer_sec_
+		   << " flood_timer=" << obj.syncookie_.value().flood_timer_sec_
+		   << "\n";
+	}
+
+	if (obj.tcp_syn_drop_.has_value()) {
+		os << "tcp_syn_drop: hash_salt="
+		   << obj.tcp_syn_drop_.value().hash_salt_
+		   << " time_min=" << obj.tcp_syn_drop_.value().time_min_ms_
+		   << " max_delay=" << obj.tcp_syn_drop_.value().max_delay_ms_
+		   << " retry_count=" << obj.tcp_syn_drop_.value().retry_count_
+		   << " block_timeout=" << obj.tcp_syn_drop_.value().block_timeout_ms_
+		   << "\n";
 	}
 
 	os << "flags: " << obj.flags_ << "\nnet_rules_={\n";
