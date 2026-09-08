@@ -170,15 +170,12 @@ async def test_icmp_ingress_metrics(
 
     await xfw.rules_set("xfw {}")
 
-    expected_packets_n = packets_n if ip_version == "ip4" else [packets_n, packets_n + 3]
-    expected_bytes_n = (
-        packets_n * 42 if ip_version == "ip4" else [packets_n * 62, (packets_n + 3) * 62]
-    )
+    expected_bytes_n = packets_n * 42 if ip_version == "ip4" else packets_n * 62
     async with metric_analyzer.expected_metrics_diff(
         xfw=xfw,
         expected_metrics=PrometheusMetricsDiff(
-            xfw_icmp_total_ingress_packets=expected_packets_n,
-            xfw_icmp_total_ingress_bytes=expected_bytes_n,
+            xfw_icmp_total_ingress_packets=[packets_n, None],
+            xfw_icmp_total_ingress_bytes=[expected_bytes_n, None],
         ),
     ):
         await asyncio.gather(

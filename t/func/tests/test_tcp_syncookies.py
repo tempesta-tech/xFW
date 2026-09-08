@@ -18,7 +18,7 @@ from framework.asyn import (
     TcpServer,
 )
 from framework.fabrics import client_fabric
-from framework.metrics import KernelMetrics, KernelMetricsDiff, PrometheusMetricsDiff
+from framework.metrics import KernelMetricsDiff, PrometheusMetricsDiff
 from framework.utils import get_tcp_packet, run_in_background
 from framework.xfw import XFW
 
@@ -261,7 +261,6 @@ async def test_normal_connection(
                 xfw_syncookie_received_packets=1,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -287,7 +286,6 @@ async def test_normal_connection(
                 xfw_syncookie_received_packets=0,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -315,7 +313,6 @@ async def test_normal_connection(
                 xfw_syncookie_received_packets=0,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -523,7 +520,6 @@ async def test_syncookie_with_options(
                 xfw_syncookie_received_packets=1,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -591,7 +587,6 @@ async def test_flood_mode(
                 xfw_syncookie_received_packets=1,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -620,7 +615,6 @@ async def test_flood_mode(
                 xfw_syncookie_received_packets=1,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -648,7 +642,6 @@ async def test_flood_mode(
                 xfw_syncookie_received_packets=0,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -675,7 +668,6 @@ async def test_flood_mode(
                 xfw_syncookie_received_packets=1,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -725,7 +717,6 @@ async def test_passive_mode(
                 xfw_syncookie_received_packets=0,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -753,7 +744,6 @@ async def test_passive_mode(
                 xfw_syncookie_received_packets=0,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -782,7 +772,6 @@ async def test_passive_mode(
                 xfw_syncookie_received_packets=1,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -809,7 +798,6 @@ async def test_passive_mode(
                 xfw_syncookie_received_packets=0,
                 xfw_syncookie_failed_packets=0,
             ),
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -1133,7 +1121,6 @@ async def test_normal_connection_under_handshake_flood(
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
             expected_metrics=expected_xfw,
-            wait_softirq=True,
         ),
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
