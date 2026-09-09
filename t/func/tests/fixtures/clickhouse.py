@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+from typing import Any, AsyncGenerator
 
 import pytest
 
@@ -12,7 +13,7 @@ from framework.logger import get_logger
 async def clickhouse_client(
     config: ConfigSettings,
     logging_level: int,
-):
+) -> AsyncGenerator[ClickhouseClient, Any]:
     new_client = ClickhouseClient(
         host=config.tfw_logger_clickhouse_host,
         binary_port=config.tfw_logger_clickhouse_binary_port,
