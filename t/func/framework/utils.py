@@ -135,7 +135,7 @@ async def switch_coroutine():
     await asyncio.sleep(0.001)
 
 
-def retry_on_failure(exception: Exception, *_, max_time: int = 5):
+def retry_on_failure(exception: type[Exception], *_, max_time: int = 5):
     def outer_wrapper(func: Callable):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
