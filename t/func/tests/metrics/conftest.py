@@ -221,7 +221,7 @@ async def xfw_blocked_by_tcp_anomaly_syn_with_payload(xfw):
 
 
 @pytest.fixture
-async def xfw_mtu(xfw):
+async def xfw_with_mtu_4096(xfw):
     await xfw.set_mtu(4096)
     yield xfw
     await xfw.set_mtu()

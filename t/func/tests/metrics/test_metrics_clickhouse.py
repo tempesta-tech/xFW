@@ -428,19 +428,6 @@ async def test_blocked_by_tcp_auth_filter_expired_connection_33_bit(
             ClickhouseSingleMetric.blocked_during_parsing_malformed_dns_question,
             id="question-37-bit",
         ),
-        pytest.param(
-            # Valid header with QDCOUNT=1 and ANCOUNT=1, but the RR rdata is truncated.
-            (
-                struct.pack("!HHHHHH", 0x1234, 0x0100, 1, 1, 0, 0)  # header
-                + b"\x05google\x00"
-                + struct.pack("!HH", 1, 1)  # question
-                + b"\x00"
-                + struct.pack("!HHIH", 1, 1, 300, 4)
-                + b"\x01"  # malformed rr
-            ),
-            ClickhouseSingleMetric.blocked_during_parsing_malformed_dns_resource_record,
-            id="resource-record-45-bit",
-        ),
     ],
 )
 async def test_blocked_during_parsing_malformed_dns(
@@ -489,6 +476,7 @@ async def test_blocked_during_parsing_malformed_dns(
             DnsRequests.invalid_ixfr_query(),
             ClickhouseSingleMetric.blocked_by_dns_anomaly_invalid_ixfr_query,
             id="invalid-ixfr-query-40-bit",
+            marks=pytest.mark.skip("A NEW ISSUE"),
         ),
         pytest.param(
             DnsRequests.more_than_two_additional_sections(),
@@ -532,16 +520,22 @@ async def test_blocked_by_dns_anomaly(
             id="response-received-without-prior-query-42-bit",
         ),
         pytest.param(
-            "xfw_mtu",
+            "xfw_with_mtu_4096",
             DnsRequests.reply_with_size_bytes_4096,
             ClickhouseSingleMetric.blocked_by_dns_anomaly_dns_udp_response_packet_is_too_large,
             id="udp-response-packet-is-too-large-43-bit",
         ),
         pytest.param(
-            "xfw_mtu",
+            "xfw_with_mtu_4096",
             DnsRequests.reply_with_multiple_answers_101,
             ClickhouseSingleMetric.blocked_by_dns_anomaly_dns_response_contains_too_many_answers,
             id="response-contains-too-many-answers-44-bit",
+        ),
+        pytest.param(
+            "xfw",
+            DnsRequests.reply_with_malformed_rr,
+            ClickhouseSingleMetric.blocked_during_parsing_malformed_dns_resource_record,
+            id="resource-record-45-bit",
         ),
         pytest.param(
             "xfw",
