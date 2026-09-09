@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 import socket
 
+from dnslib import NS, QTYPE, RCODE, RR, A, DNSQuestion, DNSRecord
 from scapy.all import ETH_P_IP, ETH_P_IPV6
 from scapy.layers.inet import ICMP, IP, IP_PROTOS, TCP, UDP, Ether
 from scapy.layers.inet6 import IPv6, IPv6ExtHdrFragment
@@ -161,3 +162,53 @@ class InvalidEthTypeRawServerRemote(RemoteServer, InvalidEthTypeRawServer):
     def __init__(self, *args, **kwargs):
         RemoteServer.__init__(self, *args, **kwargs)
         InvalidEthTypeRawServer.__init__(self, *args, **kwargs)
+
+
+class DnsRequests:
+    @staticmethod
+    def non_zero_rcode() -> DNSRecord:
+        query = DNSRecord.question("google.com", qtype="A")
+        query.header.rcode = RCODE.FORMERR
+        return query
+
+    @staticmethod
+    def more_than_one_question() -> DNSRecord:
+        query = DNSRecord.question("google.com", qtype="A")
+        query.add_question(DNSQuestion("example.com"))
+        return query
+
+    @staticmethod
+    def answers_or_authority_sections_in_dns_query() -> DNSRecord:
+        query = DNSRecord.question("google.com", qtype="A")
+        query.add_answer(RR("google.com.", ttl=300, rdata=A("1.2.3.4")))
+        return query
+
+    @staticmethod
+    def invalid_ixfr_query() -> DNSRecord:
+        query = DNSRecord.question("google.com", qtype="IXFR")
+        query.add_auth(RR("google.com.", ttl=300, rdata=NS("ns.google.com.")))
+        return query
+
+    @staticmethod
+    def more_than_two_additional_sections() -> DNSRecord:
+        query = DNSRecord.question("google.com", qtype="A")
+        query.add_ar(RR("foo.bar.", rtype=QTYPE.A, rdata=A("192.0.2.1")))
+        query.add_ar(RR("boo.bar.", rtype=QTYPE.A, rdata=A("192.0.2.2")))
+        query.add_ar(RR("zoo.bar.", rtype=QTYPE.A, rdata=A("192.0.2.3")))
+        return query
+
+    @staticmethod
+    async def reply_for_non_existing_query(server) -> bool:
+        return await server.reply_for_non_existing_query()
+
+    @staticmethod
+    async def reply_with_ttl_0(server) -> bool:
+        return await server.reply_with_ttl(0)
+
+    @staticmethod
+    async def reply_with_size_bytes_4096(server) -> bool:
+        return await server.reply_with_size_bytes(4096)
+
+    @staticmethod
+    async def reply_with_multiple_answers_101(server) -> bool:
+        return await server.reply_with_multiple_answers(101)
