@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+import ipaddress
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, fields
@@ -7,6 +8,7 @@ from typing import AsyncGenerator, Generic, Optional, Self, Union
 
 from typing_extensions import TypeVar
 
+from framework.clickhouse import ClickhouseClient, LogRecord
 from framework.utils import run_cmd
 from framework.xfw import XFW
 
@@ -99,6 +101,152 @@ class InvalidMetric:
     name: str
     value: int
     expected: int | list[int]
+
+
+@dataclass
+class ClickhouseSingleMetric:
+    record: Optional[LogRecord] = None
+
+    def blocked_by_icmp_block(self) -> bool:
+        return bool(self.record.reason & (1 << 0))
+
+    def blocked_by_tcp_flags_syn_ratelimit(self) -> bool:
+        return bool(self.record.reason & (1 << 1))
+
+    def blocked_by_tcp_flags_rst_ratelimit(self) -> bool:
+        return bool(self.record.reason & (1 << 2))
+
+    def blocked_by_icmp_ratelimit(self) -> bool:
+        return bool(self.record.reason & (1 << 3))
+
+    def blocked_by_defaults_icmp_block(self) -> bool:
+        return bool(self.record.reason & (1 << 4))
+
+    def blocked_by_defaults_icmp_ratelimit(self) -> bool:
+        return bool(self.record.reason & (1 << 5))
+
+    def blocked_by_dst_block(self) -> bool:
+        return bool(self.record.reason & (1 << 6))
+
+    def rate_limited_by_dst_ratelimit(self) -> bool:
+        return bool(self.record.reason & (1 << 7))
+
+    def blocked_by_src_port_block(self) -> bool:
+        return bool(self.record.reason & (1 << 8))
+
+    def rate_limited_by_src_port_ratelimit(self) -> bool:
+        return bool(self.record.reason & (1 << 9))
+
+    def blocked_by_defaults_src_port_block(self) -> bool:
+        return bool(self.record.reason & (1 << 10))
+
+    def rate_limited_by_defaults_src_port_ratelimit(self) -> bool:
+        return bool(self.record.reason & (1 << 11))
+
+    def blocked_by_src_ip_block(self) -> bool:
+        return bool(self.record.reason & (1 << 12))
+
+    def rate_limited_by_src_ip_ratelimit(self) -> bool:
+        return bool(self.record.reason & (1 << 13))
+
+    def blocked_by_defaults_src_ip_block(self) -> bool:
+        return bool(self.record.reason & (1 << 14))
+
+    def rate_limited_by_defaults_src_ip_ratelimit(self) -> bool:
+        return bool(self.record.reason & (1 << 15))
+
+    def blocked_by_tcp_anomaly_invalid_flags(self) -> bool:
+        return bool(self.record.reason & (1 << 16))
+
+    def blocked_by_tcp_anomaly_invalid_syn_sequence_number(self) -> bool:
+        return bool(self.record.reason & (1 << 17))
+
+    def blocked_by_tcp_anomaly_syn_without_tcp_options(self) -> bool:
+        return bool(self.record.reason & (1 << 18))
+
+    def blocked_by_tcp_anomaly_syn_packet_with_payload(self) -> bool:
+        return bool(self.record.reason & (1 << 19))
+
+    def blocked_by_tcp_anomaly_zero_source_or_destination_port(self) -> bool:
+        return bool(self.record.reason & (1 << 20))
+
+    def blocked_by_udp_anomaly_zero_source_or_destination_port(self) -> bool:
+        return bool(self.record.reason & (1 << 21))
+
+    def blocked_during_parsing_unknown_ethertype(self) -> bool:
+        return bool(self.record.reason & (1 << 22))
+
+    def blocked_during_parsing_malformed_ethernet_header(self) -> bool:
+        return bool(self.record.reason & (1 << 23))
+
+    def blocked_during_parsing_malformed_ipv4_header(self) -> bool:
+        return bool(self.record.reason & (1 << 24))
+
+    def blocked_during_parsing_fragmented_ipv4_packet(self) -> bool:
+        return bool(self.record.reason & (1 << 25))
+
+    def blocked_during_parsing_malformed_ipv6_header(self) -> bool:
+        return bool(self.record.reason & (1 << 26))
+
+    def blocked_during_parsing_fragmented_ipv6_packet(self) -> bool:
+        return bool(self.record.reason & (1 << 27))
+
+    def blocked_during_parsing_malformed_tcp_header(self) -> bool:
+        return bool(self.record.reason & (1 << 28))
+
+    def blocked_during_parsing_malformed_udp_header(self) -> bool:
+        return bool(self.record.reason & (1 << 29))
+
+    def blocked_during_parsing_malformed_icmp_header(self) -> bool:
+        return bool(self.record.reason & (1 << 30))
+
+    def blocked_during_parsing_unsupported_l4_protocol(self) -> bool:
+        return bool(self.record.reason & (1 << 31))
+
+    def blocked_by_tcp_auth_filter_unknown_connection(self) -> bool:
+        return bool(self.record.reason & (1 << 32))
+
+    def blocked_by_tcp_auth_filter_expired_connection(self) -> bool:
+        return bool(self.record.reason & (1 << 33))
+
+    def blocked_by_tcp_syncookies_rule_invalid_syn_cookie(self) -> bool:
+        return bool(self.record.reason & (1 << 34))
+
+    def blocked_during_parsing_malformed_dns_header(self) -> bool:
+        return bool(self.record.reason & (1 << 35))
+
+    def blocked_by_dns_anomaly_non_zero_rcode_in_dns_query(self) -> bool:
+        return bool(self.record.reason & (1 << 36))
+
+    def blocked_during_parsing_malformed_dns_question(self) -> bool:
+        return bool(self.record.reason & (1 << 37))
+
+    def blocked_by_dns_anomaly_more_than_one_question_in_dns_packet(self) -> bool:
+        return bool(self.record.reason & (1 << 38))
+
+    def blocked_by_dns_anomaly_answers_or_authority_sections_present_in_dns_query(self) -> bool:
+        return bool(self.record.reason & (1 << 39))
+
+    def blocked_by_dns_anomaly_invalid_ixfr_query(self) -> bool:
+        return bool(self.record.reason & (1 << 40))
+
+    def blocked_by_dns_anomaly_more_than_two_additional_sections_in_dns_query(self) -> bool:
+        return bool(self.record.reason & (1 << 41))
+
+    def blocked_by_dns_anomaly_response_received_without_prior_query(self) -> bool:
+        return bool(self.record.reason & (1 << 42))
+
+    def blocked_by_dns_anomaly_dns_udp_response_packet_is_too_large(self) -> bool:
+        return bool(self.record.reason & (1 << 43))
+
+    def blocked_by_dns_anomaly_dns_response_contains_too_many_answers(self) -> bool:
+        return bool(self.record.reason & (1 << 44))
+
+    def blocked_during_parsing_malformed_dns_resource_record(self) -> bool:
+        return bool(self.record.reason & (1 << 45))
+
+    def blocked_by_dns_anomaly_invalid_ttl_in_dns_answer(self) -> bool:
+        return bool(self.record.reason & (1 << 46))
 
 
 @dataclass
@@ -434,3 +582,31 @@ class MetricsAnalyzer:
         invalid_metrics = expected_metrics.invalid_metrics
         if strict:
             assert len(invalid_metrics) == 0, f"Some metrics are different: {invalid_metrics}"
+
+    @asynccontextmanager
+    async def track_clickhouse_metric(
+        self,
+        clickhouse_client: ClickhouseClient,
+        ip_to_search: ipaddress.IPv6Address,
+        expected_packets: int | None = None,
+        expected_bytes: int | None = None,
+        expected_dropped_events: int | None = None,
+    ) -> AsyncGenerator[ClickhouseSingleMetric, None]:
+        timestamp = await clickhouse_client.current_timestamp()
+
+        metric = ClickhouseSingleMetric()
+        yield metric
+
+        await clickhouse_client.wait_for_new_records(addr=ip_to_search, timestamp=timestamp)
+        records = await clickhouse_client.records_with(addr=ip_to_search, timestamp=timestamp)
+        assert len(records) == 1
+
+        record = records[0]
+        metric.record = record
+
+        if expected_packets is not None:
+            assert record.packets == expected_packets
+        if expected_bytes is not None:
+            assert record.bytes == expected_bytes
+        if expected_dropped_events is not None:
+            assert record.dropped_events == expected_dropped_events
