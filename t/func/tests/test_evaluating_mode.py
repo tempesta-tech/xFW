@@ -23,7 +23,6 @@ from framework.utils import metrics_increased
 from framework.xfw import XFW
 
 
-@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_dst_block(
     xfw: XFW,
     protocol: str,
@@ -32,7 +31,10 @@ async def test_dst_block(
     client: RegularKernelSocketNetworkStateful,
     dst_defaults: str,
     establish_connection,
+    metric_analyzer,
+    clickhouse_client,
 ):
+    await clickhouse_client.connect()
     new_ip = server.generate_new_address()
 
     await xfw.rules_set(f"""
@@ -46,17 +48,16 @@ async def test_dst_block(
         }}
         """)
 
-    metrics = ["xfw_dst_blocked_packets", "xfw_dst_blocked_bytes"]
-
-    async with xfw.metrics_diff(metrics) as diff_metrics:
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=client.ip_clickhouse
+    ) as metric:
         assert (
             await check_connection(client, server) is True
         ), f"Server ({server.ip_testing}:{server.port}) is blocked"
 
-    assert metrics_increased(metrics, diff_metrics) is True
+    assert metric.blocked_by_dst_block()
 
 
-@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_dst_add(
     xfw: XFW,
     protocol: str,
@@ -65,7 +66,10 @@ async def test_dst_add(
     client: RegularKernelSocketNetworkStateful,
     dst_defaults: str,
     establish_connection,
+    metric_analyzer,
+    clickhouse_client,
 ):
+    await clickhouse_client.connect()
     new_ip = server.generate_new_address()
 
     await xfw.rules_set(f"""
@@ -84,17 +88,17 @@ async def test_dst_add(
             }}
         }}
         """)
-    metrics = ["xfw_dst_blocked_packets", "xfw_dst_blocked_bytes"]
 
-    async with xfw.metrics_diff(metrics) as diff_metrics:
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=client.ip_clickhouse
+    ) as metric:
         assert (
             await check_connection(client, server) is True
         ), f"Server ({server.ip_testing}:{server.port}) is blocked"
 
-    assert metrics_increased(metrics, diff_metrics) is True
+    assert metric.blocked_by_dst_block()
 
 
-@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_dst_del_block_by_ip(
     xfw: XFW,
     protocol: str,
@@ -102,7 +106,10 @@ async def test_dst_del_block_by_ip(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
+    metric_analyzer,
+    clickhouse_client,
 ):
+    await clickhouse_client.connect()
     new_ip = server.generate_new_address()
 
     await xfw.rules_set(f"""
@@ -123,17 +130,16 @@ async def test_dst_del_block_by_ip(
         }}
         """)
 
-    metrics = ["xfw_dst_blocked_packets", "xfw_dst_blocked_bytes"]
-
-    async with xfw.metrics_diff(metrics) as diff_metrics:
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=client.ip_clickhouse
+    ) as metric:
         assert (
             await check_connection(client, server) is True
         ), f"Server ({server.ip_testing}:{server.port}) is blocked"
 
-    assert metrics_increased(metrics, diff_metrics) is True
+    assert metric.blocked_by_dst_block()
 
 
-@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_src_block_by_ip(
     xfw: XFW,
     protocol: str,
@@ -141,7 +147,10 @@ async def test_src_block_by_ip(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection: str,
+    metric_analyzer,
+    clickhouse_client,
 ):
+    await clickhouse_client.connect()
     await xfw.rules_set(f"""
         xfw {{
             evaluation_mode;
@@ -151,17 +160,17 @@ async def test_src_block_by_ip(
             }}
         }}
         """)
-    metrics = ["xfw_src_ip_blocked_packets", "xfw_src_ip_blocked_bytes"]
 
-    async with xfw.metrics_diff(metrics) as diff_metrics:
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=client.ip_clickhouse
+    ) as metric:
         assert (
             await check_connection(client, server) is True
         ), f"Server ({server.ip_testing}:{server.port}) is blocked"
 
-    assert metrics_increased(metrics, diff_metrics) is True
+    assert metric.blocked_by_src_ip_block()
 
 
-@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_src_del_block_by_ip(
     xfw: XFW,
     protocol: str,
@@ -169,7 +178,10 @@ async def test_src_del_block_by_ip(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
+    metric_analyzer,
+    clickhouse_client,
 ):
+    await clickhouse_client.connect()
     new_ip = server.generate_new_address()
 
     await xfw.rules_set(f"""
@@ -188,17 +200,17 @@ async def test_src_del_block_by_ip(
             }}
         }}
         """)
-    metrics = ["xfw_src_ip_blocked_packets", "xfw_src_ip_blocked_bytes"]
 
-    async with xfw.metrics_diff(metrics) as diff_metrics:
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=client.ip_clickhouse
+    ) as metric:
         assert (
             await check_connection(client, server) is True
         ), f"Server ({server.ip_testing}:{server.port}) is blocked"
 
-    assert metrics_increased(metrics, diff_metrics) is True
+    assert metric.blocked_by_src_ip_block()
 
 
-@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_src_replace_block_by_ip_to_allow_by_ip(
     xfw: XFW,
     protocol: str,
@@ -206,7 +218,10 @@ async def test_src_replace_block_by_ip_to_allow_by_ip(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
+    metric_analyzer,
+    clickhouse_client,
 ):
+    await clickhouse_client.connect()
     await xfw.rules_set(f"""
         xfw {{
             evaluation_mode;
@@ -223,24 +238,27 @@ async def test_src_replace_block_by_ip_to_allow_by_ip(
             }}
         }}
         """)
-    metrics = ["xfw_src_ip_blocked_packets", "xfw_src_ip_blocked_bytes"]
 
-    async with xfw.metrics_diff(metrics) as diff_metrics:
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=client.ip_clickhouse
+    ) as metric:
         assert (
             await check_connection(client, server) is True
         ), f"Server ({server.ip_testing}:{server.port}) is blocked"
 
-    assert metrics_increased(metrics, diff_metrics) is True
+    assert metric.blocked_by_src_ip_block()
 
 
-@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_icmp_block_by_type(
     xfw: XFW,
     ip_version: str,
     udp_server: UdpServer,
     icmp_raw_client: IcmpRawClient,
     start_udp_server_and_icmp_clients,
+    metric_analyzer,
+    clickhouse_client,
 ):
+    await clickhouse_client.connect()
     await xfw.rules_set(f"""
         xfw {{ 
             evaluation_mode;
@@ -249,20 +267,23 @@ async def test_icmp_block_by_type(
         }}
         """)
 
-    metrics = ["xfw_icmp_blocked_packets", "xfw_icmp_blocked_bytes"]
-    async with xfw.metrics_diff(metrics) as diff_metrics:
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=icmp_raw_client.ip_clickhouse
+    ) as metric:
         await asyncio.gather(*[icmp_raw_client.ping() for _ in range(5)])
 
     assert await icmp_raw_client.pong() is True, "Client is blocked"
-    assert metrics_increased(metrics, diff_metrics) is True
+    assert metric.blocked_by_icmp_block()
 
 
-@pytest.mark.skip("ISSUE: 40(xFW)")
 async def test_tcp_anomaly_filter(
     xfw: XFW,
     tcp_ip4_raw_server: TcpIpV4RawServer,
     tcp_ip4_raw_client: TcpIpV4RawClient,
+    metric_analyzer,
+    clickhouse_client,
 ):
+    await clickhouse_client.connect()
     packet = TCP(
         flags="SR",
         seq=32513451,
@@ -279,40 +300,46 @@ async def test_tcp_anomaly_filter(
         " syn_with_payload syn_with_seqno=0 bad_flags; }"
     )
 
-    metrics = ["xfw_tcp_anom_bad_flags_packets", "xfw_tcp_anom_bad_flags_bytes"]
-    async with xfw.metrics_diff(metrics) as diff_metrics:
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=tcp_ip4_raw_client.ip_clickhouse
+    ) as metric:
         await asyncio.gather(*[tcp_ip4_raw_client.send_packet(packet) for _ in range(5)])
 
     assert await tcp_ip4_raw_server.receive_tcp_flags() == "SR", "Client is blocked"
-    assert metrics_increased(metrics, diff_metrics) is True
+    assert metric.blocked_by_tcp_anomaly_invalid_flags()
 
 
-@pytest.mark.skip("ISSUE: 40 (xFW)")
 async def test_tcp_auth_filter_tcp_flood_from_non_existing_session(
     xfw: XFW,
     tcp_raw_server: TcpRawServer,
     tcp_raw_client: TcpRawClient,
     start_tcp_raw_server_and_raw_clients,
+    metric_analyzer,
+    clickhouse_client,
 ):
+    await clickhouse_client.connect()
     await xfw.rules_set("xfw { evaluation_mode; tcp_auth_filter; }")
 
-    metrics = ["xfw_tcp_auth_failed_packets", "xfw_tcp_auth_failed_bytes"]
-    async with xfw.metrics_diff(metrics) as diff_metrics:
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
+    ) as metric:
         await tcp_raw_client.send_packet(TCP(flags="A"))
 
     assert (
         await tcp_raw_server.receive_tcp_flags() == "A"
     ), f"TCP packet with A without session is skipped"
-    assert metrics_increased(metrics, diff_metrics) is True
+    assert metric.blocked_by_tcp_auth_filter_unknown_connection()
 
 
-@pytest.mark.skip("ISSUE: 40 (xFW)")
 async def test_tcp_flags_filter(
     xfw: XFW,
     tcp_raw_server: TcpRawServer,
     tcp_raw_client: TcpRawClient,
     start_tcp_raw_server_and_raw_clients,
+    metric_analyzer,
+    clickhouse_client,
 ):
+    await clickhouse_client.connect()
     await xfw.rules_set(f"""
         xfw {{
             evaluation_mode; 
@@ -320,23 +347,26 @@ async def test_tcp_flags_filter(
             tcp_flags syn : ratelimit=test;
         }}
         """)
-    metrics = ["xfw_syn_rate_limited_packets", "xfw_syn_rate_limited_bytes"]
-    async with xfw.metrics_diff(metrics) as diff_metrics:
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
+    ) as metric:
         await asyncio.gather(
             *[tcp_raw_client.send_packet(tcp_raw_client.valid_syn_packet) for _ in range(10)]
         )
 
     assert await tcp_raw_server.receive_many_packets(10) >= 5
-    assert metrics_increased(metrics, diff_metrics) is True
+    assert metric.blocked_by_tcp_flags_syn_ratelimit()
 
 
-@pytest.mark.skip("ISSUE: 40 (xFW)")
 async def test_udp_anomaly_filter_zero_port_is_blocked(
     xfw: XFW,
     udp_server: RegularKernelSocketNetworkStateful,
     udp_raw_client: UdpRawClient,
     start_udp_server_and_raw_clients,
+    metric_analyzer,
+    clickhouse_client,
 ):
+    await clickhouse_client.connect()
     udp_raw_client.auto_add_host = False
 
     packet = UDP()
@@ -345,12 +375,13 @@ async def test_udp_anomaly_filter_zero_port_is_blocked(
 
     await xfw.rules_set("xfw { evaluation_mode; }")
 
-    metrics = ["xfw_udp_anom_zero_port_packets", "xfw_udp_anom_zero_port_bytes"]
-    async with xfw.metrics_diff(metrics) as diff_metrics:
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=udp_raw_client.ip_clickhouse
+    ) as metric:
         await udp_raw_client.send_packet(packet / "Hello :)")
 
     assert await udp_server.receive_message() == "Hello :)", f"Zero source port port is blocked"
-    assert metrics_increased(metrics, diff_metrics) is True
+    assert metric.blocked_by_udp_anomaly_zero_source_or_destination_port()
 
 
 @pytest.mark.clickhouse
