@@ -1,7 +1,9 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 import socket
+import struct
 
+from dnslib import NS, QTYPE, RCODE, RR, TXT, A, DNSHeader, DNSQuestion, DNSRecord
 from scapy.all import ETH_P_IP, ETH_P_IPV6
 from scapy.layers.inet import ICMP, IP, IP_PROTOS, TCP, UDP, Ether
 from scapy.layers.inet6 import IPv6, IPv6ExtHdrFragment
@@ -9,6 +11,7 @@ from scapy.layers.l2 import ARP
 from scapy.layers.sctp import SCTP
 from scapy.packet import Raw
 
+from framework.asyn import DnsUdpClient
 from framework.asyn.ether_raw_client import EtherRawClient
 from framework.asyn.ether_raw_server import EtherRawServer
 from framework.remote import RemoteServer
@@ -19,6 +22,40 @@ ETH_P_ARP = 0x0806
 
 
 class SendInvalidPacketsMixin(EtherRawClient):
+    async def send_dns_ip4_large_response_packet(self, src_mac: str, dst_mac: str):
+        reply = DNSRecord(DNSHeader(id=1234, qr=1, aa=1, ra=1, qdcount=1, ancount=1))
+        reply.add_question(DNSQuestion("google.com", QTYPE.TXT))
+        reply.add_answer(RR("google.com", QTYPE.TXT, rdata=TXT("test")))
+
+        packet = (
+            Ether(dst=dst_mac, src=src_mac, type=0x0800)
+            / IP(src=self.ipv4, dst=self.remote_ip, len=4170)
+            / UDP(sport=53, dport=53, len=4150)
+            / Raw(load=reply.pack())
+        )
+
+        await self.loop.sock_sendall(self.socket, bytes(packet))
+        self.logger.info(
+            f"Sending fake large DNS response L2 packet (bytes len: {len(bytes(packet))}): {packet}"
+        )
+
+    async def send_dns_ip6_large_response_packet(self, src_mac: str, dst_mac: str):
+        reply = DNSRecord(DNSHeader(id=1234, qr=1, aa=1, ra=1, qdcount=1, ancount=1))
+        reply.add_question(DNSQuestion("google.com", QTYPE.TXT))
+        reply.add_answer(RR("google.com", QTYPE.TXT, rdata=TXT("test")))
+
+        packet = (
+            Ether(dst=dst_mac, src=src_mac, type=0x86DD)
+            / IPv6(src=self.ipv6, dst=self.remote_ip, plen=4150)
+            / UDP(sport=53, dport=53, len=4150)
+            / Raw(load=reply.pack())
+        )
+
+        await self.loop.sock_sendall(self.socket, bytes(packet))
+        self.logger.info(
+            f"Sending fake large DNS response L2 packet (bytes len: {len(bytes(packet))}): {packet}"
+        )
+
     async def send_eth_eapol_packet(self, src_mac: str, dst_mac: str):
         packet = Ether(dst=dst_mac, src=src_mac, type=socket.ETHERTYPE_VLAN) / Raw(
             load=b"some_data"
@@ -60,7 +97,7 @@ class SendInvalidPacketsMixin(EtherRawClient):
         packet = Ether(dst=dst_mac, src=src_mac, type=ETH_P_IP)
         packet = (
             packet
-            / IP(src=self.ipv4, dst=self.remote_ip, id=12345, flags="MF", frag=10, len=30)
+            / IP(src="0.0.0.0", dst=self.remote_ip, id=12345, flags="MF", frag=10, len=30)
             / Raw(b"flag 10")
         )
         await self.loop.sock_sendall(self.socket, bytes(packet))
@@ -86,7 +123,7 @@ class SendInvalidPacketsMixin(EtherRawClient):
         packet = (
             packet
             / IPv6(
-                src=self.ipv6,
+                src="::",
                 dst=self.remote_ip,
             )
             / IPv6ExtHdrFragment(id=12345)
@@ -161,3 +198,67 @@ class InvalidEthTypeRawServerRemote(RemoteServer, InvalidEthTypeRawServer):
     def __init__(self, *args, **kwargs):
         RemoteServer.__init__(self, *args, **kwargs)
         InvalidEthTypeRawServer.__init__(self, *args, **kwargs)
+
+
+class DnsRequests:
+    @staticmethod
+    def non_zero_rcode() -> DNSRecord:
+        query = DNSRecord.question("google.com", qtype="A")
+        query.header.rcode = RCODE.FORMERR
+        return query
+
+    @staticmethod
+    def more_than_one_question() -> DNSRecord:
+        query = DNSRecord.question("google.com", qtype="A")
+        query.add_question(DNSQuestion("example.com"))
+        return query
+
+    @staticmethod
+    def answers_or_authority_sections_in_dns_query() -> DNSRecord:
+        query = DNSRecord.question("google.com", qtype="A")
+        query.add_answer(RR("google.com.", ttl=300, rdata=A("1.2.3.4")))
+        return query
+
+    @staticmethod
+    def invalid_ixfr_query() -> DNSRecord:
+        query = DNSRecord.question("google.com", qtype="IXFR")
+        query.add_auth(RR("google.com.", ttl=300, rdata=NS("ns.google.com.")))
+        return query
+
+    @staticmethod
+    def more_than_two_additional_sections() -> DNSRecord:
+        query = DNSRecord.question("google.com", qtype="A")
+        query.add_ar(RR("foo.bar.", rtype=QTYPE.A, rdata=A("192.0.2.1")))
+        query.add_ar(RR("boo.bar.", rtype=QTYPE.A, rdata=A("192.0.2.2")))
+        query.add_ar(RR("zoo.bar.", rtype=QTYPE.A, rdata=A("192.0.2.3")))
+        return query
+
+    @staticmethod
+    async def reply_for_non_existing_query(server) -> bool:
+        return await server.reply_for_non_existing_query()
+
+    @staticmethod
+    async def reply_with_ttl_0(server) -> bool:
+        return await server.reply_with_ttl(0)
+
+    @staticmethod
+    async def reply_with_malformed_rr(server: DnsUdpClient) -> bool:
+        request_record = await server.receive_dns_record()
+        if not request_record:
+            return False
+
+        response_bytes = (
+            struct.pack("!HHHHHH", request_record.header.id, 0x8100, 1, 1, 0, 0)
+            + b"\x06google\x00"
+            + struct.pack("!HH", 1, 1)
+            + b"\x00"
+            + struct.pack("!HHIH", 1, 1, 300, 4)
+            + b"\x01"  # invalid RDATA (1 byte instead of 4)
+        )
+
+        await server._send(response_bytes)
+        return True
+
+    @staticmethod
+    async def reply_with_multiple_answers_101(server) -> bool:
+        return await server.reply_with_multiple_answers(101)
