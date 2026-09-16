@@ -18,7 +18,7 @@ from scapy.all import Packet
 from config import TestingModel
 from framework.namespaces import Netns
 from framework.rpc.client import RpcClient
-from framework.utils import run_cmd
+from framework.utils import invert_in_evaluate_mode, run_cmd
 
 
 class State(enum.StrEnum):
@@ -126,6 +126,7 @@ class NetworkStateful(Stateful, abc.ABC):
         self,
         network_interface: str,
         port: int,
+        xfw_mode: str,
         *args,
         ipv4: typing.Optional[str] = None,
         ipv4_mask: int = 24,
@@ -143,6 +144,7 @@ class NetworkStateful(Stateful, abc.ABC):
         super().__init__(*args, **kwargs)
         self.network_interface = network_interface
         self.port = port
+        self.xfw_mode = xfw_mode
         self.ipv4 = ipv4
         self.ipv4_mask = ipv4_mask
         self.ipv4_testing = ipv4_testing
@@ -503,6 +505,7 @@ class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
         await self.check_socket_closed()
         self.logger.debug("socket is cleaned")
 
+    @invert_in_evaluate_mode
     async def receive_block(self) -> bool:
         """
         Check if the incoming data stream has ended or is empty.

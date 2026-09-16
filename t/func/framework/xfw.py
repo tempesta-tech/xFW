@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import asyncio
+import enum
 import hashlib
 import os.path
 import typing
@@ -19,6 +20,11 @@ from framework.utils import (
     retry_on_failure,
     run_cmd,
 )
+
+
+class XfwMode(enum.StrEnum):
+    normal = "normal"
+    evaluate = "evaluate"
 
 
 @dataclass(slots=True, frozen=True)
@@ -74,6 +80,7 @@ class XFW(NetworkStateful):
         self.clickhouse_client = clickhouse_client
         self.devices_mode = devices_mode
         self.retry_daemon_start = retry_daemon_start
+        self.second_config = False
 
         self.__config: Optional[str] = None
 
@@ -324,6 +331,9 @@ class XFW(NetworkStateful):
         )
 
     async def rules_set(self, new_rules: str) -> None:
+        if self.xfw_mode == XfwMode.evaluate and self.second_config:
+            return await self.rules_push_patch(new_rules)
+        self.second_config = True
         return await self.rules_push_config(new_rules)
 
     async def rules_patch(self, new_rules: str) -> None:

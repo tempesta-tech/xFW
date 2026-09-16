@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-from typing import Any
+from typing import Any, AsyncGenerator
 
 import pytest
 
@@ -11,7 +11,7 @@ from framework.utils import ClonerCallable
 
 
 @pytest.fixture(scope="function")
-async def server_cloner() -> ClonerCallable:
+async def server_cloner() -> AsyncGenerator[ClonerCallable, None]:
     _clones: list[SocketBaseNetworkStateful] = []
 
     def wrapper(
@@ -27,6 +27,7 @@ async def server_cloner() -> ClonerCallable:
         for port, address in zip(ports, addresses):
             _clones.append(
                 class_to_create(
+                    xfw_mode=cloner.xfw_mode,
                     network_interface=cloner.network_interface,
                     ipv4=address if cloner.ipv4 else None,
                     ipv4_mask=cloner.ipv4_mask if cloner.ipv4 else None,
@@ -49,7 +50,7 @@ async def server_cloner() -> ClonerCallable:
 
 
 @pytest.fixture(scope="function")
-async def client_cloner(server_cloner) -> ClonerCallable:
+async def client_cloner(server_cloner) -> AsyncGenerator[ClonerCallable, None]:
     """
     server_cloner: The server cloner fixture. Required to enforce the correct teardown sequence in pytest.
 
@@ -84,6 +85,7 @@ async def client_cloner(server_cloner) -> ClonerCallable:
         for port, address in zip(ports, addresses):
             _clones.append(
                 class_to_create(
+                    xfw_mode=cloner.xfw_mode,
                     network_interface=cloner.network_interface,
                     ipv4=address if cloner.ipv4 else None,
                     ipv4_mask=cloner.ipv4_mask if cloner.ipv4 else None,

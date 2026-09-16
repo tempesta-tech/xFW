@@ -174,3 +174,18 @@ def get_tcp_packet(
         packet = packet / Raw(payload)
 
     return packet
+
+
+def invert_in_evaluate_mode(func):
+    from framework.xfw import XfwMode
+
+    @functools.wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        result = await func(self, *args, **kwargs)
+
+        if self.xfw_mode == XfwMode.evaluate:
+            return not result
+
+        return result
+
+    return wrapper

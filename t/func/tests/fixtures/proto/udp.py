@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+from typing import AsyncGenerator
 
 import pytest
 from pytest import FixtureRequest
@@ -12,9 +13,10 @@ from framework.rpc.client import RpcClient
 
 @pytest.fixture
 async def udp_ip4_server(
-    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
-) -> UdpServer:
+    xfw_mode: str, config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
+) -> AsyncGenerator[UdpServer, None]:
     new_server = server_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
@@ -27,9 +29,10 @@ async def udp_ip4_server(
 
 @pytest.fixture
 async def udp_ip6_server(
-    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
-) -> UdpServer:
+    xfw_mode: str, config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
+) -> AsyncGenerator[UdpServer, None]:
     new_server = server_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
@@ -42,10 +45,12 @@ async def udp_ip6_server(
 
 @pytest.fixture
 async def udp_ip4_client(
+    xfw_mode: str,
     config: ConfigSettings,
     logging_level: int,
-) -> UdpClient:
+) -> AsyncGenerator[UdpClient, None]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=UdpV4Client,
@@ -56,10 +61,12 @@ async def udp_ip4_client(
 
 @pytest.fixture
 async def udp_ip4_raw_client(
+    xfw_mode: str,
     config: ConfigSettings,
     logging_level: int,
-) -> UdpRawClient:
+) -> AsyncGenerator[UdpRawClient, None]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=UdpIpV4RawClient,
@@ -70,10 +77,12 @@ async def udp_ip4_raw_client(
 
 @pytest.fixture
 async def udp_ip6_client(
+    xfw_mode: str,
     config: ConfigSettings,
     logging_level: int,
-) -> UdpClient:
+) -> AsyncGenerator[UdpClient, None]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=UdpV6Client,
@@ -84,11 +93,13 @@ async def udp_ip6_client(
 
 @pytest.fixture
 async def udp_ip4_mapped_ip6_server(
+    xfw_mode: str,
     config: ConfigSettings,
     logging_level: int,
     rpc_connection,
-) -> UdpServer:
+) -> AsyncGenerator[UdpServer, None]:
     new_server = server_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=UdpV6ServerMappedIP,
@@ -102,10 +113,12 @@ async def udp_ip4_mapped_ip6_server(
 
 @pytest.fixture
 async def udp_ip6_raw_client(
+    xfw_mode: str,
     config: ConfigSettings,
     logging_level: int,
-) -> UdpRawClient:
+) -> AsyncGenerator[UdpRawClient, None]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=UdpIpV6RawClient,
@@ -115,7 +128,9 @@ async def udp_ip6_raw_client(
 
 
 @pytest.fixture
-def udp_server(config: ConfigSettings, request: FixtureRequest, ip_version: str) -> UdpServer:
+def udp_server(
+    xfw_mode: str, config: ConfigSettings, request: FixtureRequest, ip_version: str
+) -> UdpServer:
     return request.getfixturevalue(f"udp_{ip_version}_server")
 
 

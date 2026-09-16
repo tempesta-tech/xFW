@@ -9,7 +9,16 @@ from framework.asyn import *
 from framework.clickhouse import ClickhouseClient
 from framework.fabrics import xfw_fabric
 from framework.rpc.client import RpcClient
-from framework.xfw import XFW, XFWRemote
+from framework.xfw import XFW, XfwMode, XFWRemote
+
+
+@pytest.fixture(
+    autouse=True,
+    params=list(XfwMode),
+    ids=list(XfwMode),
+)
+async def xfw_mode(request) -> str:
+    return request.param
 
 
 @pytest.fixture
@@ -18,8 +27,10 @@ async def xfw(
     logging_level: int,
     rpc_connection: Optional[RpcClient],
     clickhouse_client: ClickhouseClient,
+    xfw_mode,
 ) -> AsyncGenerator[XFW, None]:
     xfw = xfw_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
@@ -29,6 +40,8 @@ async def xfw(
     )
     try:
         await xfw.start()
+        if xfw_mode == XfwMode.evaluate:
+            await xfw.rules_set("""xfw { evaluation_mode; }""")
         yield xfw
     finally:
         await xfw.stop()
@@ -40,8 +53,10 @@ async def xfw_geoip(
     logging_level: int,
     rpc_connection: Optional[RpcClient],
     clickhouse_client: ClickhouseClient,
+    xfw_mode: str,
 ) -> AsyncGenerator[XFW, None]:
     xfw = xfw_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,

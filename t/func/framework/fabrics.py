@@ -15,6 +15,7 @@ TRemoteServer = TypeVar("TRemoteServer")
 def client_fabric(
     config: ConfigSettings,
     logging_level: int,
+    xfw_mode: str,
     local_class: Type[TClient],
     remote_port: int = None,
     force_ip4: bool = False,
@@ -39,6 +40,7 @@ def client_fabric(
         backend_ip = config.backend_ipv6
 
     params = dict(
+        xfw_mode=xfw_mode,
         network_interface=config.client_interface,
         ipv4=ip_v4,
         ipv4_mask=ip_v4_mask,
@@ -66,6 +68,7 @@ def client_fabric(
 def server_fabric(
     config: ConfigSettings,
     logging_level: int,
+    xfw_mode: str,
     rpc_connection,
     local_class: Type[TLocalServer],
     remote_class: Type[TRemoteServer],
@@ -98,6 +101,7 @@ def server_fabric(
         client_ip = config.client_ipv6
 
     params = dict(
+        xfw_mode=xfw_mode,
         network_interface=config.backend_interface,
         ipv4=ip_v4,
         ipv4_mask=ip_v4_mask,
@@ -128,6 +132,7 @@ def server_fabric(
 def xfw_fabric(
     config: ConfigSettings,
     logging_level: int,
+    xfw_mode: str,
     rpc_connection,
     clickhouse_client,
     local_class: Type[TLocalServer],
@@ -145,6 +150,7 @@ def xfw_fabric(
         cls = remote_class
 
     params = dict(
+        xfw_mode=xfw_mode,
         build_dir=config.xfw_build_dir,
         network_interface=config.xfw_interface,
         ipv4=config.xfw_grpc_ip,

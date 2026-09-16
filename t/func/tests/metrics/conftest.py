@@ -234,9 +234,10 @@ def xfw_setup(request):
 
 @pytest.fixture
 async def invalid_l2_ip4_raw_client(
-    config, logging_level
+    xfw_mode, config, logging_level
 ) -> AsyncGenerator[InvalidEthTypeRawClient, Any]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=InvalidEthTypeRawClient,
@@ -248,9 +249,10 @@ async def invalid_l2_ip4_raw_client(
 
 @pytest.fixture
 async def invalid_l2_ip6_raw_client(
-    config, logging_level
+    xfw_mode, config, logging_level
 ) -> AsyncGenerator[InvalidEthTypeRawClient, Any]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=InvalidEthTypeRawClient,

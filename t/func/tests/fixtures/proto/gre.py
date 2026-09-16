@@ -1,21 +1,30 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+from typing import AsyncGenerator
 
 import pytest
 from pytest import FixtureRequest
 
 from config import ConfigSettings
 from framework.asyn import *
+from framework.asyn import (
+    GreRawV4Client,
+    GreRawV4Server,
+    GreRawV6Client,
+    GreRawV6Server,
+)
 from framework.fabrics import client_fabric, server_fabric
 from framework.rpc.client import RpcClient
 
 
 @pytest.fixture
 async def gre_ip4_raw_client(
+    xfw_mode,
     config: ConfigSettings,
     logging_level: int,
-) -> BaseGreRawStateful:
+) -> AsyncGenerator[GreRawV4Client, None]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=GreRawV4Client,
@@ -26,10 +35,12 @@ async def gre_ip4_raw_client(
 
 @pytest.fixture
 async def gre_ip6_raw_client(
+    xfw_mode,
     config: ConfigSettings,
     logging_level: int,
-) -> BaseGreRawStateful:
+) -> AsyncGenerator[GreRawV6Client, None]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=GreRawV6Client,
@@ -40,9 +51,10 @@ async def gre_ip6_raw_client(
 
 @pytest.fixture
 async def gre_ip4_raw_server(
-    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
-) -> UdpServer:
+    xfw_mode, config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
+) -> AsyncGenerator[GreRawV4Server, None]:
     new_server = server_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
@@ -55,9 +67,10 @@ async def gre_ip4_raw_server(
 
 @pytest.fixture
 async def gre_ip6_raw_server(
-    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
-) -> UdpServer:
+    xfw_mode, config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
+) -> AsyncGenerator[GreRawV6Server, None]:
     new_server = server_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,

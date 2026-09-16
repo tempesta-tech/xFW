@@ -1,20 +1,30 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+from typing import AsyncGenerator
 
 import pytest
 from pytest import FixtureRequest
 
 from config import ConfigSettings
 from framework.asyn import *
+from framework.asyn import (
+    TcpIpV4RawServer,
+    TcpIpV4RawServerRemote,
+    TcpV4Server,
+    TcpV4ServerRemote,
+    TcpV6Server,
+    TcpV6ServerRemote,
+)
 from framework.fabrics import client_fabric, server_fabric
 from framework.rpc.client import RpcClient
 
 
 @pytest.fixture
 async def tcp_ip4_server(
-    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
-) -> TcpServer:
+    xfw_mode: str, config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
+) -> AsyncGenerator[TcpV4Server, None]:
     new_server = server_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
@@ -27,9 +37,10 @@ async def tcp_ip4_server(
 
 @pytest.fixture
 async def tcp_ip4_raw_server(
-    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
-) -> TcpRawServer:
+    xfw_mode: str, config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
+) -> AsyncGenerator[TcpIpV4RawServer, None]:
     new_server = server_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
@@ -42,9 +53,10 @@ async def tcp_ip4_raw_server(
 
 @pytest.fixture
 async def tcp_ip6_server(
-    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
-) -> TcpServer:
+    xfw_mode: str, config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
+) -> AsyncGenerator[TcpV6Server, None]:
     new_server = server_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
@@ -57,9 +69,10 @@ async def tcp_ip6_server(
 
 @pytest.fixture
 async def tcp_ip6_raw_server(
-    config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
-) -> TcpRawServer:
+    xfw_mode: str, config: ConfigSettings, logging_level: int, rpc_connection: Optional[RpcClient]
+) -> AsyncGenerator[TcpRawServer, None]:
     new_server = server_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
@@ -72,10 +85,12 @@ async def tcp_ip6_raw_server(
 
 @pytest.fixture
 async def tcp_ip4_client(
+    xfw_mode: str,
     config: ConfigSettings,
     logging_level: int,
-) -> TcpClient:
+) -> AsyncGenerator[TcpClient, None]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=TcpV4Client,
@@ -86,10 +101,12 @@ async def tcp_ip4_client(
 
 @pytest.fixture
 async def tcp_ip4_raw_client(
+    xfw_mode: str,
     config: ConfigSettings,
     logging_level: int,
-) -> TcpRawClient:
+) -> AsyncGenerator[TcpRawClient, None]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=TcpIpV4RawClient,
@@ -100,10 +117,12 @@ async def tcp_ip4_raw_client(
 
 @pytest.fixture
 async def tcp_ip6_client(
+    xfw_mode: str,
     config: ConfigSettings,
     logging_level: int,
-) -> TcpClient:
+) -> AsyncGenerator[TcpClient, None]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=TcpV6Client,
@@ -114,10 +133,12 @@ async def tcp_ip6_client(
 
 @pytest.fixture
 async def tcp_ip6_raw_client(
+    xfw_mode: str,
     config: ConfigSettings,
     logging_level: int,
-) -> TcpRawClient:
+) -> AsyncGenerator[TcpRawClient, None]:
     new_client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=TcpIpV6RawClient,
@@ -127,7 +148,9 @@ async def tcp_ip6_raw_client(
 
 
 @pytest.fixture
-def tcp_server(config: ConfigSettings, request: FixtureRequest, ip_version: str) -> TcpServer:
+def tcp_server(
+    xfw_mode: str, config: ConfigSettings, request: FixtureRequest, ip_version: str
+) -> TcpServer:
     return request.getfixturevalue(f"tcp_{ip_version}_server")
 
 

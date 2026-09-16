@@ -171,8 +171,10 @@ async def test_egress_metrics(
     config: ConfigSettings,
     logging_level: int,
     rpc_connection,
+    xfw_mode,
 ):
     server = server_fabric(
+        xfw_mode=xfw_mode,
         rpc_connection=rpc_connection,
         config=config,
         logging_level=logging_level,
@@ -182,6 +184,7 @@ async def test_egress_metrics(
     )
 
     client = client_fabric(
+        xfw_mode=xfw_mode,
         config=config,
         logging_level=logging_level,
         local_class=InvalidEthTypeRawClient,
