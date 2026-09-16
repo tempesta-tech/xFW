@@ -5,8 +5,18 @@ from typing import Any, AsyncGenerator
 import pytest
 
 from framework.fabrics import client_fabric
+from framework.xfw import XfwMode
 from tests.metrics.utils import InvalidEthTypeRawClient
 from tests.test_icmp import ICMP_BLOCKING_TYPES_STR
+
+
+@pytest.fixture(
+    autouse=True,
+    params=list(XfwMode),
+    ids=list(XfwMode),
+)
+async def xfw_mode(request) -> str:
+    return request.param
 
 
 @pytest.fixture

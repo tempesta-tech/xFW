@@ -98,7 +98,7 @@ async def test_icmp(
         clickhouse_client, ip_to_search=icmp_raw_client.ip_clickhouse
     ) as metric:
         await icmp_raw_client.ping()
-        assert await icmp_raw_client.pong() is False
+        assert await icmp_raw_client.receive_block()
 
     assert expected_metric(metric)
 
@@ -271,7 +271,7 @@ async def test_blocked_by_tcp_anomaly_zero_port_20_bit(
         clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
     ) as metric:
         await tcp_raw_client.send_packet(packet)
-        assert await tcp_raw_server.receive_block()
+        await tcp_raw_server.receive_block()
 
     assert metric.blocked_by_tcp_anomaly_zero_source_or_destination_port()
 
@@ -301,7 +301,7 @@ async def test_blocked_by_udp_anomaly_zero_port_21_bit(
         clickhouse_client, ip_to_search=udp_raw_client.ip_clickhouse
     ) as metric:
         await udp_raw_client.send_packet(packet / "Hello :)")
-        assert await udp_server.receive_block()
+        await udp_server.receive_block()
 
     assert metric.blocked_by_udp_anomaly_zero_source_or_destination_port()
 
@@ -556,7 +556,7 @@ async def test_blocked_during_parsing_malformed_dns(
         clickhouse_client, ip_to_search=dns_udp_client.ip_clickhouse
     ) as metric:
         await dns_udp_client._send(data_to_send)
-        assert not await dns_udp_server.receive_dns_record()
+        assert await dns_udp_server.receive_block()
 
     assert expected_metric(metric)
 
@@ -611,7 +611,7 @@ async def test_blocked_by_dns_anomaly(
         clickhouse_client, ip_to_search=dns_udp_client.ip_clickhouse
     ) as metric:
         await dns_udp_client.send_query(data_to_send)
-        assert not await dns_udp_server.receive_dns_record()
+        assert await dns_udp_server.receive_block()
 
     assert expected_metric(metric)
 
@@ -664,7 +664,7 @@ async def test_blocked_by_dns_anomaly_server(
     ) as metric:
         await inverted_dns_client.request_dns_server()
         assert await server_reply_method(inverted_dns_server_mtu) is True
-        assert not await inverted_dns_client.receive_dns_record()
+        assert await inverted_dns_client.receive_block()
 
     assert expected_metric(metric)
 

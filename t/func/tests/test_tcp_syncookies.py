@@ -20,7 +20,7 @@ from framework.asyn import (
 from framework.fabrics import client_fabric
 from framework.metrics import KernelMetricsDiff, PrometheusMetricsDiff
 from framework.utils import get_tcp_packet, run_in_background
-from framework.xfw import XFW
+from framework.xfw import XFW, XfwMode
 
 bad_packet = TCP(flags="S")
 ok_packet = TCP(
@@ -31,6 +31,11 @@ ok_packet = TCP(
         ("MSS", 1460),
     ],
 )
+
+
+@pytest.fixture(autouse=True)
+async def xfw_mode() -> str:
+    return XfwMode.normal
 
 
 class TcpRawSynCookieClient(TcpRawClient, abc.ABC):

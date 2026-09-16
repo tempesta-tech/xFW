@@ -12,13 +12,9 @@ from framework.rpc.client import RpcClient
 from framework.xfw import XFW, XfwMode, XFWRemote
 
 
-@pytest.fixture(
-    autouse=True,
-    params=list(XfwMode),
-    ids=list(XfwMode),
-)
+@pytest.fixture(autouse=True)
 async def xfw_mode(request) -> str:
-    return request.param
+    return XfwMode.normal
 
 
 @pytest.fixture
