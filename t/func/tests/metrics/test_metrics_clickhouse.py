@@ -669,6 +669,7 @@ async def test_blocked_by_dns_anomaly_server(
     assert expected_metric(metric)
 
 
+@pytest.mark.skip_on_virtio
 @pytest.mark.parametrize(
     "invalid_l2_raw_client, send_method",
     [
