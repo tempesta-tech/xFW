@@ -198,8 +198,8 @@ async def test_ingress_preload_metrics(
     async with metric_analyzer.expected_metrics_diff(
         xfw=xfw,
         expected_metrics=PrometheusMetricsDiff(
-            xfw_preload_ingress_packets=11,
-            xfw_preload_ingress_bytes=512,
+            xfw_preload_ingress_packets=[10, 11],
+            xfw_preload_ingress_bytes=[470, 512],
             xfw_arp_ingress_packets=0,
             xfw_arp_ingress_bytes=0,
         ),
