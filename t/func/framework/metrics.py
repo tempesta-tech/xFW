@@ -599,7 +599,7 @@ class MetricsAnalyzer:
 
         await clickhouse_client.wait_for_new_records(addr=ip_to_search, timestamp=timestamp)
         records = await clickhouse_client.records_with(addr=ip_to_search, timestamp=timestamp)
-        assert len(records) == 1
+        assert len(records) == 1, records
 
         record = records[0]
         metric.record = record

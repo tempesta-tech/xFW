@@ -142,7 +142,8 @@ from tests.metrics.utils import (
         # (14 + 20 + 12) * 10
         pytest.param(
             PrometheusMetricsDiff(
-                xfw_l4_unsupported_egress_packets=10, xfw_l4_unsupported_egress_bytes=460
+                xfw_l4_unsupported_egress_packets=[10, 11],
+                xfw_l4_unsupported_egress_bytes=[460, 590],
             ),
             "send_l4_unsupported_ip_proto",
             ETH_P_IP,
