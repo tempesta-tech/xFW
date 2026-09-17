@@ -9,6 +9,7 @@
 #include <flatbuffers/flatbuffers.h>
 #include <gtest/gtest.h>
 
+#include "../../lib/cli/config_defaults.hh"
 #include "../../lib/proto/bitset_helper.hh"
 #include "../../lib/proto/serialize.hh"
 #include "../../lib/cli/tcl_private.hh"
@@ -19,6 +20,7 @@ const std::string max_tfw_out = "tfw{srv_group static{ {server 192.168.1.1}}}";
 const std::string max_tl = "tl {\nsome\nprogram\nhere\n}";
 const std::string max_xfw = "xfw {"
 	"tcp_syncookies passive_timer=1 flood_timer=5;"
+	"tcp_syn_drop hash_salt=12345 time_min=500 max_delay=3000 retry_count=3 block_timeout=0;"
 	"tcp_anomaly_filter; tcp_auth_filter/del;"
 	"ratelimit=my_ratelimit pps=300 bps=1024;"
 	"icmp ip6 : ratelimit=my_ratelimit { 13, 30 }"
@@ -87,8 +89,16 @@ TEST(ParsesFullConfig, HandlesMaximumData)
 
 	ASSERT_TRUE(conf->prvt->xfw_conf.has_value());
 	ASSERT_TRUE(conf->prvt->xfw_conf.value().syncookie_.has_value());
-	ASSERT_EQ(conf->prvt->xfw_conf.value().syncookie_.value().flood_timer_, 5);
-	ASSERT_EQ(conf->prvt->xfw_conf.value().syncookie_.value().passive_timer_, 1);
+	ASSERT_EQ(conf->prvt->xfw_conf.value().syncookie_.value().flood_timer_sec_, 5);
+	ASSERT_EQ(conf->prvt->xfw_conf.value().syncookie_.value().passive_timer_sec_, 1);
+
+	auto &tcp_syn_drop = conf->prvt->xfw_conf.value().tcp_syn_drop_;
+	ASSERT_TRUE(tcp_syn_drop.has_value());
+	ASSERT_EQ(tcp_syn_drop->hash_salt_, 12345);
+	ASSERT_EQ(tcp_syn_drop->time_min_ms_, 500);
+	ASSERT_EQ(tcp_syn_drop->max_delay_ms_, 3000);
+	ASSERT_EQ(tcp_syn_drop->retry_count_, 3);
+	ASSERT_EQ(tcp_syn_drop->block_timeout_ms_, 0);
 
 	auto &cflags = conf->prvt->xfw_conf.value().flags_;
 	ASSERT_FALSE(cflags.test(XfwConf::Opt::TCP_AUTH_FILTER_ON));
@@ -336,6 +346,152 @@ TEST(ParsesXfwConfig, WithDeleteTcpSyncookies)
 	ASSERT_FALSE(conf->prvt->xfw_conf->syncookie_.has_value());
 }
 
+TEST(ParsesXfwConfig, TcpSyncookiesDefaultValues)
+{
+	std::string prog = "xfw {"
+		"tcp_syncookies passive_timer=3;"
+	"}";
+
+	std::unique_ptr<TlProgConf> conf1(tcl_parse_full_conf(prog.c_str(),
+							     prog.length()));
+
+	ASSERT_TRUE(conf1);
+	ASSERT_TRUE(conf1->prvt);
+	ASSERT_TRUE(conf1->prvt->xfw_conf.has_value());
+
+	auto &syncookie = conf1->prvt->xfw_conf->syncookie_;
+
+	ASSERT_TRUE(syncookie.has_value());
+	ASSERT_EQ(syncookie->passive_timer_sec_, 3);
+	ASSERT_EQ(syncookie->flood_timer_sec_, DEFAULT_FLOOD_TIMER_SEC);
+
+	prog = "xfw {"
+		"tcp_syncookies flood_timer=3;"
+	"}";
+
+	std::unique_ptr<TlProgConf> conf2(tcl_parse_full_conf(prog.c_str(),
+							      prog.length()));
+	ASSERT_TRUE(conf2);
+	ASSERT_TRUE(conf2->prvt);
+	ASSERT_TRUE(conf2->prvt->xfw_conf.has_value());
+
+	syncookie = conf2->prvt->xfw_conf->syncookie_;
+
+	ASSERT_TRUE(syncookie.has_value());
+	ASSERT_EQ(syncookie->passive_timer_sec_, DEFAULT_PASSIVE_TIMER_SEC);
+	ASSERT_EQ(syncookie->flood_timer_sec_, 3);
+}
+
+TEST(ParsesXfwConfig, WithDeleteTcpSynDrop)
+{
+	const std::string prog = "xfw{tcp_syn_drop/del;}";
+
+	std::unique_ptr<TlProgConf> conf(tcl_parse_full_conf(prog.c_str(), prog.length()));
+	ASSERT_TRUE(conf);
+	ASSERT_TRUE(conf->prvt);
+	ASSERT_TRUE(conf->prvt->xfw_conf.has_value());
+	ASSERT_TRUE(conf->prvt->xfw_conf->flags_.test(XfwConf::Opt::TCP_SYN_DROP_FILTER_OFF));
+	ASSERT_FALSE(conf->prvt->xfw_conf->tcp_syn_drop_.has_value());
+}
+
+TEST(ParsesXfwConfig, TcpSynDropUsesDefaultValues)
+{
+	const std::string prog = "xfw {"
+		"tcp_syn_drop hash_salt=12345 retry_count=3;"
+	"}";
+
+	std::unique_ptr<TlProgConf> conf(tcl_parse_full_conf(prog.c_str(), prog.length()));
+
+	ASSERT_TRUE(conf);
+	ASSERT_TRUE(conf->prvt);
+	ASSERT_TRUE(conf->prvt->xfw_conf.has_value());
+
+	const auto &tcp_syn_drop =
+		conf->prvt->xfw_conf->tcp_syn_drop_;
+
+	ASSERT_TRUE(tcp_syn_drop.has_value());
+	EXPECT_EQ(tcp_syn_drop->hash_salt_, 12345);
+	EXPECT_EQ(tcp_syn_drop->time_min_ms_, TCP_SYN_DROP_DEFAULT_MIN_DELAY_MS);
+	EXPECT_EQ(tcp_syn_drop->max_delay_ms_, TCP_SYN_DROP_DEFAULT_MAX_DELAY_MS);
+	EXPECT_EQ(tcp_syn_drop->retry_count_, 3);
+
+	/*
+	 * Zero means unlimited blocking until the corresponding
+	 * LRU map entry is evicted.
+	 */
+	EXPECT_EQ(tcp_syn_drop->block_timeout_ms_,
+		  TCP_SYN_DROP_DEFAULT_BLOCK_TIMEOUT_MS);
+}
+
+TEST(ParsesXfwConfig, TcpSynDropAcceptsEqualWindowBounds)
+{
+	const std::string prog = "xfw {"
+		"tcp_syn_drop hash_salt=1 time_min=500 max_delay=500 retry_count=1;"
+	"}";
+
+	std::unique_ptr<TlProgConf> conf(
+		tcl_parse_full_conf(prog.c_str(), prog.length())
+	);
+
+	ASSERT_TRUE(conf);
+
+	const auto &tcp_syn_drop =
+		conf->prvt->xfw_conf->tcp_syn_drop_;
+
+	ASSERT_TRUE(tcp_syn_drop.has_value());
+	EXPECT_EQ(tcp_syn_drop->time_min_ms_, 500);
+	EXPECT_EQ(tcp_syn_drop->max_delay_ms_, 500);
+}
+
+class RejectsInvalidTcpSynDrop
+	: public ::testing::TestWithParam<std::string>
+{
+};
+
+TEST_P(RejectsInvalidTcpSynDrop, InvalidConfiguration)
+{
+	const std::string prog = "xfw { tcp_syn_drop " + GetParam() + "; }";
+
+	std::unique_ptr<TlProgConf> conf(tcl_parse_full_conf(prog.c_str(), prog.length()));
+
+	ASSERT_FALSE(conf);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+	InvalidValues,
+	RejectsInvalidTcpSynDrop,
+	::testing::Values(
+		/*
+		 * hash_salt and retry_count do not have defaults and
+		 * therefore must be specified explicitly.
+		 */
+		"retry_count=3",
+		"hash_salt=12345",
+		/*
+		 * retry_count defines how many retransmitted SYNs may
+		 * pass before the tuple is blocked.
+		 */
+		"hash_salt=12345 retry_count=0",
+		/*
+		 * The valid retransmission window is:
+		 *
+		 * stored_time + time_min <= now
+		 *     <= stored_time + max_delay
+		 *
+		 * Therefore, time_min must not exceed max_delay.
+		 */
+		"hash_salt=12345 time_min=3001 "
+			"max_delay=3000 retry_count=3",
+		/* Unknown attributes must be rejected. */
+		"hash_salt=12345 retry_count=3 unknown=1",
+		/* Invalid edit operations must be rejected. */
+		"/add hash_salt=12345 retry_count=3",
+		"/replace hash_salt=12345 retry_count=3",
+		/* `max_delay` can't be equal to zero. */
+		"hash_salt=12345 retry_count=3 time_min=0 max_delay=0"
+	)
+);
+
 TEST(ParsesXfwConfig, WithEvaluationModeOn)
 {
 	const std::string prog = "xfw{evaluation_mode;}";
@@ -397,6 +553,12 @@ TEST(SerializesConfig, WithMaximumData)
 	ASSERT_TRUE(xfw_cfg->syncookie());
 	ASSERT_EQ(xfw_cfg->syncookie()->passive_timer(), 1);
 	ASSERT_EQ(xfw_cfg->syncookie()->flood_timer(), 5);
+	ASSERT_TRUE(xfw_cfg->tcp_syn_drop());
+	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->hash_salt(), 12345);
+	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->time_min(), 500);
+	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->max_delay(), 3000);
+	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->retry_count(), 3);
+	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->block_timeout(), 0);
 	ASSERT_EQ(xfw_cfg->net_rules()->size(), 7);
 	
 	ASSERT_TRUE(xfw_cfg->flags());
@@ -408,6 +570,7 @@ TEST(SerializesConfig, WithMaximumData)
 	ASSERT_FALSE(cflags.test(XFWOpt::XFWOpt_TCP_AUTH_FILTER_ON));
 	ASSERT_TRUE(cflags.test(XFWOpt::XFWOpt_TCP_AUTH_FILTER_OFF));
 	ASSERT_FALSE(cflags.test(XFWOpt::XFWOpt_TCP_SYNCOOKIE_FILTER_OFF));
+	ASSERT_FALSE(cflags.test(XFWOpt::XFWOpt_TCP_SYN_DROP_FILTER_OFF));
 	ASSERT_FALSE(cflags.test(XFWOpt::XFWOpt_TCP_ANOMALY_FILTER_OFF));
 	ASSERT_TRUE(cflags.test(XFWOpt::XFWOpt_DNS_FILTER_ON));
 	ASSERT_FALSE(cflags.test(XFWOpt::XFWOpt_DNS_FILTER_OFF));
