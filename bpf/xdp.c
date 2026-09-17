@@ -18,7 +18,6 @@
 #include "parsing_helpers.h"
 #include "tcp_anomaly_filter.h"
 #include "tcp_auth.h"
-#include "tcp_syncookies.h"
 
 #define SHADOW_SRC_IP_MAP(basename, key_t)				\
 	SHADOW_MAP(basename, BPF_MAP_TYPE_LPM_TRIE, XFW_MAX_SRC_IP_RULES, \
@@ -40,6 +39,14 @@ SHADOW_MAP(MAP_SRC_P_TCP_BASENAME, BPF_MAP_TYPE_HASH, XFW_MAX_PORTS, XfwPort,
 	    XfwSrcRule, 0);
 SHADOW_MAP(MAP_ICMP_BASENAME, BPF_MAP_TYPE_HASH, XFW_MAX_ICMP_RULES, XfwIcmpKey,
 	    XfwActionRule, 0);
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+	__type(key, __u32);
+	__type(value, __u32);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+	__uint(max_entries, XFW_PROG_MAX);
+} MAP_PROG_ARRAY_REF SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
@@ -68,10 +75,41 @@ struct {
 	r;								\
 })
 
-static __always_inline bool
-is_metadata_creation_necessary(const XfwGlobalCtx *ctx)
+/**
+ * Define a dispatcher for an XDP tail-call module.
+ *
+ * The caller must reserve packet metadata before parsing and invoke the
+ * dispatcher only after the required L3/L4 context fields have been
+ * populated. No operation between metadata reservation and this call may
+ * invalidate data_meta. Under these preconditions,
+ * xfw_set_packet_metadata() must succeed; failure indicates an internal
+ * invariant violation.
+ *
+ * A successful bpf_tail_call() transfers control to the selected module
+ * and does not return.
+ *
+ * @index       - Module program index in MAP_PROG_ARRAY_REF.
+ */
+static __always_inline int
+xdp_call_module(XfwGlobalCtx *ctx, XfwProgArrayIndex index)
 {
-	return ctx->cfg->rules.dns.enabled;
+	XFW_ASSERT(xfw_set_packet_metadata(ctx));
+
+	uint16_t cur_pos = (uint16_t)(ctx->hdr_cur.pos -
+		XFW_CTX_DATA_BGN(ctx->ctx));
+	bpf_tail_call(ctx->ctx, &MAP_PROG_ARRAY_REF, index);
+
+	/*
+	 * Reinitialize packet cursor after `bpf_tail_call`, because the
+	 * verifier may lose packet-pointer types stored in the global
+	 * context.
+	 */
+	INIT_CURSOR_FROM_BPF_CONTEXT(ctx->ctx, &ctx->hdr_cur);
+	ctx->hdr_cur.pos += cur_pos;
+	/*
+	 * Tail call failed, continue normal XDP processing.
+	 */
+	return XFW_CTX_CONTINUE;	
 }
 
 static __always_inline int
@@ -429,63 +467,23 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
  * connection trusted.
  */
 static __always_inline int
-tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
+tcp_rcv_syn_filter(XfwGlobalCtx *ctx)
 {
+	/*
+	 * Rate-limit SYNs before stateful validation to protect the SYN
+	 * tracking maps from excessive lookups, updates, and LRU churn
+	 * under high-rate floods with spoofed or random TCP tuples.
+	 */
+	CHAIN(syn_rlimit, ctx);
+
 	/* If a SYN cookie was generated, processing stops immediately. */
 	if (ctx->cfg->rules.syncookie.enabled)
-		CHAIN(tcp_syncookies_syn_filter, ctx, th);
-
-	CHAIN(syn_rlimit, ctx);
+		CHAIN(xdp_call_module, ctx, XFW_PROG_TCP_SYNCOOKIES_FILTER);
 
 	/* We do not add the connection to the trusted set here.
 	 * The trusted entry will be created later in tc.c, which is less
 	 * loaded than xdp.c, when responding with SYN-ACK.
 	 */
-	return XFW_CTX_CONTINUE;
-}
-
-/**
- * Filter incoming ACK packets.
- *
- * 1. If SYN cookies are disabled or flood mode is inactive → fall back to
- *    the normal TCP auth filter.
- * 2. If a trusted connection already exists → continue.
- * 3. Otherwise, call SYN-cookie-specific check.
- * 4. If valid, trust the connection on ingress side.
- */
-static __always_inline int
-tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th,
-		   const XfwSockAddr *addr)
-{
-	/* Fast path - no SYN cookies. */
-	if (!ctx->cfg->rules.syncookie.enabled)
-		return tcp_auth_conn_ingress_filter(ctx, addr, TCP_AUTH_EVENT_NORMAL);
-
-	XfwTcpSynCookieTs *ts = __tcp_get_tcp_syncookie_ts();
-	XFW_ASSERT(ts);
-
-	/* Fast path - syncookies flood mode is inactive. */
-	if (!tcp_syncookies_flood_mode(ctx, ts))
-		return tcp_auth_conn_ingress_filter(ctx, addr, TCP_AUTH_EVENT_NORMAL);
-
-	/* Can rely only on connections that are up-to-date */
-	if (ctx->cfg->rules.tcp_auth.enabled && tcp_auth_has_conn_trusted(ctx, addr))
-		return XFW_CTX_CONTINUE;
-
-	/* Perform SYN-cookie-specific ACK validation */
-	CHAIN(tcp_syncookies_ack_filter, ctx, th);
-
-	/*
-	 * This is the scenario where a SYN cookie was issued and successfully
-	 * validated. We need to authenticate TCP flows passing through the host
-	 * or designated to the local host.
-	 *
-	 * This is the only case where xdp.c adds a connection to the trusted set.
-	 * The SYN arrived on the ingress interface, while the SYN-ACK was
-	 * generated and sent directly by xdp.c, bypassing tc.c. This ensures
-	 * the connection is correctly tracked without relying on tc.c.
-	 */
-	tcp_auth_conn_add(addr);
 	return XFW_CTX_CONTINUE;
 }
 
@@ -556,13 +554,16 @@ tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
 	/* SYN-only. Authenticate the connection if all checks pass. */
 	if (th->syn) {
 		count_traffic_stat(ctx, XFW_SYN);
-		return tcp_rcv_syn_filter(ctx, th);
+		return tcp_rcv_syn_filter(ctx);
 	}
 
 	/* ACK-only: validate SYN-ACK cookies or authenticate normally.*/
 	if (th->ack) {
 		count_traffic_stat(ctx, XFW_ACK);
-		return tcp_rcv_ack_filter(ctx, th, addr);
+		if (ctx->cfg->rules.syncookie.enabled) {
+			CHAIN(xdp_call_module, ctx,
+			      XFW_PROG_TCP_SYNCOOKIES_FILTER);
+		}
 	}
 
 	/* Default: authenticate any remaining TCP packets. */
@@ -646,16 +647,6 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		return XFW_MAKE_CTX_PASS(ctx, XFW_SUPPORTED_PROTOCOL_INGRESS);
 	}
 }
-
-#define CHAIN_PASS_ALL(filter, ...)					\
-do {									\
-	r = filter(__VA_ARGS__);					\
-	if (r == XFW_CTX_CONTINUE)					\
-		break;							\
-	if (r == XFW_CTX_PASS)						\
-		goto pass;						\
-	return r;							\
-} while (0)
 
 static __always_inline int
 xfw_xdp_filter(struct XfwGlobalCtx *ctx)
