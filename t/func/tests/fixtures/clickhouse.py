@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 
 import pytest
 
@@ -13,7 +13,7 @@ from framework.logger import get_logger
 async def clickhouse_global(
     config: ConfigSettings,
     logging_level: int,
-) -> AsyncGenerator[ClickhouseClient, Any]:
+) -> AsyncGenerator[ClickhouseClient, None]:
     new_client = ClickhouseClient(
         host=config.tfw_logger_clickhouse_host,
         binary_port=config.tfw_logger_clickhouse_binary_port,
@@ -31,5 +31,5 @@ async def clickhouse_global(
 
 @pytest.fixture
 async def clickhouse_client(clickhouse_global: ClickhouseClient):
-    await clickhouse_global.table_drop()
+    await clickhouse_global.table_truncate()
     yield clickhouse_global

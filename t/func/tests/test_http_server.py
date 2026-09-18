@@ -9,18 +9,16 @@ from anyio.pytest_plugin import pytest_pycollect_makeitem
 from framework.xfw import XFW
 
 
-@pytest.fixture
-async def xfw_with_updated_port(xfw: XFW):
+@pytest.fixture(scope="function")
+async def xfw_with_updated_port(xfw_global):
     new_port = 12345
-    old_port = xfw.http_port
-    xfw.http_port = new_port
-    await xfw.set_http_port(new_port)
-    await xfw.restart()
+    old_port = xfw_global.http_port
+    xfw_global.http_port = new_port
+    await xfw_global.restart()
 
-    yield xfw
-    xfw.http_port = old_port
-    await xfw.set_http_port(old_port)
-    await xfw.restart()
+    yield xfw_global
+    xfw_global.http_port = old_port
+    await xfw_global.stop()
 
 
 async def test_http_server_on_different_port(xfw_with_updated_port: XFW):

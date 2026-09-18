@@ -309,7 +309,7 @@ async def test_tcp_anomaly_filter(
 
 
 async def test_tcp_auth_filter_tcp_flood_from_non_existing_session(
-    xfw: XFW,
+    xfw_restarted: XFW,
     tcp_raw_server: TcpRawServer,
     tcp_raw_client: TcpRawClient,
     start_tcp_raw_server_and_raw_clients,
@@ -317,7 +317,7 @@ async def test_tcp_auth_filter_tcp_flood_from_non_existing_session(
     clickhouse_client,
 ):
     await clickhouse_client.connect()
-    await xfw.rules_set("xfw { evaluation_mode; tcp_auth_filter; }")
+    await xfw_restarted.rules_set("xfw { evaluation_mode; tcp_auth_filter; }")
 
     async with metric_analyzer.track_clickhouse_metric(
         clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
@@ -385,7 +385,7 @@ async def test_udp_anomaly_filter_zero_port_is_blocked(
 
 @pytest.mark.clickhouse
 async def test_multiple_requests_logs_without_blocking(
-    xfw: XFW,
+    xfw_restarted: XFW,
     clickhouse_client: ClickhouseClient,
     udp_ip4_client: UdpClient,
     udp_ip4_server: UdpServer,
@@ -398,7 +398,7 @@ async def test_multiple_requests_logs_without_blocking(
     for client in clients:
         await client.start()
 
-    await xfw.rules_set(f"""
+    await xfw_restarted.rules_set(f"""
         xfw {{
             evaluation_mode; 
             defaults {{ dst: allow; }} 

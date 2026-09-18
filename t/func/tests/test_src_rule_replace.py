@@ -278,7 +278,7 @@ async def test_src_replace_block_by_ratelimit(
         """)
     await xfw.rules_patch(f"""
         xfw {{
-            ratelimit=test pps=10 bps=500;
+            ratelimit=test pps=100 bps=5000;
             src=extended_group/replace {ip_version}.{protocol} : ratelimit=test {{
                 :{client.port}-{new_port[0]}
                 :{new_port[1]}-{new_port[2]}
