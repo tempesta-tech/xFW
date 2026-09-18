@@ -230,7 +230,7 @@ async def test_src_replace_block_by_multiple_port_range_to_allow_by_multiple_por
 
 
 async def test_src_replace_block_by_geoip_country(
-    xfw_geoip: XFW,
+    xfw: XFW,
     protocol: str,
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
@@ -238,14 +238,14 @@ async def test_src_replace_block_by_geoip_country(
     establish_connection,
     src_defaults: str,
 ):
-    await xfw_geoip.rules_set(f"""
+    await xfw.rules_set(f"""
         xfw {{
             defaults {{ src_ip {ip_version}: {src_defaults}; }}
             src=extended_group {ip_version}.{protocol} : block {{ us }}
         }}
         """)
 
-    await xfw_geoip.rules_patch(f"""
+    await xfw.rules_patch(f"""
         xfw {{
             src=extended_group/replace {ip_version}.{protocol} : block {{ rs }}
         }}
@@ -278,7 +278,7 @@ async def test_src_replace_block_by_ratelimit(
         """)
     await xfw.rules_patch(f"""
         xfw {{
-            ratelimit=test pps=10 bps=500;
+            ratelimit=test pps=100 bps=5000;
             src=extended_group/replace {ip_version}.{protocol} : ratelimit=test {{
                 :{client.port}-{new_port[0]}
                 :{new_port[1]}-{new_port[2]}

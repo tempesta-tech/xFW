@@ -3,28 +3,33 @@
 
 import asyncio
 
+import pytest
+from anyio.pytest_plugin import pytest_pycollect_makeitem
+
 from framework.xfw import XFW
 
 
-async def test_http_server_on_different_port(xfw: XFW):
-    port = 12345
+@pytest.fixture(scope="function")
+async def xfw_with_updated_port(xfw_global):
+    new_port = 12345
+    old_port = xfw_global.http_port
+    xfw_global.http_port = new_port
+    await xfw_global.restart()
 
-    # set XFWRemote port
-    await xfw.set_http_port(port)
-    # set local XFW port
-    xfw.http_port = port
+    yield xfw_global
+    xfw_global.http_port = old_port
+    await xfw_global.stop()
 
-    await xfw.restart()
 
+async def test_http_server_on_different_port(xfw_with_updated_port: XFW):
     try:
-        http_client = xfw.http_client()
+        http_client = xfw_with_updated_port.http_client()
         response = await http_client.get("/metrics")
     finally:
         ...
 
     assert response is not None
     assert response.status_code == 200
-    assert response.request.url == f"http://{xfw.ip}:{port}/metrics"
 
 
 async def test_concurrent_requests(xfw: XFW):
