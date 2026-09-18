@@ -210,12 +210,6 @@ async def test_src_switch_ratelimit_to_another_rule(
         }}
         """)
 
-    # Wait until the retransmission from the previous message is handled.
-    # Correct sleep with -1 second when #520 is closed.
-    # Also old src ratelimits continue to work one more second after
-    # reconfiguration so until #8 is done, we need +1 seconds here.
-    await asyncio.sleep(2)
-
     # we receive 3 times allowed or blocked, where ratelimit is 1
     assert await check_connection(client, server) is true_if_allowed, error_message
     assert await check_connection(client, server) is true_if_allowed, error_message

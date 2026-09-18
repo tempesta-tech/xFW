@@ -809,7 +809,7 @@ _FLOOD_GENERATED_MIN_VALUE = [0, _FLOOD_GENERATED_DELTA]
         pytest.param(
             "flood_timer=1 passive_timer=0",
             _HANDSHAKE_NUM,
-            20,
+            5,
             bad_packet,
             PrometheusMetricsDiff(
                 xfw_syncookie_generated_packets=_FLOOD_GENERATED_MAX_VALUE,
@@ -826,7 +826,7 @@ _FLOOD_GENERATED_MIN_VALUE = [0, _FLOOD_GENERATED_DELTA]
         pytest.param(
             "flood_timer=1 passive_timer=0",
             _HANDSHAKE_NUM,
-            20,
+            5,
             ok_packet,
             PrometheusMetricsDiff(
                 xfw_syncookie_generated_packets=_FLOOD_GENERATED_MAX_VALUE,
@@ -843,7 +843,7 @@ _FLOOD_GENERATED_MIN_VALUE = [0, _FLOOD_GENERATED_DELTA]
         pytest.param(
             "flood_timer=15 passive_timer=0",
             _HANDSHAKE_NUM,
-            20,
+            5,
             ok_packet,
             PrometheusMetricsDiff(
                 xfw_syncookie_generated_packets=_FLOOD_GENERATED_MAX_VALUE,
@@ -860,7 +860,7 @@ _FLOOD_GENERATED_MIN_VALUE = [0, _FLOOD_GENERATED_DELTA]
         pytest.param(
             "flood_timer=1000 passive_timer=0",
             _HANDSHAKE_NUM,
-            20,
+            5,
             ok_packet,
             PrometheusMetricsDiff(
                 xfw_syncookie_generated_packets=_FLOOD_GENERATED_MAX_VALUE,
@@ -877,7 +877,7 @@ _FLOOD_GENERATED_MIN_VALUE = [0, _FLOOD_GENERATED_DELTA]
         pytest.param(
             "passive_timer=1 flood_timer=0",
             _HANDSHAKE_NUM,
-            20,
+            5,
             bad_packet,
             PrometheusMetricsDiff(
                 xfw_syncookie_generated_packets=_FLOOD_GENERATED_MIN_VALUE,
@@ -894,7 +894,7 @@ _FLOOD_GENERATED_MIN_VALUE = [0, _FLOOD_GENERATED_DELTA]
         pytest.param(
             "passive_timer=1 flood_timer=0",
             _HANDSHAKE_NUM,
-            20,
+            5,
             ok_packet,
             PrometheusMetricsDiff(
                 xfw_syncookie_generated_packets=_FLOOD_GENERATED_MIN_VALUE,
@@ -911,7 +911,7 @@ _FLOOD_GENERATED_MIN_VALUE = [0, _FLOOD_GENERATED_DELTA]
         pytest.param(
             "passive_timer=15 flood_timer=0",
             _HANDSHAKE_NUM,
-            20,
+            5,
             ok_packet,
             PrometheusMetricsDiff(
                 xfw_syncookie_generated_packets=_FLOOD_GENERATED_MIN_VALUE,
@@ -928,7 +928,7 @@ _FLOOD_GENERATED_MIN_VALUE = [0, _FLOOD_GENERATED_DELTA]
         pytest.param(
             "passive_timer=1000 flood_timer=0",
             _HANDSHAKE_NUM,
-            20,
+            5,
             ok_packet,
             PrometheusMetricsDiff(
                 xfw_syncookie_generated_packets=_FLOOD_GENERATED_MIN_VALUE,
@@ -1031,7 +1031,7 @@ _SYNCOOKIE_WHOLE_VAL_RANGE = [0, _HANDSHAKE_FLOOD_GENERATED]
         pytest.param(
             "flood_timer=2 passive_timer=0",
             _HANDSHAKE_NUM,
-            40,
+            5,
             PrometheusMetricsDiff(
                 xfw_syncookie_generated_packets=_SYNCOOKIE_GENERATED_VAL_RANGE,
                 xfw_syncookie_received_packets=_SYNCOOKIE_RECEIVED_VAL_RANGE,
@@ -1047,7 +1047,7 @@ _SYNCOOKIE_WHOLE_VAL_RANGE = [0, _HANDSHAKE_FLOOD_GENERATED]
         pytest.param(
             "passive_timer=5 flood_timer=0",
             _HANDSHAKE_NUM,
-            40,
+            5,
             PrometheusMetricsDiff(
                 xfw_syncookie_generated_packets=_SYNCOOKIE_WHOLE_VAL_RANGE,
                 xfw_syncookie_received_packets=_SYNCOOKIE_RECEIVED_VAL_RANGE,
@@ -1063,7 +1063,7 @@ _SYNCOOKIE_WHOLE_VAL_RANGE = [0, _HANDSHAKE_FLOOD_GENERATED]
         pytest.param(
             "passive_timer=1 flood_timer=1",
             _HANDSHAKE_NUM,
-            40,
+            5,
             PrometheusMetricsDiff(
                 xfw_syncookie_generated_packets=_SYNCOOKIE_GENERATED_VAL_RANGE,
                 xfw_syncookie_received_packets=_SYNCOOKIE_RECEIVED_VAL_RANGE,
@@ -1131,8 +1131,8 @@ async def test_artificial_flood_timer(
     metric_analyzer,
 ):
     handshakes_amount = 1000
-    duration_sec = 40
-    flood_timer = 10
+    duration_sec = 10
+    flood_timer = 3
     passive_timer = 1000
 
     # ENTERING FLOOD MODE
