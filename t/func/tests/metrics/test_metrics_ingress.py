@@ -192,6 +192,7 @@ async def test_ingress_preload_metrics(
     udp_ip4_server,
     flush_arp_cache,
 ):
+    await xfw.restart()
     await udp_ip4_server.start()
     await udp_ip4_client.start()
 

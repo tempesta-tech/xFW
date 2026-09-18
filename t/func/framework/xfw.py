@@ -127,6 +127,15 @@ class XFW(NetworkStateful):
         self.__config = value
 
     @property
+    def http_port(self) -> str:
+        return self._http_port
+
+    @http_port.setter
+    def http_port(self, value: str) -> None:
+        self._http_port = value
+        self.__config = None
+
+    @property
     def path_to_executable(self) -> str:
         return self._with_tmp_config(f"{self.build_dir}/bin/xfwctl")
 
@@ -259,6 +268,13 @@ class XFW(NetworkStateful):
         if code:
             raise RuntimeError(f"Can not restart daemon: {stderr}")
 
+    async def stop_or_reset(self, xfw_use_rule_reset: bool) -> None:
+        if not xfw_use_rule_reset:
+            await self.stop()
+        if self.is_running:
+            await self.rules_reset()
+        return None
+
     async def __rules_push(self, cmd: str):
         code, stdout, stderr = await run_cmd(
             cmd=f"LD_LIBRARY_PATH={self.build_dir}/lib  ./bin/tfw push "
@@ -283,7 +299,7 @@ class XFW(NetworkStateful):
     async def rules_push_config_short(self, new_rules: str):
         return await self.rules_push_config(new_rules, param="-c")
 
-    async def rules_push_config_inline(self, new_rules: str):
+    async def rules_push_config_inline(self, new_rules: str) -> None:
         self.logger.info(f"push rules: {new_rules}")
         await self.__rules_push(f'--conf-inline "{new_rules}"')
 
@@ -301,8 +317,8 @@ class XFW(NetworkStateful):
         self.logger.info(f"push rules: {new_rules}")
         await self.__rules_push(f'--patch-inline "{new_rules}"')
 
-    async def rules_reset(self):
-        return await self.rules_push_config_inline("xfw {}")
+    async def rules_reset(self) -> None:
+        await self.rules_push_config_inline("xfw {}")
 
     def __add_to_rules_net_directive(self, rules: str, ip4: str = None, ip6: str = None):
         ip_version = "ip4" if ip4 else "ip6"
@@ -344,12 +360,6 @@ class XFW(NetworkStateful):
         with the same packet ACK
         """
         await asyncio.sleep(3)
-
-    async def set_http_port(self, port: int):
-        self.http_port = port
-
-    async def set_config(self, new_config: str):
-        self.config = new_config
 
     async def syncookies_read_kern_stats(self) -> tuple[int, int, int]:
         """
@@ -424,8 +434,6 @@ class XFWRemote(RemoteServer, XFW):
         "rules_push_patch",
         "rules_push_patch_short",
         "rules_push_patch_inline",
-        "set_http_port",
-        "set_config",
         "syncookies_read_kern_stats",
         "set_mtu",
     ]
