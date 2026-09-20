@@ -423,6 +423,7 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 	}
 	}
 }
+
 /**
  * SYN without ACK received: both SYN cookies and SYN rate limiting may be enabled
  * by configuration. In this case, we run both checks before considering the
@@ -431,11 +432,22 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 static __always_inline int
 tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
+	/*
+	 * Rate limit all SYNs before SYN cookies.
+	 *
+	 * A SYN cookie costs a listening socket lookup and SYN-ACK generation,
+	 * so the mechanism has limited capacity. Rate limiting all SYNs may
+	 * drop many legitimate SYNs, since a SYN flood makes up most of the
+	 * ingress SYNs, but it keeps established TCP connections and UDP
+	 * traffic alive. Otherwise, if SYN cookies alone cannot keep up with
+	 * the flood, the CPUs saturate and the NIC RX rings overflow, dropping
+	 * all traffic.
+	 */
+	CHAIN(syn_rlimit, ctx);
+
 	/* If a SYN cookie was generated, processing stops immediately. */
 	if (ctx->cfg->rules.syncookie.enabled)
 		CHAIN(tcp_syncookies_syn_filter, ctx, th);
-
-	CHAIN(syn_rlimit, ctx);
 
 	/* We do not add the connection to the trusted set here.
 	 * The trusted entry will be created later in tc.c, which is less
