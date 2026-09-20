@@ -12,34 +12,12 @@ from framework.rpc.client import RpcClient
 from framework.xfw import XFW, XFWRemote
 
 
-@pytest.fixture
-async def xfw(
+@pytest.fixture(scope="session")
+async def xfw_global(
     config: ConfigSettings,
     logging_level: int,
     rpc_connection: Optional[RpcClient],
-    clickhouse_client: ClickhouseClient,
-) -> AsyncGenerator[XFW, None]:
-    xfw = xfw_fabric(
-        config=config,
-        logging_level=logging_level,
-        rpc_connection=rpc_connection,
-        local_class=XFW,
-        remote_class=XFWRemote,
-        clickhouse_client=clickhouse_client,
-    )
-    try:
-        await xfw.start()
-        yield xfw
-    finally:
-        await xfw.stop()
-
-
-@pytest.fixture
-async def xfw_geoip(
-    config: ConfigSettings,
-    logging_level: int,
-    rpc_connection: Optional[RpcClient],
-    clickhouse_client: ClickhouseClient,
+    clickhouse_global: ClickhouseClient,
 ) -> AsyncGenerator[XFW, None]:
     xfw = xfw_fabric(
         config=config,
@@ -48,38 +26,85 @@ async def xfw_geoip(
         local_class=XFW,
         remote_class=XFWRemote,
         geo=True,
-        clickhouse_client=clickhouse_client,
+        clickhouse_client=clickhouse_global,
     )
-
     try:
         await xfw.start()
-    except AssertionError as e:
+        yield xfw
+    finally:
         await xfw.stop()
-        pytest.fail(f"The XFW service have not started in time. Error: {e}")
 
-    yield xfw
-    await xfw.stop()
+
+@pytest.fixture(scope="session")
+def xfw_syncookie_config(xfw_global) -> str:
+    return f"""{{
+        "devices": "{xfw_global.network_interface}",
+        "devices-mode": "skb",
+        "verbose": true,
+        "mgr-args": "--listen {xfw_global.ipv4} --port {xfw_global.port}",
+        "sysctl-tcp-max-syn-backlog": 1,
+        "sysctl-tcp-syncookies": 2
+        }}"""
 
 
 @pytest.fixture
-async def xfw_with_forced_syncookie(xfw: XFW) -> AsyncGenerator[XFW, None]:
-    """
-    While `sysctl-tcp-syncookies: 2` is not practical, it's required for the
-    test to get a deterministic kernel behavior always requireing a syncookie
-    generation.
-    """
-    original_mode = await xfw.syncookies_value_get()
-    await xfw.set_config(f"""{{
-        "devices": "{xfw.network_interface}",
-        "devices-mode": "skb",
-        "verbose": true,
-        "mgr-args": "--listen {xfw.ipv4} --port {xfw.port}",
-        "sysctl-tcp-max-syn-backlog": 1,
-        "sysctl-tcp-syncookies": 2
-        }}""")
-    await xfw.restart()
+async def xfw(
+    xfw_global: XFW,
+    xfw_use_rule_reset: bool,
+) -> AsyncGenerator[XFW, None]:
+    if not xfw_global.is_running:
+        await xfw_global.start()
 
-    yield xfw
+    yield xfw_global
 
-    await xfw.stop()
-    await xfw.syncookies_value_set(original_mode)
+    await xfw_global.stop_or_reset(xfw_use_rule_reset)
+
+
+@pytest.fixture
+async def xfw_paused(
+    xfw_global: XFW, xfw_use_rule_reset: bool, config: ConfigSettings
+) -> AsyncGenerator[XFW, None]:
+    """
+    Some of the tests in a fast mode require a pause.
+    For instance, some of the ratelimits requires
+    some time to reset the traffic block
+    """
+    if not xfw_global.is_running:
+        await xfw_global.start()
+    await asyncio.sleep(config.fast_mode_xfw_paused_timeout_sec)
+
+    yield xfw_global
+
+    await xfw_global.stop_or_reset(xfw_use_rule_reset)
+
+
+@pytest.fixture
+async def xfw_restarted(
+    xfw_global: XFW, xfw_use_rule_reset: bool, config: ConfigSettings
+) -> AsyncGenerator[XFW, None]:
+    """
+    Some of the tests in a fast mode require
+    the xfw restart, for instance to drop
+    the tcp connection
+    """
+    await xfw_global.restart()
+
+    yield xfw_global
+
+    await xfw_global.stop_or_reset(xfw_use_rule_reset)
+
+
+@pytest.fixture
+async def xfw_with_forced_syncookie(
+    xfw_global, xfw_use_rule_reset, xfw_syncookie_config
+) -> AsyncGenerator[XFW, None]:
+    original_config = xfw_global.config
+    xfw_global.config = xfw_syncookie_config
+    original_mode = await xfw_global.syncookies_value_get()
+    await xfw_global.restart()
+
+    yield xfw_global
+
+    await xfw_global.stop_or_reset(xfw_use_rule_reset)
+    xfw_global.config = original_config
+    await xfw_global.syncookies_value_set(original_mode)

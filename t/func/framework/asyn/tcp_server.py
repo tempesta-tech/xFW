@@ -128,6 +128,7 @@ class TcpServer(BaseTcpStateful, ABC):
             raise ConnectionError(f"Can not start TCP server: {e}") from e
 
         await self.server.start_serving()
+        self.logger.debug("server is serving now")
 
     def close_all_clients_sockets(self):
         for transport in self.transports:

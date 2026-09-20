@@ -36,7 +36,6 @@ class ClickhouseClient:
     table: str
     logger: logging.Logger = None
     client: AsyncClient = None
-    was_connected: bool = False
 
     async def connect(self):
         try:
@@ -47,7 +46,6 @@ class ClickhouseClient:
                 password=self.password,
                 database=self.database,
             )
-            self.was_connected = True
             self.logger.debug(f"connected to clickhouse db. Using table {self.table}")
 
         except OperationalError as e:
@@ -149,14 +147,22 @@ class ClickhouseClient:
         """
         return await self.client.command(f"exists table {self.table}") == 1
 
-    async def table_drop(self) -> str:
+    async def table_drop(self) -> None:
         """
         Drop the access log table if exists to clear the logs and
         prevent an errors while tests work with the different
         table schemas
         """
         self.logger.debug(f"dropped the table {self.table}")
-        return await self.client.command(f"drop table if exists {self.table}")  # type: ignore
+        await self.client.command(f"drop table if exists {self.table}")
+
+    async def table_truncate(self) -> None:
+        """
+        Truncate the access log table if exists to clear the logs and
+        prevent errors while tests work with the different data
+        """
+        self.logger.debug(f"truncated the table {self.table}")
+        await self.client.command(f"truncate table if exists {self.table}")
 
     @retry_on_failure(AssertionError)
     async def wait_for_number_of_records(self, expected_records_n: int, msg: str = "") -> None:

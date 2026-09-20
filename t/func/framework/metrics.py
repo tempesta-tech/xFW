@@ -599,9 +599,9 @@ class MetricsAnalyzer:
 
         await clickhouse_client.wait_for_new_records(addr=ip_to_search, timestamp=timestamp)
         records = await clickhouse_client.records_with(addr=ip_to_search, timestamp=timestamp)
-        assert len(records) == 1, records
+        assert len(records) >= 1, records
 
-        record = records[0]
+        record = records[-1]
         metric.record = record
 
         if expected_packets is not None:

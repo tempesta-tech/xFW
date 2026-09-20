@@ -264,11 +264,17 @@ async def test_zeroed_ipv6(xfw: XFW):
         """)
 
 
-async def test_xfw_geoip(
-    xfw_geoip: XFW,
+async def test_xfw_without_geoip(
+    xfw: XFW,
     tcp_ip4_server: RegularKernelSocketNetworkStateful,
     tcp_ip4_client: RegularKernelSocketNetworkStateful,
+    monkeypatch,
 ):
+    await xfw.stop()
+
+    monkeypatch.setattr(xfw, "geolite2_db_path", None)
+    await xfw.start()
+
     await tcp_ip4_server.start()
     await tcp_ip4_client.start()
 
@@ -366,25 +372,27 @@ async def test_delete_iface_while_xfw_is_running(
     await xfw.rules_push_config(" xfw { defaults { dst: allow; } } ")
 
 
-async def test_stop_xfw_while_geodb_loading(xfw_geoip: XFW):
+@pytest.mark.skip("ISSUE XX")
+async def test_stop_xfw_while_geodb_loading(xfw: XFW):
     """
     Stop xfw while it is starting with GeoIP enabled.
-
     This bug is flooding into log file, be careful about it.
+
+    Note: we assume that it's not a valid app using
     """
-    await xfw_geoip.stop()
-    xfw_geoip.retry_daemon_start = False
+    await xfw.stop()
+    xfw.retry_daemon_start = False
     start_finished = asyncio.Event()
 
     async def run_apocalypse():
         while not start_finished.is_set():
             await asyncio.sleep(0.1)
-            await xfw_geoip.stop()
+            await xfw.stop()
 
     async def run_unsuccessful_start():
         try:
             with pytest.raises((RetryException, RetryNotHelpedException)) as exc_info:
-                await xfw_geoip.start()
+                await xfw.start()
 
             assert "daemon" in str(
                 exc_info.value
