@@ -6,7 +6,10 @@ from pytest import FixtureRequest
 
 from config import ConfigSettings
 from framework.asyn import *
-from framework.stateful import RegularKernelSocketNetworkStateful
+from framework.stateful import (
+    RawSocketNetworkStateful,
+    RegularKernelSocketNetworkStateful,
+)
 
 
 @pytest.fixture
@@ -19,6 +22,11 @@ def server(
 @pytest.fixture
 def client(request: FixtureRequest, protocol, ip_version) -> RegularKernelSocketNetworkStateful:
     return request.getfixturevalue(f"{protocol}_{ip_version}_client")
+
+
+@pytest.fixture
+def raw_l4_client(request: FixtureRequest, protocol, ip_version) -> RawSocketNetworkStateful:
+    return request.getfixturevalue(f"{protocol}_{ip_version}_raw_client")
 
 
 @pytest.fixture(scope="function")

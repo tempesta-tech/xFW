@@ -9,7 +9,7 @@ from scapy.layers.inet import ICMP, IP, IP_PROTOS, TCP, UDP, Ether
 from scapy.layers.inet6 import IPv6, IPv6ExtHdrFragment
 from scapy.layers.l2 import ARP
 from scapy.layers.sctp import SCTP
-from scapy.packet import Raw
+from scapy.packet import Packet, Raw
 
 from framework.asyn import DnsUdpClient
 from framework.asyn.ether_raw_client import EtherRawClient
@@ -19,6 +19,19 @@ from framework.remote import RemoteServer
 ETH_P_EAPOL = 0x888E
 ETH_P_CUSTOM = 0x1234
 ETH_P_ARP = 0x0806
+
+
+def make_l4_packet(protocol: str, sport: int, dport: int) -> Packet:
+    if protocol == "tcp":
+        return TCP(
+            sport=sport,
+            dport=dport,
+            flags="S",
+            seq=1122421,
+            window=65535,
+        ) / Raw(b"ping\n")
+
+    return UDP() / Raw(b"ping\n")
 
 
 class SendInvalidPacketsMixin(EtherRawClient):
