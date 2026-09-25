@@ -7,15 +7,14 @@
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
-
 #include <errno.h>
+#include <limits.h>
+#include <net/if.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <stdbool.h>
-#include <limits.h>
-#include <net/if.h>
 
 #include <linux/bpf.h>
 
@@ -28,59 +27,50 @@
 #error "XFW_LIB_DIR is not defined; check the loader build configuration"
 #endif
 
-#define XFW_BPF_LIB_DIR XFW_LIB_DIR "/" "bpf"
+#define XFW_BPF_LIB_DIR		XFW_LIB_DIR "/" "bpf"
 
-#define ARRAY_SIZE(array) \
-	(sizeof(array) / sizeof((array)[0]))
+#define ARRAY_SIZE(array)	(sizeof(array) / sizeof((array)[0]))
 
-struct map_desc {
-	const char *name;
+typedef struct {
+	const char		*name;
+} XfwLMapDesc;
+
+/*
+ * @reuse_maps	- maps that must be explicitly reused from another BPF object.
+ *		  This is intended for modules whose maps are not automatically
+ *		  reused through LIBBPF_PIN_BY_NAME and pin_root_path.
+ *
+ * @pin_maps	- open the BPF object with pin_root_path.
+ *		  Maps declared with LIBBPF_PIN_BY_NAME will be automatically
+ *		  created or reused under pin_root.
+ */
+typedef struct {
+	const char		*name;
+	const char		*obj_path;
+	const char		*prog_name;
+	const char		*prog_pin_name;
+
+	enum bpf_prog_type	prog_type;
+
+	const XfwLMapDesc	*reuse_maps;
+	size_t			reuse_maps_cnt;
+
+	bool			pin_maps;
+} XfwProg;
+
+static const XfwProg main_xdp = {
+	.name		= "xdp",
+	.obj_path	= XFW_BPF_LIB_DIR "/" "xdp.o",
+	.prog_name	= "xfw_xdp",
+	.prog_pin_name	= "xdp",
+	.prog_type	= BPF_PROG_TYPE_XDP,
+	.reuse_maps	= NULL,
+	.reuse_maps_cnt	= 0,
+	/* The main XDP object creates and owns the shared maps. */
+	.pin_maps	= true,
 };
 
-struct xfw_program {
-	const char *name;
-	const char *obj_path;
-	const char *prog_name;
-	const char *prog_pin_name;
-
-	/*
-	 * Expected BPF program type.
-	 */
-	enum bpf_prog_type prog_type;
-
-	/*
-	 * Maps that must be explicitly reused from another BPF object.
-	 *
-	 * This is intended for modules whose maps are not automatically
-	 * reused through LIBBPF_PIN_BY_NAME and pin_root_path.
-	 */
-	const struct map_desc *reuse_maps;
-	size_t reuse_maps_cnt;
-
-	/*
-	 * Open the BPF object with pin_root_path.
-	 *
-	 * Maps declared with LIBBPF_PIN_BY_NAME will be automatically
-	 * created or reused under pin_root.
-	 */
-	bool pin_maps;
-};
-
-static const struct xfw_program main_xdp = {
-	.name = "xdp",
-	.obj_path = XFW_BPF_LIB_DIR "/" "xdp.o",
-	.prog_name = "xfw_xdp",
-	.prog_pin_name = "xdp",
-	.prog_type = BPF_PROG_TYPE_XDP,
-	.reuse_maps = NULL,
-	.reuse_maps_cnt = 0,
-	/*
-	 * The main XDP object creates and owns the shared maps.
-	 */
-	.pin_maps = true,
-};
-
-static const struct map_desc tc_maps[] = {
+static const XfwLMapDesc tc_maps[] = {
 	{ .name = MAP_GLBL_STAT_STR },
 	{ .name = MAP_CFG_STR },
 	{ .name = MAP_LOG_ACTIVE_FD_STR },
@@ -93,22 +83,22 @@ static const struct map_desc tc_maps[] = {
 	{ .name = MAP_DST_STR(MAP_SECONDARY_IDX) },
 };
 
-static const struct xfw_program main_tc = {
-	.name = "tc",
-	.obj_path = XFW_BPF_LIB_DIR "/" "tc.o",
-	.prog_name = "xfw_tc",
-	.prog_pin_name = "tc",
-	.prog_type = BPF_PROG_TYPE_SCHED_CLS,
-	.reuse_maps = tc_maps,
-	.reuse_maps_cnt = ARRAY_SIZE(tc_maps),
+static const XfwProg main_tc = {
+	.name		= "tc",
+	.obj_path	= XFW_BPF_LIB_DIR "/" "tc.o",
+	.prog_name	= "xfw_tc",
+	.prog_pin_name	= "tc",
+	.prog_type	= BPF_PROG_TYPE_SCHED_CLS,
+	.reuse_maps	= tc_maps,
+	.reuse_maps_cnt	= ARRAY_SIZE(tc_maps),
 	/*
 	 * Shared maps are explicitly reused, while TC-specific maps are
 	 * created and pinned under the common pin root.
 	 */
-	.pin_maps = true,
+	.pin_maps	= true,
 };
 
-static const struct xfw_program *programs[] = {
+static const XfwProg *programs[] = {
 	&main_xdp,
 	&main_tc,
 };
@@ -138,7 +128,7 @@ usage(const char *prog)
 		prog, prog, prog, prog, prog, prog);
 }
 
-static const struct xfw_program *
+static const XfwProg *
 find_program(const char *name)
 {
 	size_t i;
@@ -173,7 +163,7 @@ make_pin_path(char *buf, size_t buf_size,
 static int
 check_path_absent(const char *path)
 {
-	int err;
+	int r;
 
 	if (access(path, F_OK) == 0) {
 		fprintf(stderr, "BPF object is already pinned at '%s'\n", path);
@@ -183,40 +173,38 @@ check_path_absent(const char *path)
 	if (errno == ENOENT)
 		return 0;
 
-	err = -errno;
-	fprintf(stderr, "Failed to check '%s': %s\n", path, strerror(-err));
+	r = -errno;
+	fprintf(stderr, "Failed to check '%s': %s\n", path, strerror(-r));
 
-	return err;
+	return r;
 }
 
 static int
 check_pin_root(const char *path)
 {
-	int err;
+	int r;
 
 	if (access(path, F_OK) == 0)
 		return 0;
 
-	err = -errno;
+	r = -errno;
 	fprintf(stderr, "Pin root '%s' is not accessible: %s\n",
-		path, strerror(-err));
+		path, strerror(-r));
 
-	return err;
+	return r;
 }
 
 static int
 make_tc_link_pin_path(char *buf, size_t buf_size, const char *pin_root,
-		      const char *device)
+		      const char *dev)
 {
-	int n;
-
-	n = snprintf(buf, buf_size, "%s/tcx-%s-egress", pin_root, device);
+	int n = snprintf(buf, buf_size, "%s/tcx-%s-egress", pin_root, dev);
 	if (n < 0)
 		return -EIO;
 
 	if ((size_t)n >= buf_size) {
 		fprintf(stderr, "TCX link pin path is too long: "
-			"'%s/tcx-%s-egress'\n", pin_root, device);
+			"'%s/tcx-%s-egress'\n", pin_root, dev);
 		return -ENAMETOOLONG;
 	}
 
@@ -233,29 +221,28 @@ static int
 reuse_map(struct bpf_object *obj, const char *map_name, const char *pin)
 {
 	struct bpf_map *map;
-	int fd;
-	int err;
+	int fd, r;
 
 	fd = bpf_obj_get(pin);
 	if (fd < 0) {
-		err = -errno;
+		r = -errno;
 		fprintf(stderr, "Cannot open pinned map '%s': %s\n",
-			pin, strerror(-err));
-		return err;
+			pin, strerror(-r));
+		return r;
 	}
 
 	map = bpf_object__find_map_by_name(obj, map_name);
 	if (!map) {
-		err = -ENOENT;
+		r = -ENOENT;
 		fprintf(stderr, "Map '%s' was not found in object\n",
 			map_name);
 		goto out;
 	}
 
-	err = bpf_map__reuse_fd(map, fd);
-	if (err) {
+	r = bpf_map__reuse_fd(map, fd);
+	if (r) {
 		fprintf(stderr, "Failed to reuse FD for map '%s': %s\n",
-			map_name, strerror(-err));
+			map_name, strerror(-r));
 		goto out;
 	}
 
@@ -263,30 +250,26 @@ reuse_map(struct bpf_object *obj, const char *map_name, const char *pin)
 	 * The map is owned and pinned by another BPF object.
 	 * Do not try to pin it again while loading this object.
 	 */
-	err = bpf_map__set_pin_path(map, NULL);
-	if (err) {
-		fprintf(stderr,
-			"Failed to disable pinning for map '%s': %s\n",
-			map_name, strerror(-err));
+	r = bpf_map__set_pin_path(map, NULL);
+	if (r) {
+		fprintf(stderr, "Failed to disable pinning for map '%s': %s\n",
+			map_name, strerror(-r));
 	}
 
 out:
 	close(fd);
 
-	return err;
+	return r;
 }
 
 static int
-attach_tc(const struct xfw_program *desc, const char *pin_root,
-	  const char *device)
+attach_tc(const XfwProg *desc, const char *pin_root,
+	  const char *dev)
 {
 	LIBBPF_OPTS(bpf_link_create_opts, opts);
-	char prog_pin[PATH_MAX];
-	char link_pin[PATH_MAX];
+	char prog_pin[PATH_MAX], link_pin[PATH_MAX];
 	unsigned int ifindex;
-	int prog_fd = -1;
-	int link_fd = -1;
-	int err;
+	int prog_fd = -1, link_fd = -1, r;
 
 	if (desc->prog_type != BPF_PROG_TYPE_SCHED_CLS) {
 		fprintf(stderr, "Program '%s' has type %d, expected TC type %d\n",
@@ -294,60 +277,60 @@ attach_tc(const struct xfw_program *desc, const char *pin_root,
 		return -EINVAL;
 	}
 
-	err = check_pin_root(pin_root);
-	if (err)
-		return err;
+	r = check_pin_root(pin_root);
+	if (r)
+		return r;
 
-	ifindex = if_nametoindex(device);
+	ifindex = if_nametoindex(dev);
 	if (!ifindex) {
-		err = errno ? -errno : -ENODEV;
+		r = errno ? -errno : -ENODEV;
 		fprintf(stderr, "Failed to find network interface '%s': %s\n",
-			device, strerror(-err));
-		return err;
+			dev, strerror(-r));
+		return r;
 	}
 
-	err = make_pin_path(prog_pin, sizeof(prog_pin), pin_root,
-			    desc->prog_pin_name);
-	if (err)
-		return err;
+	r = make_pin_path(prog_pin, sizeof(prog_pin), pin_root,
+			  desc->prog_pin_name);
+	if (r)
+		return r;
 
-	err = make_tc_link_pin_path(link_pin, sizeof(link_pin), pin_root, device);
-	if (err)
-		return err;
+	r = make_tc_link_pin_path(link_pin, sizeof(link_pin), pin_root, dev);
+	if (r)
+		return r;
 
-	err = check_path_absent(link_pin);
-	if (err)
-		return err;
+	r = check_path_absent(link_pin);
+	if (r)
+		return r;
 
 	prog_fd = bpf_obj_get(prog_pin);
 	if (prog_fd < 0) {
-		err = -errno;
+		r = -errno;
 		fprintf(stderr, "Failed to open pinned program '%s': %s\n",
-			prog_pin, strerror(-err));
-		return err;
+			prog_pin, strerror(-r));
+		return r;
 	}
 
 	link_fd = bpf_link_create(prog_fd, ifindex, BPF_TCX_EGRESS, &opts);
 	if (link_fd < 0) {
-		err = -errno;
+		r = -errno;
 		fprintf(stderr, "Failed to attach TCX egress program '%s' "
-			"to device '%s': %s\n", desc->prog_name, device,
-			strerror(-err));
+			"to device '%s': %s\n", desc->prog_name, dev,
+			strerror(-r));
 		goto out;
 	}
 
 	if (bpf_obj_pin(link_fd, link_pin)) {
-		err = -errno;
+		r = -errno;
 		fprintf(stderr, "Failed to pin TCX link at '%s': %s\n",
-			link_pin, strerror(-err));
+			link_pin, strerror(-r));
 		goto out;
 	}
 
 	printf("Attached TCX egress program '%s' to '%s'\n",
-	       desc->prog_name, device);
+	       desc->prog_name, dev);
 	printf("TCX link pin: %s\n", link_pin);
 
-	err = 0;
+	r = 0;
 
 out:
 	if (link_fd >= 0)
@@ -355,46 +338,41 @@ out:
 	if (prog_fd >= 0)
 		close(prog_fd);
 
-	return err;
+	return r;
 }
 
 static int
-detach_tc(const struct xfw_program *desc, const char *pin_root,
-	  const char *device)
+detach_tc(const XfwProg *desc, const char *pin_root, const char *dev)
 {
 	char link_pin[PATH_MAX];
-	int err;
+	int r;
 
 	if (desc->prog_type != BPF_PROG_TYPE_SCHED_CLS) {
 		fprintf(stderr,
 			"Program '%s' has type %d, expected TC type %d\n",
-			desc->name, desc->prog_type,
-			BPF_PROG_TYPE_SCHED_CLS);
+			desc->name, desc->prog_type, BPF_PROG_TYPE_SCHED_CLS);
 		return -EINVAL;
 	}
 
-	err = make_tc_link_pin_path(link_pin, sizeof(link_pin),
-				     pin_root, device);
-	if (err)
-		return err;
+	r = make_tc_link_pin_path(link_pin, sizeof(link_pin), pin_root, dev);
+	if (r)
+		return r;
 
 	if (unlink(link_pin)) {
 		if (errno == ENOENT) {
 			printf("TCX egress program '%s' is not attached "
-			       "to '%s'\n",
-			       desc->prog_name, device);
+			       "to '%s'\n", desc->prog_name, dev);
 			return 0;
 		}
 
-		err = -errno;
-		fprintf(stderr,
-			"Failed to unlink TCX link '%s': %s\n",
-			link_pin, strerror(-err));
-		return err;
+		r = -errno;
+		fprintf(stderr, "Failed to unlink TCX link '%s': %s\n",
+			link_pin, strerror(-r));
+		return r;
 	}
 
 	printf("Detached TCX egress program '%s' from '%s'\n",
-	       desc->prog_name, device);
+	       desc->prog_name, dev);
 
 	return 0;
 }
@@ -406,28 +384,27 @@ detach_tc(const struct xfw_program *desc, const char *pin_root,
  * maps declared with LIBBPF_PIN_BY_NAME under the specified directory.
  */
 static int
-load_program(const struct xfw_program *desc, const char *pin_root)
+load_program(const XfwProg *desc, const char *pin_root)
 {
 	LIBBPF_OPTS(bpf_object_open_opts, opts);
 	struct bpf_object *obj = NULL;
 	struct bpf_program *prog;
-	char prog_pin[PATH_MAX];
-	char map_pin[PATH_MAX];
+	char prog_pin[PATH_MAX], map_pin[PATH_MAX];
 	size_t i;
-	int err;
+	int r;
 
-	err = check_pin_root(pin_root);
-	if (err)
-		return err;
+	r = check_pin_root(pin_root);
+	if (r)
+		return r;
 
-	err = make_pin_path(prog_pin, sizeof(prog_pin),
-			    pin_root, desc->prog_pin_name);
-	if (err)
-		return err;
+	r = make_pin_path(prog_pin, sizeof(prog_pin), pin_root,
+			  desc->prog_pin_name);
+	if (r)
+		return r;
 
-	err = check_path_absent(prog_pin);
-	if (err)
-		return err;
+	r = check_path_absent(prog_pin);
+	if (r)
+		return r;
 
 	/*
 	 * Programs with pin_maps enabled use pin_root_path for maps declared
@@ -439,10 +416,10 @@ load_program(const struct xfw_program *desc, const char *pin_root)
 	obj = bpf_object__open_file(desc->obj_path,
 				    desc->pin_maps ? &opts : NULL);
 	if (!obj) {
-		err = -errno;
+		r = -errno;
 		fprintf(stderr, "Failed to open BPF object '%s': %s\n",
-			desc->obj_path, strerror(-err));
-		return err;
+			desc->obj_path, strerror(-r));
+		return r;
 	}
 
 	/*
@@ -450,13 +427,13 @@ load_program(const struct xfw_program *desc, const char *pin_root)
 	 * by the main XDP program.
 	 */
 	for (i = 0; i < desc->reuse_maps_cnt; i++) {
-		err = make_pin_path(map_pin, sizeof(map_pin),
-				    pin_root, desc->reuse_maps[i].name);
-		if (err)
+		r = make_pin_path(map_pin, sizeof(map_pin), pin_root,
+				  desc->reuse_maps[i].name);
+		if (r)
 			goto out;
 
-		err = reuse_map(obj, desc->reuse_maps[i].name, map_pin);
-		if (err)
+		r = reuse_map(obj, desc->reuse_maps[i].name, map_pin);
+		if (r)
 			goto out;
 	}
 
@@ -464,7 +441,7 @@ load_program(const struct xfw_program *desc, const char *pin_root)
 	if (!prog) {
 		fprintf(stderr, "Program '%s' was not found in '%s'\n",
 			desc->prog_name, desc->obj_path);
-		err = -ENOENT;
+		r = -ENOENT;
 		goto out;
 	}
 
@@ -472,14 +449,14 @@ load_program(const struct xfw_program *desc, const char *pin_root)
 		fprintf(stderr, "Program '%s' has type %d, expected type %d\n",
 			desc->prog_name, bpf_program__type(prog),
 			desc->prog_type);
-		err = -EINVAL;
+		r = -EINVAL;
 		goto out;
 	}
 
-	err = bpf_object__load(obj);
-	if (err) {
+	r = bpf_object__load(obj);
+	if (r) {
 		fprintf(stderr, "Failed to load '%s': %s\n",
-			desc->obj_path, strerror(-err));
+			desc->obj_path, strerror(-r));
 		goto out;
 	}
 
@@ -487,10 +464,10 @@ load_program(const struct xfw_program *desc, const char *pin_root)
 	 * Pin the program so that it can later be attached or referenced
 	 * independently of this loader process.
 	 */
-	err = bpf_program__pin(prog, prog_pin);
-	if (err) {
+	r = bpf_program__pin(prog, prog_pin);
+	if (r) {
 		fprintf(stderr, "Failed to pin '%s' at '%s': %s\n",
-			desc->prog_name, prog_pin, strerror(-err));
+			desc->prog_name, prog_pin, strerror(-r));
 		goto out;
 	}
 
@@ -500,28 +477,28 @@ load_program(const struct xfw_program *desc, const char *pin_root)
 out:
 	bpf_object__close(obj);
 
-	return err;
+	return r;
 }
 
 static int
-unload_program(const struct xfw_program *desc, const char *pin_root)
+unload_program(const XfwProg *desc, const char *pin_root)
 {
 	char prog_pin[PATH_MAX];
-	int err;
+	int r;
 
-	err = make_pin_path(prog_pin, sizeof(prog_pin),
-			    pin_root, desc->prog_pin_name);
-	if (err)
-		return err;
+	r = make_pin_path(prog_pin, sizeof(prog_pin), pin_root,
+			  desc->prog_pin_name);
+	if (r)
+		return r;
 
 	if (unlink(prog_pin)) {
 		if (errno == ENOENT)
 			return 0;
 
-		err = -errno;
+		r = -errno;
 		fprintf(stderr, "Failed to unlink program pin '%s': %s\n",
-			prog_pin, strerror(-err));
-		return err;
+			prog_pin, strerror(-r));
+		return r;
 	}
 
 	printf("Unloaded program '%s'\n", desc->prog_name);
@@ -531,11 +508,9 @@ unload_program(const struct xfw_program *desc, const char *pin_root)
 int
 main(int argc, char **argv)
 {
-	const struct xfw_program *desc;
-	const char *command;
-	const char *pin_root;
-	const char *device = NULL;
-	int err;
+	const XfwProg *desc;
+	const char *command, *pin_root, *dev = NULL;
+	int r;
 
 	if (argc < 4) {
 		usage(argv[0]);
@@ -564,35 +539,39 @@ main(int argc, char **argv)
 			return EXIT_FAILURE;
 		}
 
-		err = load_program(desc, pin_root);
-	} else if (!strcmp(command, "unload")) {
+		r = load_program(desc, pin_root);
+	}
+	else if (!strcmp(command, "unload")) {
 		if (argc != 4) {
 			usage(argv[0]);
 			return EXIT_FAILURE;
 		}
 
-		err = unload_program(desc, pin_root);
-	} else if (!strcmp(command, "attach")) {
+		r = unload_program(desc, pin_root);
+	}
+	else if (!strcmp(command, "attach")) {
 		if (argc != 5) {
 			usage(argv[0]);
 			return EXIT_FAILURE;
 		}
 
-		device = argv[4];
-		err = attach_tc(desc, pin_root, device);
-	} else if (!strcmp(command, "detach")) {
+		dev = argv[4];
+		r = attach_tc(desc, pin_root, dev);
+	}
+	else if (!strcmp(command, "detach")) {
 		if (argc != 5) {
 			usage(argv[0]);
 			return EXIT_FAILURE;
 		}
 
-		device = argv[4];
-		err = detach_tc(desc, pin_root, device);
-	} else {
+		dev = argv[4];
+		r = detach_tc(desc, pin_root, dev);
+	}
+	else {
 		fprintf(stderr, "Unknown command: '%s'\n", command);
 		usage(argv[0]);
 		return EXIT_FAILURE;
 	}
 
-	return err ? EXIT_FAILURE : EXIT_SUCCESS;
+	return r ? EXIT_FAILURE : EXIT_SUCCESS;
 }
