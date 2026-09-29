@@ -188,6 +188,7 @@ parse_ethhdr(XfwHdrCursor *cur)
 	return h_proto; /* Network byte order. */
 }
 
+/* Returns L4 protocol, -EFBIG for fragmented IPv6, or -EINVAL on bad input. */
 static __always_inline int
 skip_ip6hdrext(XfwHdrCursor *cur, uint8_t next_hdr_t)
 {
@@ -219,7 +220,6 @@ skip_ip6hdrext(XfwHdrCursor *cur, uint8_t next_hdr_t)
 	return -EINVAL;
 }
 
-/* Returns L4 protocol, -EFBIG for fragmented IPv6, or -EINVAL on bad input. */
 static __always_inline int
 parse_ip6hdr(XfwHdrCursor *cur, struct ipv6hdr **ip6hdr)
 {
@@ -236,7 +236,7 @@ parse_ip6hdr(XfwHdrCursor *cur, struct ipv6hdr **ip6hdr)
 
 	XFW_CTX_DBG("IPv6 packet: %pI6 -> %pI6", &ip6h->saddr, &ip6h->daddr);
 
-	return skip_ip6hdrext(cur, ip6h->nexthdr);
+	return 0;
 }
 
 /* TODO: validate IPv4 header checksum. */
