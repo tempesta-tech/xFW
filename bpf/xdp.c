@@ -377,17 +377,17 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_BADHDR_INGRESS);
 
-		ptrdiff_t ip_off = (void *)iph4 - XFW_CTX_DATA_BGN(ctx->ctx);
-		if (ip_off < 0 || ip_off > L3_OFF_MAX)
-			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_BADHDR_INGRESS);
-
-		ctx->ip_off = (uint8_t)ip_off;
+		xfw_ipv4_to_ipv6_mapped(iph4->saddr, ctx->ilog_addr.addr32);
 		/* Any MF bit or non-zero fragment offset means fragmented IPv4. */
 		if ((bpf_htons(iph4->frag_off) & 0x3fff) != 0)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP4_FRAGMENTED_INGRESS);
 
+		ptrdiff_t ip_off = (void *)iph4 - XFW_CTX_DATA_BGN(ctx->ctx);
+		XFW_ASSERT(ip_off >= 0 && ip_off <= L3_OFF_MAX);
+
+		ctx->ip_off = (uint8_t)ip_off;
 		ctx->l4_proto = (u8)proto;
-		xfw_ipv4_to_ipv6_mapped(iph4->saddr, ctx->ilog_addr.addr32);
+
 		ipv4_populate_lpm_key(iph4->saddr, &src_ip_key->addr4);
 		return XFW_CTX_CONTINUE;
 	}
@@ -395,19 +395,24 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		struct ipv6hdr	*iph6;
 
 		count_traffic_stat(ctx, XFW_IP6_TOTAL_INGRESS);
-		int proto = parse_ip6hdr(&ctx->hdr_cur, &iph6);
+		if (unlikely(parse_ip6hdr(&ctx->hdr_cur, &iph6)))
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_BADHDR_INGRESS);
+
+		ctx->ilog_addr.in6 = iph6->saddr;
+		int proto = skip_ip6hdrext(&ctx->hdr_cur, iph6->nexthdr);
 		if (unlikely(proto < 0)) {
 			if (proto == -EFBIG)
 				return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_FRAGMENTED_INGRESS);
-			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_BADHDR_INGRESS);
+
+			return XFW_MAKE_CTX_DROP(ctx,
+						 XFW_DROP_IP6_BADHDR_INGRESS);
 		}
+
 		ptrdiff_t ip_off = (void *)iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
-		if (ip_off < 0 || ip_off > L3_OFF_MAX)
-			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_BADHDR_INGRESS);
+		XFW_ASSERT(ip_off >= 0 && ip_off <= L3_OFF_MAX);
 
 		ctx->ip_off = (uint8_t)ip_off;
 		ctx->l4_proto = (u8)proto;
-		ctx->ilog_addr.in6 = iph6->saddr;
 		ipv6_populate_lpm_key(&iph6->saddr, &src_ip_key->addr6);
 
 		return XFW_CTX_CONTINUE;

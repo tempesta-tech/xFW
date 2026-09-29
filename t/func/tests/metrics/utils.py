@@ -97,7 +97,7 @@ class SendInvalidPacketsMixin(EtherRawClient):
         packet = Ether(dst=dst_mac, src=src_mac, type=ETH_P_IP)
         packet = (
             packet
-            / IP(src="0.0.0.0", dst=self.remote_ip, id=12345, flags="MF", frag=10, len=30)
+            / IP(src="1.1.1.1", dst=self.remote_ip, id=12345, flags="MF", frag=10, len=30)
             / Raw(b"flag 10")
         )
         await self.loop.sock_sendall(self.socket, bytes(packet))
@@ -123,13 +123,35 @@ class SendInvalidPacketsMixin(EtherRawClient):
         packet = (
             packet
             / IPv6(
-                src="::",
+                src="::fec9:f8c8",
                 dst=self.remote_ip,
             )
             / IPv6ExtHdrFragment(id=12345)
             / Raw(b"flag 10")
         )
         await self.loop.sock_sendall(self.socket, bytes(packet))
+        self.logger.info(f"Sending L2 packet {packet}")
+
+    async def send_bad_ip6_src_addr(self, src_mac: str, dst_mac: str):
+        packet = Ether(dst=dst_mac, src=src_mac, type=ETH_P_IPV6)
+        packet = packet / IPv6(
+            src="::",
+            dst=self.remote_ip,
+            nh=IP_PROTOS.tcp,
+        )
+        tcp_part = bytes(TCP())[:15]
+        await self.loop.sock_sendall(self.socket, bytes(packet / tcp_part))
+        self.logger.info(f"Sending L2 packet {packet}")
+
+    async def send_bad_ip4_src_addr(self, src_mac: str, dst_mac: str):
+        packet = Ether(dst=dst_mac, src=src_mac, type=ETH_P_IP)
+        packet = packet / IP(
+            src="0.0.0.0",
+            dst=self.remote_ip,
+            proto=IP_PROTOS.tcp,
+        )
+        tcp_part = bytes(TCP())[:15]
+        await self.loop.sock_sendall(self.socket, bytes(packet / tcp_part))
         self.logger.info(f"Sending L2 packet {packet}")
 
     async def send_bad_tcp_headers(self, src_mac: str, dst_mac: str):

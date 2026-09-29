@@ -66,17 +66,19 @@ out_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey* prot_net_key, void **prot_net_map
 		struct ipv6hdr	*iph6;
 
 		count_traffic_stat(ctx, XFW_IP6_TOTAL_EGRESS);
-		int proto = parse_ip6hdr(&ctx->hdr_cur, &iph6);
+		if (unlikely(parse_ip6hdr(&ctx->hdr_cur, &iph6)))
+			return XFW_MAKE_CTX_PASS(ctx, XFW_IP6_BADHDR_EGRESS);
+
+		ctx->ilog_addr.in6 = iph6->daddr;
+		int proto = skip_ip6hdrext(&ctx->hdr_cur, iph6->nexthdr);
 		if (unlikely(proto < 0))
 			return XFW_MAKE_CTX_PASS(ctx, XFW_IP6_BADHDR_EGRESS);
 
 		ptrdiff_t ip_off = (void *)iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
-		if (ip_off < 0 || ip_off > L3_OFF_MAX)
-			return XFW_MAKE_CTX_PASS(ctx, XFW_IP6_BADHDR_EGRESS);
+		XFW_ASSERT(ip_off >= 0 && ip_off <= L3_OFF_MAX);
 
 		ctx->ip_off = (uint8_t)ip_off;
 		ctx->l4_proto = (u8)proto;
-		ctx->ilog_addr.in6 = iph6->daddr;
 		ipv6_populate_lpm_key(&iph6->daddr, &prot_net_key->addr6);
 		*prot_net_map = SELECT_SHADOW_MAP(MAP_NET_IP6_BASENAME,
 						   ctx->cfg->amap_prot_net);
