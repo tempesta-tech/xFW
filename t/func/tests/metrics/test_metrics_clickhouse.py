@@ -307,20 +307,22 @@ async def test_blocked_by_udp_anomaly_zero_port_21_bit(
     assert metric.blocked_by_udp_anomaly_zero_source_or_destination_port()
 
 
-@pytest.mark.skip("ISSUE: 97 (xFW)")
+@pytest.mark.skip_on_virtio
 @pytest.mark.parametrize(
-    "invalid_l2_raw_client, send_method, expected_metric",
+    "invalid_l2_raw_client, send_method, expected_metric, expected_address",
     [
         pytest.param(
             "invalid_l2_ip4_raw_client",
             "send_eth_custom_packet",
             ClickhouseSingleMetric.blocked_during_parsing_unknown_ethertype,
+            "::",
             id="blocked-during-parsing-unknown-ethertype-22-bit",
         ),
         pytest.param(
             "invalid_l2_ip4_raw_client",
             "send_bad_eth_header",
             ClickhouseSingleMetric.blocked_during_parsing_malformed_ethernet_header,
+            "::",
             id="blocked-during-parsing-malformed-ethernet-header-23-bit",
             marks=pytest.mark.skip("OS prevent sending packages less then 14 bytes, ISSUE: 332"),
         ),
@@ -328,24 +330,28 @@ async def test_blocked_by_udp_anomaly_zero_port_21_bit(
             "invalid_l2_ip4_raw_client",
             "send_bad_ip4_header_less",
             ClickhouseSingleMetric.blocked_during_parsing_malformed_ipv4_header,
+            "::",
             id="blocked-during-parsing-malformed-ipv4-header-24-bit",
         ),
         pytest.param(
             "invalid_l2_ip4_raw_client",
             "send_bad_ip4_fragmented",
             ClickhouseSingleMetric.blocked_during_parsing_fragmented_ipv4_packet,
+            "1.1.1.1",
             id="blocked-during-parsing-fragmented-ipv4-packet-25-bit",
         ),
         pytest.param(
             "invalid_l2_ip6_raw_client",
             "send_bad_ip6_header_less",
             ClickhouseSingleMetric.blocked_during_parsing_malformed_ipv6_header,
+            "::",
             id="blocked-during-parsing-malformed-ipv6-header-26-bit",
         ),
         pytest.param(
             "invalid_l2_ip6_raw_client",
             "send_bad_ip6_fragmented",
             ClickhouseSingleMetric.blocked_during_parsing_fragmented_ipv6_packet,
+            "::fec9:f8c8",
             id="blocked-during-parsing-fragmented-ipv6-packet-27-bit",
         ),
     ],
@@ -359,6 +365,7 @@ async def test_invalid_l2_l3(
     invalid_l2_raw_client,
     ether_raw_server,
     xfw,
+    expected_address,
 ):
     await clickhouse_client.connect()
     await ether_raw_server.start()
@@ -370,7 +377,7 @@ async def test_invalid_l2_l3(
     await xfw.rules_set("xfw {}")
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=invalid_l2_raw_client.ip_clickhouse
+        clickhouse_client, ip_to_search=expected_address
     ) as metric:
         await getattr(invalid_l2_raw_client, send_method)(src_mac, dst_mac)
         assert await ether_raw_server.receive_block()
@@ -426,6 +433,55 @@ async def test_invalid_l4(
         clickhouse_client, ip_to_search=invalid_l2_ip4_raw_client.ip_clickhouse
     ) as metric:
         await getattr(invalid_l2_ip4_raw_client, send_method)(src_mac, dst_mac)
+        assert await ether_raw_server.receive_block()
+
+    assert expected_metric(metric)
+
+
+@pytest.mark.skip_on_virtio
+@pytest.mark.parametrize(
+    "invalid_l2_raw_client, send_method, expected_metric, expected_log_addr",
+    [
+        pytest.param(
+            "invalid_l2_ip6_raw_client",
+            "send_bad_ip6_src_addr",
+            ClickhouseSingleMetric.blocked_during_parsing_malformed_tcp_header,
+            "::",
+            id="blocked-during-parsing-malformed-tcp-header-28-bit_ipv6",
+        ),
+        pytest.param(
+            "invalid_l2_ip4_raw_client",
+            "send_bad_ip4_src_addr",
+            ClickhouseSingleMetric.blocked_during_parsing_malformed_tcp_header,
+            "::ffff:0:0",
+            id="blocked-during-parsing-malformed-tcp-header-28-bit_ipv4",
+        ),
+    ],
+    indirect=["invalid_l2_raw_client"],
+)
+async def test_invalid_src_ip(
+    send_method: str,
+    expected_metric: Callable,
+    expected_log_addr: str,
+    xfw,
+    invalid_l2_raw_client,
+    ether_raw_server,
+    clickhouse_client,
+    metric_analyzer,
+):
+    await clickhouse_client.connect()
+    await ether_raw_server.start()
+    await invalid_l2_raw_client.start()
+
+    src_mac, dst_mac = await asyncio.gather(
+        ether_raw_server.get_mac_address(), invalid_l2_raw_client.get_mac_address()
+    )
+    await xfw.rules_set("xfw {}")
+
+    async with metric_analyzer.track_clickhouse_metric(
+        clickhouse_client, ip_to_search=expected_log_addr
+    ) as metric:
+        await getattr(invalid_l2_raw_client, send_method)(src_mac, dst_mac)
         assert await ether_raw_server.receive_block()
 
     assert expected_metric(metric)
@@ -626,6 +682,7 @@ class TestBlockedByDNS:
         assert expected_metric(metric)
 
 
+@pytest.mark.skip_on_virtio
 @pytest.mark.skip_on_e1000
 @pytest.mark.parametrize(
     "xfw_setup, server_reply_method, expected_metric",
