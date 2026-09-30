@@ -1,9 +1,14 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import pytest
+import asyncio
 
+import pytest
+from scapy.layers.inet import TCP, UDP
+
+from framework.asyn import TcpRawClient, TcpRawServer, UdpRawClient
 from framework.cmp import RatelimitChecker
+from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW, XFWRatelimit, XFWRatelimits
 
 ICMP_IPV4_ECHO_REQUEST = 8
@@ -59,6 +64,13 @@ def xfw_ratelimits(
         low_pps=xfw_low_pps_ratelimit,
         low_bps=xfw_low_bps_ratelimit,
     )
+
+
+@pytest.fixture(scope="function")
+def udp_raw_server(
+    udp_server: RegularKernelSocketNetworkStateful,
+) -> tuple[RegularKernelSocketNetworkStateful]:
+    return udp_server
 
 
 @pytest.fixture
@@ -118,8 +130,8 @@ async def test_icmp_ratelimit_override_default_rule(
     await xfw_with_ratelimits.rules_patch(f"""
         xfw {{
             defaults {{ icmp: allow; }}
-            icmp {ip_version}: ratelimit={xfw_low_pps_ratelimit.name} {{ 
-                {ICMP_IPV4_ECHO_REQUEST}, {ICMP_IPV6_ECHO_REQUEST} 
+            icmp {ip_version}: ratelimit={xfw_low_pps_ratelimit.name} {{
+                {ICMP_IPV4_ECHO_REQUEST}, {ICMP_IPV6_ECHO_REQUEST}
             }}
         }}
         """)
@@ -130,14 +142,57 @@ async def test_icmp_ratelimit_override_default_rule(
     )
 
 
-@pytest.mark.skip("ISSUE: 73 (xFW)")
+async def __check_limits_tcp(
+    tcp_raw_server: TcpRawServer,
+    tcp_raw_client: TcpRawClient,
+    xfw_low_pps_ratelimit,
+    ratelimit_checker,
+):
+    await tcp_raw_client.start()
+    await tcp_raw_server.start()
+
+    assert await asyncio.gather(
+        tcp_raw_client.handshake(),
+        tcp_raw_server.handshake(),
+    ) == [True, True], "Client and server can not establish connection"
+
+    async def send_tcp_segment(msg: str = "") -> None:
+        await tcp_raw_client.send_packet(TCP(flags="PA") / b"ping")
+        packet = await tcp_raw_server.receive_packet()
+        assert packet is not None, msg
+
+    await ratelimit_checker.check_pps_ratelimit(
+        client=tcp_raw_client, limit=xfw_low_pps_ratelimit, function=send_tcp_segment
+    )
+
+
+async def __check_limits_udp(
+    udp_server: RegularKernelSocketNetworkStateful,
+    udp_raw_client: UdpRawClient,
+    xfw_low_pps_ratelimit,
+    ratelimit_checker,
+):
+    await udp_server.start()
+    await udp_raw_client.start()
+
+    async def send_udp_datagram(msg: str = "") -> None:
+        await udp_raw_client.send_packet(UDP() / b"ping")
+        received = await udp_server.receive_block()
+        assert received is not True, msg
+
+    await ratelimit_checker.check_pps_ratelimit(
+        client=udp_raw_client, limit=xfw_low_pps_ratelimit, function=send_udp_datagram
+    )
+
+
 async def test_dst_ratelimit(
     xfw_with_ratelimits,
     protocol,
     ip_version,
-    server,
-    client,
-    establish_connection,
+    tcp_raw_server: TcpRawServer,
+    tcp_raw_client: TcpRawClient,
+    udp_raw_server: RegularKernelSocketNetworkStateful,
+    udp_raw_client: UdpRawClient,
     xfw_low_pps_ratelimit,
     ratelimit_checker,
 ):
@@ -145,7 +200,10 @@ async def test_dst_ratelimit(
     Verify that the destination-based ratelimit restricts TCP/UDP
     traffic within the allowed range.
     """
+    server = locals()[f"{protocol}_raw_server"]
+    client = locals()[f"{protocol}_raw_client"]
     server.echo_mode = True
+
     await xfw_with_ratelimits.rules_patch(f"""
         xfw {{
             defaults {{ dst: block; }}
@@ -155,20 +213,19 @@ async def test_dst_ratelimit(
         }}
         """)
 
-    await ratelimit_checker.check_pps_ratelimit(
-        client=client,
-        limit=xfw_low_pps_ratelimit,
+    await globals()[f"__check_limits_{protocol}"](
+        server, client, xfw_low_pps_ratelimit, ratelimit_checker
     )
 
 
-@pytest.mark.skip("ISSUE: 73 (xFW)")
 async def test_src_ratelimit_by_ip(
     xfw_with_ratelimits,
     protocol,
     ip_version,
-    server,
-    client,
-    establish_connection,
+    tcp_raw_server: TcpRawServer,
+    tcp_raw_client: TcpRawClient,
+    udp_raw_server: RegularKernelSocketNetworkStateful,
+    udp_raw_client: UdpRawClient,
     xfw_low_pps_ratelimit,
     ratelimit_checker,
 ):
@@ -176,30 +233,32 @@ async def test_src_ratelimit_by_ip(
     Verify that the source-based ratelimit by IP restricts TCP/UDP
     traffic within the allowed range.
     """
+    server = locals()[f"{protocol}_raw_server"]
+    client = locals()[f"{protocol}_raw_client"]
     server.echo_mode = True
+
     await xfw_with_ratelimits.rules_patch(f"""
         xfw {{
-            defaults {{ src_ip {ip_version}: block; }}
+            defaults {{ src_ip {ip_version}.{protocol}: block; }}
             src=extended_group {ip_version}.{protocol} : ratelimit={xfw_low_pps_ratelimit.name} {{
                 {client.ip_testing}
             }}
         }}
         """)
 
-    await ratelimit_checker.check_pps_ratelimit(
-        client=client,
-        limit=xfw_low_pps_ratelimit,
+    await globals()[f"__check_limits_{protocol}"](
+        server, client, xfw_low_pps_ratelimit, ratelimit_checker
     )
 
 
-@pytest.mark.skip("ISSUE: 73 (xFW)")
 async def test_src_ratelimit_by_port(
     xfw_with_ratelimits,
     protocol,
     ip_version,
-    server,
-    client,
-    establish_connection,
+    tcp_raw_server: TcpRawServer,
+    tcp_raw_client: TcpRawClient,
+    udp_raw_server: RegularKernelSocketNetworkStateful,
+    udp_raw_client: UdpRawClient,
     xfw_low_pps_ratelimit,
     ratelimit_checker,
 ):
@@ -207,19 +266,21 @@ async def test_src_ratelimit_by_port(
     Verify that the source-based ratelimit by port restricts TCP/UDP
     traffic within the allowed range.
     """
+    server = locals()[f"{protocol}_raw_server"]
+    client = locals()[f"{protocol}_raw_client"]
     server.echo_mode = True
+
     await xfw_with_ratelimits.rules_patch(f"""
         xfw {{
-            defaults {{ src_port {ip_version}: block; }}
+            defaults {{ src_port {ip_version}.{protocol}: block; }}
             src=extended_group {ip_version}.{protocol} : ratelimit={xfw_low_pps_ratelimit.name} {{
                 :{client.port}
             }}
         }}
         """)
 
-    await ratelimit_checker.check_pps_ratelimit(
-        client=client,
-        limit=xfw_low_pps_ratelimit,
+    await globals()[f"__check_limits_{protocol}"](
+        server, client, xfw_low_pps_ratelimit, ratelimit_checker
     )
 
 
