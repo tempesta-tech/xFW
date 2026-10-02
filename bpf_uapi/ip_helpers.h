@@ -18,6 +18,21 @@
 #define HTONL	htonl
 #endif
 
+/*
+ * Used only for incident logging.
+ *
+ * NOTE: Prefer doing this mapping in tfw_logger in
+ * user space if the IP version becomes available at that stage.
+ *
+ * We should continue using IPv4-mapped IPv6 addresses to remain consistent with
+ * ClickHouse. This allows us to query IPv4 addresses using their standard
+ * notation, for example: `SELECT * FROM xfw_events WHERE addr = '192.168.1.1'`.
+ * Otherwise, we would need to use `WHERE addr = '::192.168.1.1'`. This would
+ * make querying IPv4 and IPv6 addresses inconsistent: IPv4 addresses would
+ * require an added `::` prefix, while adding that prefix to an IPv6 address
+ * would not match the original address. External tools that process these logs
+ * would therefore need separate query logic for IPv4 and IPv6 addresses.
+ */
 static __always_inline void
 xfw_ipv4_to_ipv6_mapped(__be32 ipv4, __be32 addr[4])
 {
