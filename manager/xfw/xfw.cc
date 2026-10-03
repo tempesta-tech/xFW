@@ -6,6 +6,14 @@
  */
 #include "xfw.hh"
 #include "../../lib/error.hh"
+#include "../../bpf_uapi/map_names.h"
+#include "../xfw_update_error.hh"
+
+#include <bpf/bpf.h>
+#include <cerrno>
+#include <cstring>
+#include <unistd.h>
+
 namespace {
 
 template<typename R>
@@ -22,16 +30,29 @@ readline(const char *path)
 	return r;
 }
 
+bool
+has_pinned_map(const char *name)
+{
+	// The loader does not pin maps for disabled load-time modes.
+	const std::string path = std::string("/sys/fs/bpf/xfw/") + name;
+	int fd = bpf_obj_get(path.c_str());
+
+	if (fd >= 0) {
+		close(fd);
+		return true;
+	}
+	if (errno == ENOENT)
+		return false;
+
+	throw Except("Unable to open BPF map {}: {}", path, std::strerror(errno));
+}
+
 } // anonymous namespace
 
 Xfw::Xfw(std::optional<std::string> &&geodb_path)
 	: geodb_path_(std::move(geodb_path))
 {
 	reload_geodb_if_present();
-
-	if (!readline<int>("/proc/sys/net/ipv4/tcp_syncookies"))
-		throw Except("Enable net.ipv4.tcp_syncookies before using "
-		             "the SYN-cookie filter");
 }
 
 void
@@ -110,6 +131,19 @@ Xfw::load_geo_entry(XfwConfig::NetGeo &entry, bool includeIp4, bool includeIp6) 
 void
 Xfw::set_config(XfwConfig &&config)
 {
+	if (config.dns_filter_.enabled_ && !has_pinned_map(MAP_DNS_EGR_FD_STR))
+		throw UpdateError("dns_filter requires DNS mode in the loaded "
+				  "BPF programs");
+
+	if (config.syncookie_filter_.has_value()) {
+		if (!has_pinned_map(MAP_SYNCOOKIES_STR))
+			throw UpdateError("tcp_syncookies requires host deployment "
+					  "mode in the loaded BPF programs");
+		if (!readline<int>("/proc/sys/net/ipv4/tcp_syncookies"))
+			throw UpdateError("Enable net.ipv4.tcp_syncookies before "
+					  "using the SYN-cookie filter");
+	}
+
 	// TODO #4:
 	// Save successfully applied ratelimits into config_ immediately after
 	// not throwing set_ratelimits.
