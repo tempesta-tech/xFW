@@ -206,7 +206,6 @@ parse_single_dns_question(XfwMd *ctx, XfwHdrCursor* hdr_cur, const XfwDnsHdr *dh
 
 /* End of parsing utils */
 
-// TODO AK: #71 disable the map
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
 	__type(key, __be16); /* DNS TX ID. Could be improved to

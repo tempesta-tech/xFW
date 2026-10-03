@@ -42,7 +42,6 @@ typedef struct XfwTcpSynCookieTs {
 	uint64_t	last_gen_jiff;
 } XfwTcpSynCookieTs;
 
-// TODO AK: #71 disable the map
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__type(key, uint32_t);
