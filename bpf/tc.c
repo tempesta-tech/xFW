@@ -124,7 +124,8 @@ out_process_l4(XfwGlobalCtx *ctx)
 			return XFW_MAKE_CTX_PASS(ctx, XFW_UDP_BADHDR_EGRESS);
 		ctx->l4_off = l4_off;
 
-		egress_dns_filter(ctx, uh);
+		if (dns_mode)
+			egress_dns_filter(ctx, uh);
 
 		/* It is a regular case, don't need to add any statistic */
 		return XFW_CTX_CONTINUE;

@@ -68,18 +68,16 @@ struct {
 	r;								\
 })
 
-static __always_inline bool
-is_metadata_creation_necessary(const XfwGlobalCtx *ctx)
-{
-	return ctx->cfg->rules.dns.enabled;
-}
-
 static __always_inline int
 create_metadata(XfwGlobalCtx *ctx, struct xdp_md *xdp)
 {
 	const int pm_sz = sizeof(XfwPacketMetadata);
 
-	if (!is_metadata_creation_necessary(ctx))
+	/*
+	 * TODO at the moment metadata is used for DNS only -
+	 * localize it in the DNS code or apply it to other places.
+	 */
+	if (!dns_mode || !ctx->cfg->rules.dns.enabled)
 		return XFW_CTX_CONTINUE;
 
 	if (unlikely(bpf_xdp_adjust_meta(xdp, -pm_sz)))
@@ -225,8 +223,7 @@ static __always_inline void
 populate_src_info(const XfwGlobalCtx *ctx, void **src_ip_map,
 		  XfwIpLpmKey *ip_lpm, uint8_t *src_default)
 {
-	if (ctx->ipver == bpf_htons(ETH_P_IPV6))
-	{
+	if (ctx->ipver == bpf_htons(ETH_P_IPV6)) {
 		if (ctx->l4_proto == XFW_L4_PROTO_UDP) {
 			*src_default = XFW_DEFAULT_SRC_IP_UDP_IP6;
 			*src_ip_map =  SELECT_SHADOW_MAP(MAP_SRC_6_UDP_BASENAME,
@@ -398,7 +395,8 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		int proto = parse_ip6hdr(&ctx->hdr_cur, &iph6);
 		if (unlikely(proto < 0)) {
 			if (proto == -EFBIG)
-				return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_FRAGMENTED_INGRESS);
+				return XFW_MAKE_CTX_DROP(ctx,
+							 XFW_DROP_IP6_FRAGMENTED_INGRESS);
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_IP6_BADHDR_INGRESS);
 		}
 		ptrdiff_t ip_off = (void *)iph6 - XFW_CTX_DATA_BGN(ctx->ctx);
@@ -446,7 +444,7 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	CHAIN(syn_rlimit, ctx);
 
 	/* If a SYN cookie was generated, processing stops immediately. */
-	if (ctx->cfg->rules.syncookie.enabled)
+	if (deployment_mode == XFW_MODE_HOST && ctx->cfg->rules.syncookie.enabled)
 		CHAIN(tcp_syncookies_syn_filter, ctx, th);
 
 	/* We do not add the connection to the trusted set here.
@@ -470,8 +468,10 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th,
 		   const XfwSockAddr *addr)
 {
 	/* Fast path - no SYN cookies. */
-	if (!ctx->cfg->rules.syncookie.enabled)
-		return tcp_auth_conn_ingress_filter(ctx, addr, TCP_AUTH_EVENT_NORMAL);
+	if (deployment_mode != XFW_MODE_HOST
+	    || !ctx->cfg->rules.syncookie.enabled)
+		return tcp_auth_conn_ingress_filter(ctx, addr,
+						    TCP_AUTH_EVENT_NORMAL);
 
 	XfwTcpSynCookieTs *ts = __tcp_get_tcp_syncookie_ts();
 	XFW_ASSERT(ts);
@@ -498,6 +498,7 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th,
 	 * the connection is correctly tracked without relying on tc.c.
 	 */
 	tcp_auth_conn_add(addr);
+
 	return XFW_CTX_CONTINUE;
 }
 
@@ -629,7 +630,9 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 		if (uh->source == 0 || uh->dest == 0)
 			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_UDP_ANOM_ZERO_PORT);
 
-		CHAIN(ingress_dns_filter, ctx, uh);
+		if (dns_mode)
+			CHAIN(ingress_dns_filter, ctx, uh);
+
 		return src_filter(ctx, uh->source, src_ip_key);
 	};
 	case XFW_L4_PROTO_ICMP:
@@ -712,11 +715,12 @@ xfw_xdp(struct xdp_md *xdp)
 	/* We can't use XFW_ASSERT here because ctx.g_stats is not available. */
 	VERIFY_TRUE_OR_RETURN(ctx.cfg && ctx.g_stats, XFW_CTX_PASS);
 
-	CHAIN_PASS_ALL(create_metadata, &ctx, xdp);
+	r = create_metadata(&ctx, xdp);
+	if (r == XFW_CTX_CONTINUE)
+		r = xfw_xdp_filter(&ctx);
+	if (unlikely((r != XFW_CTX_PASS)))
+		return r;
 
-	r = xfw_xdp_filter(&ctx);
-
-pass:
 	return finalize_result(&ctx, r);
 }
 

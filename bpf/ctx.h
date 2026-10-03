@@ -85,7 +85,6 @@ xfw_ctx_data_end(const XfwMd *ctx)
 #define XFW_CTX_DATA_BGN(ctx)		xfw_ctx_data_bgn(XFW_CTX_MD(ctx))
 #define XFW_CTX_DATA_END(ctx)		xfw_ctx_data_end(XFW_CTX_MD(ctx))
 
-
 /*
  * Return code meaning that we should continue the packet processing through
  * all following finters.
@@ -164,6 +163,20 @@ do {									\
 	(cur)->pos = XFW_CTX_DATA_BGN(pkt_ctx);				\
 	(cur)->end = XFW_CTX_DATA_END(pkt_ctx);				\
 } while (0)
+
+/*
+ * Global load-time configuration.
+ * These constants are supposed to be defined in each .c file and updated
+ * in the byte code object at load time.
+ */
+enum {
+	XFW_MODE_HOST,
+	XFW_MODE_GW,
+	XFW_MODE_SCRUBBER,
+};
+
+const volatile uint8_t deployment_mode = XFW_MODE_HOST;
+const volatile bool dns_mode = false;
 
 static __always_inline void
 xfw_ctx_init(XfwGlobalCtx *ctx, XfwMd *pkt_ctx)
