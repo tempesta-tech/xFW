@@ -11,6 +11,7 @@
 #include <limits.h>
 #include <net/if.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +20,7 @@
 #include <linux/bpf.h>
 
 #include <bpf/bpf.h>
+#include <bpf/btf.h>
 #include <bpf/libbpf.h>
 
 #include "../bpf_uapi/map_names.h"
@@ -33,7 +35,20 @@
 
 typedef struct {
 	const char		*name;
+	bool			dns_only;
 } XfwLMapDesc;
+
+/* bpf/ctx.h is BPF-only; keep these values in sync with its deployment modes. */
+enum {
+	XFW_MODE_HOST,
+	XFW_MODE_GW,
+	XFW_MODE_SCRUBBER,
+};
+
+typedef struct {
+	uint8_t			deployment_mode;
+	bool			dns;
+} XfwLoadMode;
 
 /*
  * @reuse_maps	- maps that must be explicitly reused from another BPF object.
@@ -77,7 +92,7 @@ static const XfwLMapDesc tc_maps[] = {
 	{ .name = MAP_LOG_EVENTS_STR },
 	{ .name = MAP_LOG_EV_CNT_STR },
 	{ .name = MAP_RATELIMIT_STR },
-	{ .name = MAP_DNS_EGR_FD_STR },
+	{ .name = MAP_DNS_EGR_FD_STR, .dns_only = true },
 	{ .name = MAP_TCP_CONN_STR },
 	{ .name = MAP_DST_STR(MAP_PRIMARY_IDX) },
 	{ .name = MAP_DST_STR(MAP_SECONDARY_IDX) },
@@ -103,12 +118,21 @@ static const XfwProg *programs[] = {
 	&main_tc,
 };
 
+static const struct {
+	const char	*name;
+	uint8_t		mode;
+} deployment_modes[] = {
+	{ "host", XFW_MODE_HOST },
+	{ "gw", XFW_MODE_GW },
+	{ "scrubbing", XFW_MODE_SCRUBBER },
+};
+
 static void
 usage(const char *prog)
 {
 	fprintf(stderr,
 		"Usage:\n"
-		"  %s load <program> <pin-root>\n"
+		"  %s load <program> <pin-root> [mode]\n"
 		"  %s unload <program> <pin-root>\n"
 		"  %s attach tc <pin-root> <device>\n"
 		"  %s detach tc <pin-root> <device>\n"
@@ -117,15 +141,86 @@ usage(const char *prog)
 		"  xdp\n"
 		"  tc\n"
 		"\n"
+		"Load modes (default: host without DNS):\n"
+		"  host, gw, or scrubbing; combine with dns in either order\n"
+		"  dns alone is shorthand for host,dns\n"
+		"\n"
 		"Examples:\n"
-		"  %s load xdp /sys/fs/bpf/xfw\n"
-		"  %s load tc /sys/fs/bpf/xfw\n"
+		"  %s load xdp /sys/fs/bpf/xfw host,dns\n"
+		"  %s load tc /sys/fs/bpf/xfw host,dns\n"
 		"  %s attach tc /sys/fs/bpf/xfw enp1s0\n"
 		"  %s detach tc /sys/fs/bpf/xfw enp1s0\n"
 		"  %s unload tc /sys/fs/bpf/xfw\n"
 		"  %s unload xdp /sys/fs/bpf/xfw\n",
 		prog, prog, prog, prog,
 		prog, prog, prog, prog, prog, prog);
+}
+
+static int
+parse_load_mode(const char *name, XfwLoadMode *mode)
+{
+	enum {
+		MODE_START,
+		MODE_HAVE_DEPLOYMENT,
+		MODE_HAVE_DNS,
+		MODE_COMPLETE,
+	} state = MODE_START;
+	const char *token, *end;
+	size_t len, i;
+
+	*mode = (XfwLoadMode){ .deployment_mode = XFW_MODE_HOST };
+	if (!name)
+		return 0;
+
+	for (token = name; ; token = end + 1) {
+		end = strchr(token, ',');
+		len = end ? (size_t)(end - token) : strlen(token);
+		if (!len)
+			goto invalid;
+
+		if (len == sizeof("dns") - 1 && !memcmp(token, "dns", len)) {
+			switch (state) {
+			case MODE_START:
+				state = MODE_HAVE_DNS;
+				break;
+			case MODE_HAVE_DEPLOYMENT:
+				state = MODE_COMPLETE;
+				break;
+			default:
+				goto invalid;
+			}
+			mode->dns = true;
+		}
+		else {
+			for (i = 0; i < ARRAY_SIZE(deployment_modes); i++) {
+				if (len == strlen(deployment_modes[i].name)
+				    && !memcmp(token, deployment_modes[i].name,
+					       len))
+					break;
+			}
+			if (i == ARRAY_SIZE(deployment_modes))
+				goto invalid;
+
+			switch (state) {
+			case MODE_START:
+				state = MODE_HAVE_DEPLOYMENT;
+				break;
+			case MODE_HAVE_DNS:
+				state = MODE_COMPLETE;
+				break;
+			default:
+				goto invalid;
+			}
+			mode->deployment_mode = deployment_modes[i].mode;
+		}
+
+		if (!end)
+			return 0;
+	}
+
+invalid:
+	fprintf(stderr, "Invalid load mode: '%s'\n", name);
+	return -EINVAL;
 }
 
 static const XfwProg *
@@ -263,6 +358,161 @@ out:
 }
 
 static int
+disable_map(struct bpf_object *obj, const char *name)
+{
+	struct bpf_map *map = bpf_object__find_map_by_name(obj, name);
+	int r;
+
+	if (!map) {
+		fprintf(stderr, "Map '%s' was not found in object\n", name);
+		return -ENOENT;
+	}
+
+	r = bpf_map__set_autocreate(map, false);
+	if (r)
+		fprintf(stderr, "Failed to disable map '%s': %s\n",
+			name, strerror(-r));
+
+	return r;
+}
+
+static int
+check_tc_dns_mode(const char *pin_root, bool dns)
+{
+	char path[PATH_MAX];
+	bool dns_map_present;
+	int r;
+
+	r = make_pin_path(path, sizeof(path), pin_root, MAP_DNS_EGR_FD_STR);
+	if (r)
+		return r;
+
+	if (access(path, F_OK) == 0) {
+		dns_map_present = true;
+	}
+	else if (errno == ENOENT) {
+		dns_map_present = false;
+	}
+	else {
+		r = -errno;
+		fprintf(stderr, "Failed to check DNS map '%s': %s\n",
+			path, strerror(-r));
+		return r;
+	}
+
+	if (dns_map_present != dns) {
+		fprintf(stderr, "TC DNS mode does not match the loaded XDP "
+			"program; check '%s'\n", path);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/**
+ * Set a read-only (.rodata) variable with @name to @value.
+ * The variable is declared as const volatile in eBPF code:
+ * 1. LLVM compiles the whole code for all possible values of the variable
+ * 2. the loader writes the variable value on load time
+ * 3. the variable switches off particular eBPF code and the loader also
+ *    disables associated maps with bpf_map__set_autocreate().
+ * 4. eBPF verifier removes the variable-disabled code, so there is no eBPF code
+ *    generated for disabled maps - the verifier takes care of consistency
+ *    between the code and maps.
+ */
+static int
+set_rodata_variable(const struct btf *btf, const struct btf_type *datasec,
+		    void *data, size_t data_size, const char *name,
+		    const void *value, size_t value_size)
+{
+	const struct btf_var_secinfo *vars = btf_var_secinfos(datasec);
+	const struct btf_type *var;
+	const char *var_name;
+	size_t i;
+
+	for (i = 0; i < btf_vlen(datasec); i++) {
+		var = btf__type_by_id(btf, vars[i].type);
+		if (!var || !btf_is_var(var))
+			return -EINVAL;
+
+		var_name = btf__name_by_offset(btf, var->name_off);
+		if (!var_name)
+			return -EINVAL;
+		if (strcmp(var_name, name))
+			continue;
+
+		if (vars[i].size != value_size || vars[i].offset > data_size
+		    || value_size > data_size - vars[i].offset)
+		{
+			fprintf(stderr, "Invalid .rodata layout for '%s'\n", name);
+			return -EINVAL;
+		}
+
+		memcpy((char *)data + vars[i].offset, value, value_size);
+		return 0;
+	}
+
+	fprintf(stderr, "Variable '%s' was not found in .rodata\n", name);
+	return -ENOENT;
+}
+
+static int
+set_load_mode(struct bpf_object *obj, const XfwProg *desc,
+	      const XfwLoadMode *mode)
+{
+	struct bpf_map *map = bpf_object__find_map_by_name(obj, ".rodata");
+	const struct btf *btf = bpf_object__btf(obj);
+	const struct btf_type *datasec;
+	uint8_t deployment = mode->deployment_mode;
+	uint8_t dns = mode->dns;
+	void *data, *initial;
+	size_t data_size;
+	int id, r;
+
+	if (!map || !btf) {
+		fprintf(stderr, "Missing .rodata map or BTF in '%s'\n",
+			desc->obj_path);
+		return -ENOENT;
+	}
+
+	id = btf__find_by_name_kind(btf, ".rodata", BTF_KIND_DATASEC);
+	if (id < 0)
+		return id;
+	datasec = btf__type_by_id(btf, id);
+	if (!datasec || !btf_is_datasec(datasec))
+		return -EINVAL;
+
+	initial = bpf_map__initial_value(map, &data_size);
+	if (!initial || !data_size)
+		return -EINVAL;
+
+	data = malloc(data_size);
+	if (!data)
+		return -ENOMEM;
+	memcpy(data, initial, data_size);
+
+	r = set_rodata_variable(btf, datasec, data, data_size, "dns_mode",
+				&dns, sizeof(dns));
+	if (r)
+		goto out;
+
+	r = set_rodata_variable(btf, datasec, data, data_size,
+				"deployment_mode", &deployment,
+				sizeof(deployment));
+	if (r)
+		goto out;
+
+	r = bpf_map__set_initial_value(map, data, data_size);
+	if (r)
+		fprintf(stderr, "Failed to set .rodata in '%s': %s\n",
+			desc->obj_path, strerror(-r));
+
+out:
+	free(data);
+	return r;
+}
+
+static int
 attach_tc(const XfwProg *desc, const char *pin_root,
 	  const char *dev)
 {
@@ -384,7 +634,8 @@ detach_tc(const XfwProg *desc, const char *pin_root, const char *dev)
  * maps declared with LIBBPF_PIN_BY_NAME under the specified directory.
  */
 static int
-load_program(const XfwProg *desc, const char *pin_root)
+load_program(const XfwProg *desc, const char *pin_root,
+	     const XfwLoadMode *mode)
 {
 	LIBBPF_OPTS(bpf_object_open_opts, opts);
 	struct bpf_object *obj = NULL;
@@ -405,6 +656,11 @@ load_program(const XfwProg *desc, const char *pin_root)
 	r = check_path_absent(prog_pin);
 	if (r)
 		return r;
+	if (desc == &main_tc) {
+		r = check_tc_dns_mode(pin_root, mode->dns);
+		if (r)
+			return r;
+	}
 
 	/*
 	 * Programs with pin_maps enabled use pin_root_path for maps declared
@@ -422,11 +678,32 @@ load_program(const XfwProg *desc, const char *pin_root)
 		return r;
 	}
 
+	r = set_load_mode(obj, desc, mode);
+	if (r) {
+		fprintf(stderr, "Failed to configure load mode for '%s': %s\n",
+			desc->obj_path, strerror(-r));
+		goto out;
+	}
+
+	if (!mode->dns) {
+		r = disable_map(obj, MAP_DNS_EGR_FD_STR);
+		if (r)
+			goto out;
+	}
+	if (desc == &main_xdp && mode->deployment_mode != XFW_MODE_HOST) {
+		r = disable_map(obj, MAP_SYNCOOKIES_STR);
+		if (r)
+			goto out;
+	}
+
 	/*
 	 * Replace module-local maps with already pinned instances created
 	 * by the main XDP program.
 	 */
 	for (i = 0; i < desc->reuse_maps_cnt; i++) {
+		if (desc->reuse_maps[i].dns_only && !mode->dns)
+			continue;
+
 		r = make_pin_path(map_pin, sizeof(map_pin), pin_root,
 				  desc->reuse_maps[i].name);
 		if (r)
@@ -510,6 +787,7 @@ main(int argc, char **argv)
 {
 	const XfwProg *desc;
 	const char *command, *pin_root, *dev = NULL;
+	XfwLoadMode mode;
 	int r;
 
 	if (argc < 4) {
@@ -534,12 +812,18 @@ main(int argc, char **argv)
 	}
 
 	if (!strcmp(command, "load")) {
-		if (argc != 4) {
+		if (argc != 4 && argc != 5) {
 			usage(argv[0]);
 			return EXIT_FAILURE;
 		}
 
-		r = load_program(desc, pin_root);
+		r = parse_load_mode(argc == 5 ? argv[4] : NULL, &mode);
+		if (r) {
+			usage(argv[0]);
+			return EXIT_FAILURE;
+		}
+
+		r = load_program(desc, pin_root, &mode);
 	}
 	else if (!strcmp(command, "unload")) {
 		if (argc != 4) {
