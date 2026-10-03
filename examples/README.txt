@@ -13,6 +13,11 @@ xfw-skb-host.json - host mode with XDP skb (higher compatibility)
 
 xfw-native-gate.json - gate mode with XDP native (higher performance)
 
+xfw-native-gate-dns.json - gate mode with DNS protection enabled; use with
+                           xfw-dns-rules.conf
+
+xfw-native-scrubbing.json - scrubbing mode with XDP native
+
 xfw_logger.json - Tempesta Logger configuration for Tempesta xFW events logging in
                   ClickHouse
 

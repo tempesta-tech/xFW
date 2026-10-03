@@ -1,4 +1,6 @@
 {
     "devices": "ens3 ens4",
-    "devices-mode": "native"
-} 
+    "devices-mode": "native",
+    "deployment-mode": "gw",
+    "dns": false
+}
