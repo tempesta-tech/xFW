@@ -115,6 +115,7 @@ class XFW(NetworkStateful):
         {{
             "devices": "{self.network_interface}",
             "devices-mode": "{self.devices_mode}",
+            "dns": true,
             "verbose": true,
             "mgr-args": "{daemon_args}"
         }}
