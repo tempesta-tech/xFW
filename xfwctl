@@ -9,6 +9,7 @@ declare version="1.1.0"
 declare devs=""
 declare mgr_args=""
 declare devmode="native"
+declare bpf_load_mode="host"
 declare cfg_file="${TFW_CFG_FILE:-/etc/tempesta/xfw.json}"
 declare cfg_file_override=""
 # Default pid_file and mgr_log were taken from defalts args for ./tempesta_mgr.
@@ -141,6 +142,17 @@ read_config()
 	if [ ! -f "$cfg_file" ]; then
 		error "Configuration file not found: $cfg_file"
 	fi
+	if ! jq -e '
+		type == "object" and
+		(if has("deployment-mode") then
+			.["deployment-mode"] == "host" or
+			.["deployment-mode"] == "gw" or
+			.["deployment-mode"] == "scrubbing"
+		else true end) and
+		(if has("dns") then (.dns | type) == "boolean" else true end)
+	' "$cfg_file" >/dev/null; then
+		error "Invalid JSON or deployment-mode/dns setting in $cfg_file"
+	fi
 
 	echo "Loading configuration from $cfg_file..."
 	while IFS="=" read -r key value; do
@@ -154,6 +166,12 @@ read_config()
 
 	if [[ -v "cfg[devices-mode]" ]]; then
 		devmode="${cfg[devices-mode]}"
+	fi
+	local deployment_mode="${cfg[deployment-mode]:-host}"
+	local dns="${cfg[dns]:-false}"
+	bpf_load_mode="$deployment_mode"
+	if [[ "$dns" == true ]]; then
+		bpf_load_mode+=",dns"
 	fi
 
 	if [[ -v "cfg[verbose]" ]]; then
@@ -187,6 +205,8 @@ read_config()
 	[ $v -eq 1 ] && echo -e "Using project directory: $project_path"
 	echo "Configuration: -devices $devs"
 	echo "               -devices-mode $devmode"
+	echo "               -deployment-mode $deployment_mode"
+	echo "               -dns $dns"
 	echo "               -mgr-args $mgr_args (log path $mgr_log, pidfile $pid_file)"
 	echo "               -verbose $([ $v -eq 1 ] && echo "true" || echo "false")"
 	echo "               -event-logging $event_logging_status"
@@ -297,8 +317,8 @@ load_xdp()
 		error "Failed to create XDP load log (exit code $rc)"
 	fi
 
-	[ "$v" -eq 1 ] && echo "$project_path/bin/xfw_bpf_loader" load xdp "$xfw_bpf_path"
-	"$project_path/bin/xfw_bpf_loader" load xdp "$xfw_bpf_path" > "$tmp_log" 2>&1
+	[ "$v" -eq 1 ] && echo "$project_path/bin/xfw_bpf_loader" load xdp "$xfw_bpf_path" "$bpf_load_mode"
+	"$project_path/bin/xfw_bpf_loader" load xdp "$xfw_bpf_path" "$bpf_load_mode" > "$tmp_log" 2>&1
 	rc=$?
 	if [[ $rc -ne 0 ]]; then
 		echo "Error while loading XDP program. See $tmp_log for details."
@@ -356,8 +376,8 @@ load_tc()
 		error "Failed to create TC load log (exit code $rc)"
 	fi
 
-	[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader load tc "$xfw_bpf_path"
-	"$project_path"/bin/xfw_bpf_loader load tc "$xfw_bpf_path" >"$tmp_log" 2>&1
+	[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader load tc "$xfw_bpf_path" "$bpf_load_mode"
+	"$project_path"/bin/xfw_bpf_loader load tc "$xfw_bpf_path" "$bpf_load_mode" >"$tmp_log" 2>&1
 	rc=$?
 	if [[ $rc -ne 0 ]]; then
 		echo "Error while loading TC program. See $tmp_log for details."

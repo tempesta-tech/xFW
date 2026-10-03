@@ -1,6 +1,6 @@
 {
     "devices": "ens3 ens4",
     "devices-mode": "native",
-    "deployment-mode": "gw",
+    "deployment-mode": "scrubbing",
     "dns": false
 }

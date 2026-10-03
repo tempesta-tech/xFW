@@ -1,4 +1,6 @@
 {
     "devices": "ens3",
-    "devices-mode": "skb"
-} 
+    "devices-mode": "skb",
+    "deployment-mode": "host",
+    "dns": false
+}
