@@ -40,6 +40,8 @@ def xfw_syncookie_config(xfw_global) -> str:
     return f"""{{
         "devices": "{xfw_global.network_interface}",
         "devices-mode": "skb",
+        "deployment-mode": "host",
+        "dns": false,
         "verbose": true,
         "mgr-args": "--listen {xfw_global.ipv4} --port {xfw_global.port}",
         "sysctl-tcp-max-syn-backlog": 1,
@@ -98,6 +100,14 @@ async def xfw_restarted(
 async def xfw_with_forced_syncookie(
     xfw_global, xfw_use_rule_reset, xfw_syncookie_config
 ) -> AsyncGenerator[XFW, None]:
+    """
+    While `sysctl-tcp-syncookies: 2` is not practical, it's required for the
+    test to get a deterministic kernel behavior always requireing a syncookie
+    generation.
+    """
+    if xfw_global.deployment_mode != "host":
+        pytest.skip("SYN-cookie tests require host deployment mode")
+
     original_config = xfw_global.config
     xfw_global.config = xfw_syncookie_config
     original_mode = await xfw_global.syncookies_value_get()
