@@ -55,6 +55,7 @@ class XFW(NetworkStateful):
         tfw_logger_max_wait_ms: int = 100,
         clickhouse_client: ClickhouseClient = None,
         devices_mode: typing.Literal["native", "skb"] = "skb",
+        deployment_mode: typing.Literal["host", "gw", "scrubbing"] = "host",
         retry_daemon_start: bool = True,
         **kwargs,
     ):
@@ -73,6 +74,7 @@ class XFW(NetworkStateful):
         self.xfw_manager_log_file = xfw_manager_log_file
         self.clickhouse_client = clickhouse_client
         self.devices_mode = devices_mode
+        self.deployment_mode = deployment_mode
         self.retry_daemon_start = retry_daemon_start
 
         self.__config: Optional[str] = None
@@ -115,6 +117,7 @@ class XFW(NetworkStateful):
         {{
             "devices": "{self.network_interface}",
             "devices-mode": "{self.devices_mode}",
+            "deployment-mode": "{self.deployment_mode}",
             "dns": true,
             "verbose": true,
             "mgr-args": "{daemon_args}"

@@ -163,6 +163,7 @@ def xfw_fabric(
         tfw_logger_max_wait_ms=config.tfw_logger_clickhouse_max_wait_ms,
         clickhouse_client=clickhouse_client,
         devices_mode=config.xfw_devices_mode,
+        deployment_mode=config.xfw_deployment_mode,
     )
     params.update(extra_params)
 

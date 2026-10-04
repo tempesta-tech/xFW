@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import enum
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -50,6 +50,7 @@ class ConfigSettings(BaseSettings):
 
     xfw_interface: str = "xfwb1"
     xfw_devices_mode: str = "skb"
+    xfw_deployment_mode: Literal["host", "gw", "scrubbing"] = "host"
     xfw_server_iface: str = "xfwb1"
     xfw_build_dir: str = "/opt/tempesta"
     xfw_grpc_ip: str = "20.0.0.1"
