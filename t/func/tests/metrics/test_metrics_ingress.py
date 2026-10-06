@@ -233,7 +233,6 @@ async def test_arp_ingress_metrics(
     bytes_n = (14 + 28) * packets_n
     """
     packets_n = 10
-    bytes_n = 42 * packets_n
 
     await xfw.rules_set("xfw {}")
 
@@ -253,8 +252,8 @@ async def test_arp_ingress_metrics(
         expected_metrics=PrometheusMetricsDiff(
             xfw_preload_ingress_packets=0,
             xfw_preload_ingress_bytes=0,
-            xfw_arp_ingress_packets=packets_n,
-            xfw_arp_ingress_bytes=bytes_n,
+            xfw_arp_ingress_packets=[packets_n, packets_n + 1],
+            xfw_arp_ingress_bytes=[packets_n * 42, (packets_n + 1) * 42],
         ),
     ):
         await asyncio.gather(
