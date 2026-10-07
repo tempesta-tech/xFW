@@ -27,7 +27,7 @@
 
 /*
  * Emit a swap notification for the currently active per-CPU map.
- * 
+ *
  * This function is called when the active map for a CPU needs to be swapped.
  * It pushes a swap event to the per-CPU notification buffer to inform
  * userspace that the previously active map is ready to be consumed.
@@ -46,7 +46,7 @@ push_swap_event()
 
 /*
  * Emit a swap notification and account a dropped event.
- * 
+ *
  * This is called when a map swap is required and the current event cannot be
  * inserted (e.g. due to capacity exhaustion). In addition to notifying userspace
  * about the map swap, the per-CPU drop counter is incremented.
@@ -78,14 +78,8 @@ update_drop_cnt()
 							   &zero);
 	if (unlikely(!ev))
 		return;
-	
-	ev->drop_cnt += 1;
-}
 
-static __always_inline bool
-ilog_addr_presented(const XfwIp *addr)
-{
-	return addr->addr32[0] | addr->addr32[1] | addr->addr32[2] | addr->addr32[3];
+	ev->drop_cnt += 1;
 }
 
 /*
@@ -97,7 +91,7 @@ ilog_addr_presented(const XfwIp *addr)
  *
  * This counter is used to estimate map usage and to trigger swap or
  * mitigation logic before the map becomes full, preventing event loss.
- * 
+ *
  * Retuns current insertion count for the active map.
  */
 static __always_inline uint64_t
@@ -112,7 +106,7 @@ update_map_info(uint64_t active_map_hint)
 	/* Same map is still active — just increment the insertion counter */
 	if (likely(inf->last_used_map_hint == active_map_hint))
 		return ++inf->insert_cnt;
-	
+
 	/*
 	 * Active map has changed.
 	 * Reset the counter and start tracking inserts for the new map.
@@ -125,13 +119,6 @@ update_map_info(uint64_t active_map_hint)
 static __always_inline void
 register_incident(const XfwIp* ilog_addr, uint32_t pkt_sz, enum XfwDropStat reason)
 {
-	if (!ilog_addr_presented(ilog_addr)) {
-		XFW_CTX_DBG("Source address for the problematic packet "
-			    "is not yet known");
-		update_drop_cnt();
-		return;
-	}
-
 	const u32 cpu = bpf_get_smp_processor_id();
 	void *incident_map = bpf_map_lookup_elem(&MAP_LOG_ACTIVE_FD_REF, &cpu);
 	if (unlikely(!incident_map)) {
@@ -170,7 +157,7 @@ register_incident(const XfwIp* ilog_addr, uint32_t pkt_sz, enum XfwDropStat reas
 	XFW_CTX_DBG("Lost incident event");
 	if (ret == -ENOMEM || ret == -E2BIG)
 		push_swap_event_and_update_drop_cnt();
-	else 
+	else
 		update_drop_cnt();
 }
 
