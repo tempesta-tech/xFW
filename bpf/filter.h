@@ -189,31 +189,57 @@ xfw_is_within_rlimit(const XfwGlobalCtx *ctx, const XfwPacketRate *rate,
 
 	/*
 	 * Approximate sliding-window interpolation:
-	 *	effective = current + previous * remaining_fraction
 	 *
-	 * The multiplication is performed before the shift. Configuration
-	 * validation guarantees:
-	 *	max_rate * window_jiffies <= UINT64_MAX
+ 	 *   effective = current + previous * remaining_fraction
 	 *
-	 * Therefore, the intermediate multiplication cannot overflow uint64_t.
-	 * With a 1024-jiffy window the theoretical maximum supported rate is:
+	 * Keep the estimated rate scaled by the window size:
+	 *
+	 *   scaled = current * window + previous * overlap
+	 *
+	 * This preserves the fractional contribution of the previous window
+	 * until the comparison. Dividing it first would truncate the fractional
+	 * part; in particular, with a 1 pps limit, any partial contribution of
+	 * a single packet from the previous window would become zero and could
+	 * let the next packet pass too early.
+	 *
+	 * Include the packet being evaluated in the scaled value:
+	 *
+	 *   scaled = (current + packet) * window + previous * overlap
+	 *
+	 * and compare it against the similarly scaled limit:
+	 *
+	 *   scaled <= limit * window
+	 *
+	 * Since the window size is a power of two, scaling by the window is
+	 * implemented as a shift.
+	 *
+	 * Configuration validation guarantees:
+	 *
+	 *   max_rate * window_jiffies <= UINT64_MAX
+	 *
+	 * so the scaled values cannot overflow uint64_t. With a 1024-jiffy window,
+	 * the theoretical maximum supported byte rate is:
 	 *
 	 *   UINT64_MAX / 1024
 	 *       = 18,014,398,509,481,983 bytes/s (≈18 PB/s)
 	 */
-	uint64_t effective_pkts =
-		curr_pkts + (prev_pkts * overlap >> ctx->cfg->rl_window.shift);
+	uint64_t scaled_pkts =
+		((curr_pkts + 1) << ctx->cfg->rl_window.shift) +
+		prev_pkts * overlap;
+	uint64_t scaled_pkt_limit =
+		rate->packets << ctx->cfg->rl_window.shift;
 
-	uint64_t effective_bytes =
-		curr_bytes + (prev_bytes * overlap >> ctx->cfg->rl_window.shift);
-
-	if (effective_pkts >= rate->packets)
+	if (scaled_pkts > scaled_pkt_limit)
 		return false;
 
 	if (ctx->pkt_sz > rate->bytes)
 		return false;
 
-	if (effective_bytes > rate->bytes - ctx->pkt_sz)
+	uint64_t scaled_bytes= ((curr_bytes + ctx->pkt_sz) << ctx->cfg->rl_window.shift) +
+		prev_bytes * overlap;
+	uint64_t scaled_bytes_limit = rate->bytes << ctx->cfg->rl_window.shift;
+
+	if (scaled_bytes > scaled_bytes_limit)
 		return false;
 
 	__atomic_fetch_add(&curr->pkts, 1, __ATOMIC_RELAXED);
