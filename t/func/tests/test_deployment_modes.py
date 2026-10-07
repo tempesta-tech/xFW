@@ -2,28 +2,53 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import json
+from typing import AsyncGenerator
 
 import pytest
 
 from framework.xfw import XFW
 
 
-async def test_dns_filter_requires_dns_mode(xfw: XFW):
-    config = json.loads(xfw.config)
+@pytest.fixture
+async def xfw_disable_dns_mode(
+    xfw_global: XFW,
+    xfw_use_rule_reset: bool,
+) -> AsyncGenerator[XFW, None]:
+    config = json.loads(xfw_global.config)
     config["dns"] = False
-    await xfw.set_config(json.dumps(config))
-    await xfw.restart()
+    xfw_global.config = json.dumps(config)
+    await xfw_global.restart()
 
+    yield xfw_global
+
+    config["dns"] = True
+    xfw_global.config = json.dumps(config)
+    await xfw_global.stop_or_reset(xfw_use_rule_reset)
+
+
+@pytest.fixture(params=["gw", "scrubbing"])
+async def xfw_deployment_mode(
+    request,
+    xfw_global: XFW,
+    xfw_use_rule_reset: bool,
+) -> AsyncGenerator[XFW, None]:
+    config = json.loads(xfw_global.config)
+    config["deployment-mode"] = request.param
+    xfw_global.config = json.dumps(config)
+    await xfw_global.restart()
+
+    yield xfw_global
+
+    config["deployment-mode"] = request.param
+    xfw_global.config = json.dumps(config)
+    await xfw_global.stop_or_reset(xfw_use_rule_reset)
+
+
+async def test_dns_filter_requires_dns_mode(xfw_disable_dns_mode):
     with pytest.raises(ValueError, match="dns_filter requires DNS mode"):
-        await xfw.rules_set("xfw { dns_filter; }")
+        await xfw_disable_dns_mode.rules_set("xfw { dns_filter; }")
 
 
-@pytest.mark.parametrize("deployment_mode", ["gw", "scrubbing"])
-async def test_syncookies_require_host_mode(xfw: XFW, deployment_mode: str):
-    config = json.loads(xfw.config)
-    config["deployment-mode"] = deployment_mode
-    await xfw.set_config(json.dumps(config))
-    await xfw.restart()
-
+async def test_syncookies_require_host_mode(xfw_deployment_mode):
     with pytest.raises(ValueError, match="tcp_syncookies requires host deployment mode"):
-        await xfw.rules_set("xfw { tcp_syncookies flood_timer=1 passive_timer=1; }")
+        await xfw_deployment_mode.rules_set("xfw { tcp_syncookies flood_timer=1 passive_timer=1; }")
