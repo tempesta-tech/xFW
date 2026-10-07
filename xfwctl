@@ -17,6 +17,8 @@ declare mgr_log="/var/log/tempesta/manager.log"
 declare -A cfg
 declare -i v=0
 declare -i is_event_logging_on=1
+# Stop actions need the configuration values, but not their printout.
+declare -i quiet_config=0
 
 user="$(whoami)"
 if [ "x$user" = "xroot" ]; then
@@ -142,7 +144,7 @@ read_config()
 		error "Configuration file not found: $cfg_file"
 	fi
 
-	echo "Loading configuration from $cfg_file..."
+	[ $quiet_config -eq 0 ] && echo "Loading configuration from $cfg_file..."
 	while IFS="=" read -r key value; do
 		cfg["$key"]="$value"
 	done < <(cat "$cfg_file" | jq -r 'to_entries | .[] | "\(.key)=\(.value)"')
@@ -182,6 +184,10 @@ read_config()
 			is_event_logging_on=1
 			;;
 	esac
+
+	if [ $quiet_config -eq 1 ] && [ $v -eq 0 ]; then
+		return 0
+	fi
 
 	local event_logging_status=$([ "$is_event_logging_on" -eq 1 ] && echo "on" || echo "off")
 	[ $v -eq 1 ] && echo -e "Using project directory: $project_path"
@@ -815,10 +821,13 @@ while [[ $# -gt 0 ]]; do
 			exit 0
 			;;
 		--stop)
+			quiet_config=1
 			stop_mgr
 			stop_logger
 			unload_bpf
-			exit
+			rc=$?
+			echo "Tempesta xFW is stopped"
+			exit $rc
 			;;
 		--restart)
 			stop_mgr
