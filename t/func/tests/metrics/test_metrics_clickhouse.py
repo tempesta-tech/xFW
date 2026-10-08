@@ -1,9 +1,10 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 import asyncio
+import json
 import random
 import struct
-from typing import Callable
+from typing import AsyncGenerator, Callable
 
 import pytest
 from dnslib import DNSRecord
@@ -521,99 +522,108 @@ async def test_blocked_by_tcp_syncookies_rule_invalid_syn_cookie_34_bit(
     assert metric.blocked_by_tcp_syncookies_rule_invalid_syn_cookie()
 
 
-@pytest.mark.parametrize(
-    "data_to_send, expected_metric",
-    [
-        pytest.param(
-            b"\x00\x01",
-            ClickhouseSingleMetric.blocked_during_parsing_malformed_dns_header,
-            id="header-35-bit",
-        ),
-        pytest.param(
-            # Valid header with QDCOUNT=1, but the question name has no terminating zero.
-            struct.pack("!HHHHHH", 0x1234, 0x0100, 1, 0, 0, 0) + b"\x05" + b"a" * 5,
-            ClickhouseSingleMetric.blocked_during_parsing_malformed_dns_question,
-            id="question-37-bit",
-        ),
-    ],
-)
-async def test_blocked_during_parsing_malformed_dns(
-    data_to_send,
-    expected_metric: Callable,
-    xfw,
-    dns_udp_client,
-    dns_udp_server,
-    clickhouse_client,
-    metric_analyzer,
-):
-    await xfw.rules_set("xfw { dns_filter; }")
+class TestBlockedByDNS:
+    @pytest.fixture(autouse=True, scope="class")
+    async def xfw_enable_dns_mode(self, xfw_global) -> None:
+        config: dict = json.loads(xfw_global.config)
+        config["dns"] = True
+        xfw_global.config = json.dumps(config)
+        await xfw_global.restart()
 
-    await clickhouse_client.connect()
-    await dns_udp_server.start()
-    await dns_udp_client.start()
+    @pytest.mark.parametrize(
+        "data_to_send, expected_metric",
+        [
+            pytest.param(
+                b"\x00\x01",
+                ClickhouseSingleMetric.blocked_during_parsing_malformed_dns_header,
+                id="header-35-bit",
+            ),
+            pytest.param(
+                # Valid header with QDCOUNT=1, but the question name has no terminating zero.
+                struct.pack("!HHHHHH", 0x1234, 0x0100, 1, 0, 0, 0) + b"\x05" + b"a" * 5,
+                ClickhouseSingleMetric.blocked_during_parsing_malformed_dns_question,
+                id="question-37-bit",
+            ),
+        ],
+    )
+    async def test_blocked_during_parsing_malformed_dns(
+        self,
+        data_to_send,
+        expected_metric: Callable,
+        xfw,
+        dns_udp_client,
+        dns_udp_server,
+        clickhouse_client,
+        metric_analyzer,
+    ):
+        await xfw.rules_set("xfw { dns_filter; }")
 
-    async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=dns_udp_client.ip_clickhouse
-    ) as metric:
-        await dns_udp_client._send(data_to_send)
-        assert not await dns_udp_server.receive_dns_record()
+        await clickhouse_client.connect()
+        await dns_udp_server.start()
+        await dns_udp_client.start()
 
-    assert expected_metric(metric)
+        async with metric_analyzer.track_clickhouse_metric(
+            clickhouse_client, ip_to_search=dns_udp_client.ip_clickhouse
+        ) as metric:
+            await dns_udp_client._send(data_to_send)
+            assert not await dns_udp_server.receive_dns_record()
 
+        assert expected_metric(metric)
 
-@pytest.mark.parametrize(
-    "data_to_send, expected_metric",
-    [
-        pytest.param(
-            DnsRequests.non_zero_rcode(),
-            ClickhouseSingleMetric.blocked_by_dns_anomaly_non_zero_rcode_in_dns_query,
-            id="non-zero-rcode-36-bit",
-        ),
-        pytest.param(
-            DnsRequests.more_than_one_question(),
-            ClickhouseSingleMetric.blocked_by_dns_anomaly_more_than_one_question_in_dns_packet,
-            id="more-than-one-question-38-bit",
-        ),
-        pytest.param(
-            DnsRequests.answers_or_authority_sections_in_dns_query(),
-            ClickhouseSingleMetric.blocked_by_dns_anomaly_answers_or_authority_sections_present_in_dns_query,
-            id="answers-or-authority-in-query-39-bit",
-        ),
-        pytest.param(
-            DnsRequests.invalid_ixfr_query(),
-            ClickhouseSingleMetric.blocked_by_dns_anomaly_invalid_ixfr_query,
-            id="invalid-ixfr-query-40-bit",
-            marks=pytest.mark.skip("ISSUE: 98 (xFW)"),
-        ),
-        pytest.param(
-            DnsRequests.more_than_two_additional_sections(),
-            ClickhouseSingleMetric.blocked_by_dns_anomaly_more_than_two_additional_sections_in_dns_query,
-            id="more-than-two-additional-sections-41-bit",
-        ),
-    ],
-)
-async def test_blocked_by_dns_anomaly(
-    data_to_send: DNSRecord,
-    expected_metric: Callable,
-    xfw,
-    dns_udp_client,
-    dns_udp_server,
-    clickhouse_client,
-    metric_analyzer,
-):
-    await xfw.rules_set("xfw { dns_filter; }")
+    @pytest.mark.parametrize(
+        "data_to_send, expected_metric",
+        [
+            pytest.param(
+                DnsRequests.non_zero_rcode(),
+                ClickhouseSingleMetric.blocked_by_dns_anomaly_non_zero_rcode_in_dns_query,
+                id="non-zero-rcode-36-bit",
+            ),
+            pytest.param(
+                DnsRequests.more_than_one_question(),
+                ClickhouseSingleMetric.blocked_by_dns_anomaly_more_than_one_question_in_dns_packet,
+                id="more-than-one-question-38-bit",
+            ),
+            pytest.param(
+                DnsRequests.answers_or_authority_sections_in_dns_query(),
+                ClickhouseSingleMetric.blocked_by_dns_anomaly_answers_or_authority_sections_present_in_dns_query,
+                id="answers-or-authority-in-query-39-bit",
+            ),
+            pytest.param(
+                DnsRequests.invalid_ixfr_query(),
+                ClickhouseSingleMetric.blocked_by_dns_anomaly_invalid_ixfr_query,
+                id="invalid-ixfr-query-40-bit",
+                marks=pytest.mark.skip("ISSUE: 98 (xFW)"),
+            ),
+            pytest.param(
+                DnsRequests.more_than_two_additional_sections(),
+                ClickhouseSingleMetric.blocked_by_dns_anomaly_more_than_two_additional_sections_in_dns_query,
+                id="more-than-two-additional-sections-41-bit",
+            ),
+        ],
+    )
+    async def test_blocked_by_dns_anomaly(
+        self,
+        data_to_send: DNSRecord,
+        expected_metric: Callable,
+        xfw,
+        dns_udp_client,
+        dns_udp_server,
+        clickhouse_client,
+        metric_analyzer,
+    ):
+        await xfw.rules_set("xfw { dns_filter; }")
 
-    await dns_udp_server.start()
-    await dns_udp_client.start()
-    await clickhouse_client.connect()
+        await dns_udp_server.start()
+        await dns_udp_client.start()
+        await clickhouse_client.connect()
 
-    async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=dns_udp_client.ip_clickhouse
-    ) as metric:
-        await dns_udp_client.send_query(data_to_send)
-        assert not await dns_udp_server.receive_dns_record()
+        async with metric_analyzer.track_clickhouse_metric(
+            clickhouse_client, ip_to_search=dns_udp_client.ip_clickhouse
+        ) as metric:
+            await dns_udp_client.send_query(data_to_send)
+            assert not await dns_udp_server.receive_dns_record()
 
-    assert expected_metric(metric)
+        assert expected_metric(metric)
 
 
 @pytest.mark.skip_on_e1000
