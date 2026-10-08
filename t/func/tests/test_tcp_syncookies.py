@@ -22,13 +22,6 @@ from framework.metrics import KernelMetricsDiff, PrometheusMetricsDiff
 from framework.utils import get_tcp_packet, run_in_background
 from framework.xfw import XFW
 
-
-@pytest.fixture(autouse=True)
-def require_host_deployment_mode(config: ConfigSettings):
-    if config.xfw_deployment_mode != "host":
-        pytest.skip("SYN-cookie tests require host deployment mode")
-
-
 bad_packet = TCP(flags="S")
 ok_packet = TCP(
     flags="S",
