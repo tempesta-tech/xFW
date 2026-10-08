@@ -677,14 +677,13 @@ async def test_passive_mode(
     passive_timer = 3
     tcp_raw_client.port = random.randrange(1, 65000)
 
-    # As XFW requests the kernel whether syncookie should be
-    # issued, we "patch" the kernel response with forced
-    # set sysctl flag. Now, kernel always replies on !!! XFW REQUEST NEGATIVE !!!
-    # That is immitation of regular traffic without anomalies
-    await xfw_with_forced_syncookie.syncookies_never()
+    # Configure xFW while SYN cookies are enabled to pass the sysctl check in
+    # the manager (see Xfw::set_config()), then force the kernel to report no
+    # SYN flood for the passive-mode checks produced by eBPF.
     await xfw_with_forced_syncookie.rules_set(
         f"xfw {{ tcp_syncookies passive_timer={passive_timer} flood_timer=1; }}"
     )
+    await xfw_with_forced_syncookie.syncookies_never()
 
     # As we in the passive_mode, no syncookies should be issued
     async with (

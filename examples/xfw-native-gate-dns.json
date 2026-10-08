@@ -2,5 +2,5 @@
     "devices": "ens3 ens4",
     "devices-mode": "native",
     "deployment-mode": "gw",
-    "dns": false
+    "dns": true
 }
