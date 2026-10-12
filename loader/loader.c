@@ -465,7 +465,7 @@ set_load_mode(struct bpf_object *obj, const XfwProg *desc,
 	const struct btf_type *datasec;
 	uint8_t deployment = mode->deployment_mode;
 	uint8_t dns = mode->dns;
-	void *data, *initial;
+	void *data;
 	size_t data_size;
 	int id, r;
 
@@ -482,34 +482,18 @@ set_load_mode(struct bpf_object *obj, const XfwProg *desc,
 	if (!datasec || !btf_is_datasec(datasec))
 		return -EINVAL;
 
-	initial = bpf_map__initial_value(map, &data_size);
-	if (!initial || !data_size)
+	data = bpf_map__initial_value(map, &data_size);
+	if (!data || !data_size)
 		return -EINVAL;
-
-	data = malloc(data_size);
-	if (!data)
-		return -ENOMEM;
-	memcpy(data, initial, data_size);
 
 	r = set_rodata_variable(btf, datasec, data, data_size, "dns_mode",
 				&dns, sizeof(dns));
 	if (r)
-		goto out;
+		return r;
 
-	r = set_rodata_variable(btf, datasec, data, data_size,
-				"deployment_mode", &deployment,
-				sizeof(deployment));
-	if (r)
-		goto out;
-
-	r = bpf_map__set_initial_value(map, data, data_size);
-	if (r)
-		fprintf(stderr, "Failed to set .rodata in '%s': %s\n",
-			desc->obj_path, strerror(-r));
-
-out:
-	free(data);
-	return r;
+	return set_rodata_variable(btf, datasec, data, data_size,
+				   "deployment_mode", &deployment,
+				   sizeof(deployment));
 }
 
 static int
