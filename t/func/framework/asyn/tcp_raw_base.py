@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import abc
-import asyncio
 import socket
 import time
 import typing
@@ -11,11 +10,9 @@ from typing import Optional
 from scapy.layers.inet import TCP, Packet
 
 from framework.stateful import RawSocketNetworkStateful
-from framework.utils import switch_coroutine
+from framework.utils import invert_in_evaluate_mode, switch_coroutine
 
-__all__ = [
-    "BaseTcpRawStateful",
-]
+__all__ = ["BaseTcpRawStateful"]
 
 
 class BaseTcpRawStateful(RawSocketNetworkStateful, abc.ABC):
@@ -97,6 +94,7 @@ class BaseTcpRawStateful(RawSocketNetworkStateful, abc.ABC):
 
         await self.block_kernel_rst_package_from_unknown_client()
 
+    @invert_in_evaluate_mode
     async def receive_block(self) -> bool:
         return await self.receive_packet() is None
 
