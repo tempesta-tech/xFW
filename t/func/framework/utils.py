@@ -174,3 +174,25 @@ def get_tcp_packet(
         packet = packet / Raw(payload)
 
     return packet
+
+
+def invert_in_evaluate_mode(func):
+    """
+    Decorator to invert the method's boolean result when running in evaluate mode.
+
+    This decorator should be applied to methods that expect blocking behavior.
+    When the active mode (`self.xfw_mode`) is set to `XfwMode.evaluate`, the
+    return value is logically inverted.
+    """
+    from framework import xfw
+
+    @functools.wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        result = await func(self, *args, **kwargs)
+
+        if self.xfw_mode == xfw.XfwMode.evaluate:
+            return not result
+
+        return result
+
+    return wrapper

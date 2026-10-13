@@ -6,10 +6,11 @@ from typing import Callable, Optional
 
 from config import ConfigSettings
 from framework.stateful import SocketBaseNetworkStateful
-from framework.xfw import XFWRatelimit
+from framework.utils import invert_in_evaluate_mode
+from framework.xfw import XfwMode, XFWRatelimit
 
 
-async def check_connection(
+async def _check_connection(
     client: SocketBaseNetworkStateful,
     server: SocketBaseNetworkStateful,
     timeout: int = 5,
@@ -32,6 +33,23 @@ async def check_connection(
         return True
     except TimeoutError:
         return False
+
+
+@invert_in_evaluate_mode
+async def check_block_connection(
+    client: SocketBaseNetworkStateful,
+    server: SocketBaseNetworkStateful,
+    timeout: int = 5,
+) -> bool:
+    return not await _check_connection(client, server, timeout)
+
+
+async def check_connection(
+    client: SocketBaseNetworkStateful,
+    server: SocketBaseNetworkStateful,
+    timeout: int = 5,
+) -> bool:
+    return await _check_connection(client, server, timeout)
 
 
 class RatelimitChecker:
@@ -64,10 +82,23 @@ class RatelimitChecker:
         )
 
         completed_n = results.count(None)
-        expected_min_completed_n = limit.pps * (duration - 1)  # The client has 1 second to warm up.
-        expected_max_completed_n = messages_pps * self._config.ratelimit_tolerance_factor
 
-        assert expected_min_completed_n <= completed_n <= expected_max_completed_n, (
-            "The limit does not work as expected. "
-            + f"{expected_min_completed_n = }, {completed_n = }, {expected_max_completed_n = }"
-        )
+        if client.xfw_mode == XfwMode.normal:
+            expected_min_completed_n = limit.pps * (
+                duration - 1
+            )  # The client has 1 second to warm up.
+            expected_max_completed_n = messages_pps * self._config.ratelimit_tolerance_factor
+
+            assert expected_min_completed_n <= completed_n <= expected_max_completed_n, (
+                "The limit does not work as expected. "
+                + f"{expected_min_completed_n = }, {completed_n = }, {expected_max_completed_n = }"
+            )
+
+        else:  # evaluate mode
+            expected_min_completed_n = messages_pps * (duration - 2)
+            expected_max_completed_n = messages_pps * duration
+
+            assert expected_min_completed_n <= completed_n <= expected_max_completed_n, (
+                "The limit does not work as expected for evaluate mode. "
+                + f"{expected_min_completed_n = }, {completed_n = }, {expected_max_completed_n = }"
+            )

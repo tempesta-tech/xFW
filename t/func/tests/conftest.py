@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+from framework.xfw import XfwMode
 
 pytest_plugins = [
     # the most important
@@ -40,7 +41,26 @@ def pytest_configure(config):
         "long: Test takes too much time to be launched locally usually. However it should be run on CI.",
         "ddos_simulating: In the test DDoS simulating and it can take more time and more machine resources",
         "not_in_fast_mode: dont run the test in fast mode",
+        "xfw_mode(mode): set up mode for XFW",
     ]
 
     for marker in markers:
         config.addinivalue_line("markers", marker)
+
+
+def pytest_generate_tests(metafunc):
+    """
+    Pytest hook for dynamic test parameterization based on XFW modes.
+
+    This hook checks if the test context requests the 'xfw_mode' fixture.
+    If a specific mode is provided via the '@pytest.mark.xfw_mode' marker,
+    the test is parameterized with that single mode. Otherwise, it automatically
+    parameterizes the test across all available modes in `XfwMode`.
+    """
+    if "xfw_mode" in metafunc.fixturenames:
+        marker = metafunc.definition.get_closest_marker("xfw_mode")
+
+        if marker:
+            metafunc.parametrize("xfw_mode_param", [marker.args[0]])
+        else:
+            metafunc.parametrize("xfw_mode_param", list(XfwMode))
