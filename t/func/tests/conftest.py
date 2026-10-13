@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+import pytest
 
 from framework.xfw import XfwMode
 
@@ -57,10 +58,41 @@ def pytest_generate_tests(metafunc):
     the test is parameterized with that single mode. Otherwise, it automatically
     parameterizes the test across all available modes in `XfwMode`.
     """
-    if "xfw_mode" in metafunc.fixturenames:
-        marker = metafunc.definition.get_closest_marker("xfw_mode")
+    if "xfw_mode_param" not in metafunc.fixturenames:
+        return
 
-        if marker:
-            metafunc.parametrize("xfw_mode_param", [marker.args[0]])
+    cli_mode = metafunc.config.getoption("--xfw-mode")
+    marker = metafunc.definition.get_closest_marker("xfw_mode")
+    allowed_modes = [marker.args[0]] if marker else list(XfwMode)
+
+    modes = [cli_mode] if cli_mode is not None else allowed_modes
+    metafunc.parametrize("xfw_mode_param", modes)
+
+
+def pytest_collection_modifyitems(config, items):
+    """
+    Deselect tests whose 'xfw_mode' marker conflicts with '--xfw-mode'.
+
+    If no CLI mode is specified, leave all collected tests selected.
+    Otherwise, retain tests without the marker or with a matching mode,
+    remove incompatible tests from 'items' in place, and notify pytest
+    via 'pytest_deselected' so they are reported as deselected.
+    """
+    cli_mode = config.getoption("--xfw-mode")
+    if cli_mode is None:
+        return
+
+    selected = []
+    deselected = []
+
+    for item in items:
+        marker = item.get_closest_marker("xfw_mode")
+
+        if marker is not None and cli_mode != marker.args[0]:
+            deselected.append(item)
         else:
-            metafunc.parametrize("xfw_mode_param", list(XfwMode))
+            selected.append(item)
+
+    if deselected:
+        items[:] = selected
+        config.hook.pytest_deselected(items=deselected)
