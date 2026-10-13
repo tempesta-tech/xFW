@@ -1,11 +1,15 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
+from typing import AsyncGenerator
 
 import pytest
 
 from config import ConfigSettings
-from framework.cmp import check_connection
-from framework.stateful import RegularKernelSocketNetworkStateful
+from framework.cmp import check_block_connection, check_connection
+from framework.stateful import (
+    RegularKernelSocketNetworkStateful,
+    SocketBaseNetworkStateful,
+)
 from framework.xfw import XFW
 
 
@@ -19,7 +23,7 @@ async def backend_protected(
 @pytest.fixture
 async def backend_not_protected(
     backend_protected: RegularKernelSocketNetworkStateful, config: ConfigSettings, server_cloner
-) -> RegularKernelSocketNetworkStateful:
+) -> AsyncGenerator[SocketBaseNetworkStateful, None]:
     new_server = server_cloner(cloner=backend_protected, amount=1)[0]
     yield new_server
     await new_server.stop()
@@ -87,18 +91,12 @@ async def test_block(
         }}
         """)
 
-    assert (
-        await check_connection(
-            client=client_protected,
-            server=backend_protected,
-        )
-        is False
+    assert await check_block_connection(
+        client_protected,
+        backend_protected,
     ), "Request to the protected server is not blocked"
 
-    assert (
-        await check_connection(
-            client=client_not_protected,
-            server=backend_not_protected,
-        )
-        is True
+    assert await check_connection(
+        client_not_protected,
+        backend_not_protected,
     ), "Request to the non-protected server is blocked"

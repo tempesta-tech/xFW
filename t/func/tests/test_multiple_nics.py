@@ -4,7 +4,7 @@
 import pytest
 
 from config import ConfigSettings
-from framework.cmp import check_connection
+from framework.cmp import check_block_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
 
@@ -31,7 +31,7 @@ async def test_tc(
             defaults { dst: allow; }
         }
         """)
-    assert await check_connection(client, server) is True
+    assert await check_block_connection(client, server) is True
 
     await xfw_multiple_nics.rules_patch(f"""
            xfw {{
@@ -40,8 +40,8 @@ async def test_tc(
                }}
            }}
            """)
-    assert await check_connection(client, server) is False
-    assert await check_connection(server, client) is True
+    assert await check_block_connection(client, server) is False
+    assert await check_block_connection(server, client) is True
 
     await xfw_multiple_nics.rules_patch(f"""
            xfw {{
@@ -51,8 +51,8 @@ async def test_tc(
            }}
            """)
 
-    assert await check_connection(client, server) is False
-    assert await check_connection(server, client) is False
+    assert await check_block_connection(client, server) is False
+    assert await check_block_connection(server, client) is False
 
 
 @pytest.mark.only_in_gate_mode
@@ -69,7 +69,7 @@ async def test_xdp(
             defaults { src_ip: allow; src_port: allow; }
         }
         """)
-    assert await check_connection(client, server) is True
+    assert await check_block_connection(client, server) is True
 
     await xfw_multiple_nics.rules_patch(f"""
            xfw {{
@@ -78,8 +78,8 @@ async def test_xdp(
                }}
            }}
            """)
-    assert await check_connection(client, server) is True
-    assert await check_connection(server, client) is False
+    assert await check_block_connection(client, server) is True
+    assert await check_block_connection(server, client) is False
 
     await xfw_multiple_nics.rules_patch(f"""
            xfw {{
@@ -88,5 +88,5 @@ async def test_xdp(
                }}
            }}
            """)
-    assert await check_connection(client, server) is False
-    assert await check_connection(server, client) is True
+    assert await check_block_connection(client, server) is False
+    assert await check_block_connection(server, client) is True

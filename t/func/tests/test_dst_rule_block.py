@@ -1,9 +1,7 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import pytest
-
-from framework.cmp import check_connection
+from framework.cmp import check_block_connection, check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
 
@@ -26,8 +24,8 @@ async def test_dst_block_by_ip(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"IP {server.ip_testing}:{server.port} is not blocked"
 
 
@@ -51,7 +49,7 @@ async def test_dst_block_by_multiple_ip(
             }}
         }}
         """)
-    assert await check_connection(client, server) is False, f"IP {new_ip} is not blocked"
+    assert await check_block_connection(client, server), f"IP {new_ip} is not blocked"
 
 
 async def test_dst_block_by_multiple_port(
@@ -74,7 +72,7 @@ async def test_dst_block_by_multiple_port(
             }}
         }}
         """)
-    assert await check_connection(client, server) is False, f"Port {new_port} is not blocked"
+    assert await check_block_connection(client, server), f"Port {new_port} is not blocked"
 
 
 async def test_dst_block_by_ratelimit(
@@ -99,8 +97,8 @@ async def test_dst_block_by_ratelimit(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Server {server.ip_testing}:{server.port} is not blocked"
 
 
@@ -123,8 +121,8 @@ async def test_dst_block_only_one_protocol_subtype(
         """)
 
     for new_client, new_server in remaining_client_server_group.items():
-        assert (
-            await check_connection(new_client, new_server) is True
+        assert await check_connection(
+            new_client, new_server
         ), f"Server {new_server.ip_testing}:{new_server.port} is not allowed"
 
 
@@ -151,6 +149,6 @@ async def test_dst_block_by_ip_mapped(
         }}
         """)
 
-    assert (
-        await check_connection(udp_ip4_client, udp_ip4_mapped_ip6_server) is False
+    assert await check_block_connection(
+        udp_ip4_client, udp_ip4_mapped_ip6_server
     ), f"IP {udp_ip4_mapped_ip6_server.ip_testing}:{udp_ip4_mapped_ip6_server.port} is not blocked"

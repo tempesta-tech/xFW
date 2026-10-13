@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 import pytest
 
-from framework.cmp import check_connection
+from framework.cmp import check_block_connection, check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
 
@@ -113,7 +113,7 @@ async def test_global_block(
     """
     await xfw.rules_set(f"xfw {{ defaults {{ dst: block; }} }}")
     for client, server in zip(clients_tracked_by_dst_filter, servers_tracked_by_dst_filter):
-        assert not await check_connection(
+        assert await check_block_connection(
             client, server
         ), f"Server ({server.ip_testing}:{server.port}) is unexpected allowed"
 
@@ -142,6 +142,6 @@ async def test_allow(
     for client, server in zip(
         blocked_clients_tracked_by_dst_filter, blocked_servers_tracked_by_dst_filter
     ):
-        assert not await check_connection(
+        assert await check_block_connection(
             client, server
         ), f"Server ({server}) is unexpected allowed"

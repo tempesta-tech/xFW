@@ -3,25 +3,26 @@
 
 import asyncio
 import logging
-from typing import List
+from typing import Callable, List
 
 import pytest
 
 from config import ConfigSettings
 from framework.asyn import TcpClient, TcpServer
-from framework.cmp import check_connection
+from framework.cmp import check_block_connection, check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.utils import (
     RetryException,
     RetryNotHelpedException,
 )
-from framework.xfw import XFW, State
+from framework.xfw import XFW, State, XfwMode
 
 
 def rm_tabs_and_new_lines(s: str) -> str:
     return s.replace("\n", "").replace("\t", "")
 
 
+@pytest.mark.xfw_mode(XfwMode.normal)
 async def test_xfw_push_config(
     xfw: XFW,
     tcp_ip4_server: RegularKernelSocketNetworkStateful,
@@ -37,11 +38,12 @@ async def test_xfw_push_config(
             }}
         }}
         """)
-    assert (
-        await check_connection(tcp_ip4_client, tcp_ip4_server) is False
+    assert await check_block_connection(
+        tcp_ip4_client, tcp_ip4_server
     ), f"IP {tcp_ip4_server} is not blocked"
 
 
+@pytest.mark.xfw_mode(XfwMode.normal)
 async def test_xfw_push_config_short(
     xfw: XFW,
     tcp_ip4_server: RegularKernelSocketNetworkStateful,
@@ -58,11 +60,12 @@ async def test_xfw_push_config_short(
         }}
         """)
 
-    assert (
-        await check_connection(tcp_ip4_client, tcp_ip4_server) is False
+    assert await check_block_connection(
+        tcp_ip4_client, tcp_ip4_server
     ), f"IP {tcp_ip4_server} is not blocked"
 
 
+@pytest.mark.xfw_mode(XfwMode.normal)
 async def test_xfw_push_config_inline(
     xfw: XFW,
     tcp_ip4_server: RegularKernelSocketNetworkStateful,
@@ -79,11 +82,12 @@ async def test_xfw_push_config_inline(
         }}
         """)
 
-    assert (
-        await check_connection(tcp_ip4_client, tcp_ip4_server) is False
+    assert await check_block_connection(
+        tcp_ip4_client, tcp_ip4_server
     ), f"IP {tcp_ip4_server} is not blocked"
 
 
+@pytest.mark.xfw_mode(XfwMode.normal)
 async def test_xfw_push_config_inline_no_new_lines(
     xfw: XFW,
     tcp_ip4_server: RegularKernelSocketNetworkStateful,
@@ -100,8 +104,8 @@ async def test_xfw_push_config_inline_no_new_lines(
         }}
         """))
 
-    assert (
-        await check_connection(tcp_ip4_client, tcp_ip4_server) is False
+    assert await check_block_connection(
+        tcp_ip4_client, tcp_ip4_server
     ), f"IP {tcp_ip4_server} is not blocked"
 
 
@@ -129,8 +133,8 @@ async def test_xfw_patch(
         }} 
         """)
 
-    assert (
-        await check_connection(tcp_ip4_client, tcp_ip4_server) is False
+    assert await check_block_connection(
+        tcp_ip4_client, tcp_ip4_server
     ), f"IP {tcp_ip4_server} is not blocked"
 
 
@@ -158,8 +162,8 @@ async def test_xfw_patch_short(
         }} 
         """)
 
-    assert (
-        await check_connection(tcp_ip4_client, tcp_ip4_server) is False
+    assert await check_block_connection(
+        tcp_ip4_client, tcp_ip4_server
     ), f"IP {tcp_ip4_server} is not blocked"
 
 
@@ -187,8 +191,8 @@ async def test_xfw_patch_inline(
         }} 
         """)
 
-    assert (
-        await check_connection(tcp_ip4_client, tcp_ip4_server) is False
+    assert await check_block_connection(
+        tcp_ip4_client, tcp_ip4_server
     ), f"IP {tcp_ip4_server} is not blocked"
 
 
@@ -216,8 +220,8 @@ async def test_xfw_patch_inline_no_new_line(
         }} 
         """))
 
-    assert (
-        await check_connection(tcp_ip4_client, tcp_ip4_server) is False
+    assert await check_block_connection(
+        tcp_ip4_client, tcp_ip4_server
     ), f"IP {tcp_ip4_server} is not blocked"
 
 
@@ -278,8 +282,8 @@ async def test_xfw_without_geoip(
     await tcp_ip4_server.start()
     await tcp_ip4_client.start()
 
-    assert (
-        await check_connection(tcp_ip4_client, tcp_ip4_server) is True
+    assert await check_connection(
+        tcp_ip4_client, tcp_ip4_server
     ), f"IP {tcp_ip4_server} is not allowed"
 
 
@@ -289,9 +293,13 @@ async def test_xfw_without_geoip(
 # Also since we have 2 hotswap maps, we need 2 types of crossing/switching values
 # to check if there is no side effects of map swap
 @pytest.mark.parametrize(
-    "rules_list,connection_established",
+    "rules_list,connection_check",
     [
-        pytest.param(["block", "block", "block", "block", "block"], False, id="same5"),
+        pytest.param(
+            ["block", "block", "block", "block", "block"],
+            check_block_connection,
+            id="same5",
+        ),
         pytest.param(
             [
                 "block",
@@ -305,7 +313,7 @@ async def test_xfw_without_geoip(
                 "block",
                 "allow",
             ],
-            True,
+            check_connection,
             id="cross10",
         ),
         pytest.param(
@@ -321,14 +329,14 @@ async def test_xfw_without_geoip(
                 "block",
                 "block",
             ],
-            False,
+            check_block_connection,
             id="2cross10",
         ),
     ],
 )
 async def test_xfw_push_config_multiple_same(
     rules_list: List[str],
-    connection_established: bool,
+    connection_check: Callable,
     xfw: XFW,
     protocol: str,
     ip_version: str,
@@ -339,6 +347,7 @@ async def test_xfw_push_config_multiple_same(
     for rule in rules_list:
         await xfw.rules_push_config(f"""
             xfw {{
+                {"evaluation_mode;" if xfw.xfw_mode == XfwMode.evaluate else ""}
                 defaults {{ src_ip: allow; }}
                 src {ip_version}.{protocol} : {rule} {{
                     {client.ip_testing}
@@ -346,9 +355,7 @@ async def test_xfw_push_config_multiple_same(
             }}
             """)
 
-    assert (
-        await check_connection(client, server) is connection_established
-    ), f"IP {server} is blocked"
+    assert await connection_check(client, server), f"IP {server} is blocked"
 
 
 async def test_delete_iface_while_xfw_is_running(
@@ -465,6 +472,7 @@ async def test_restart_under_traffic(
     ), f"Server got {server_requests} requests and clients got {client_responses} responses"
 
 
+@pytest.mark.xfw_mode(XfwMode.normal)
 async def test_restart(xfw: XFW):
     await xfw.rules_push_config(" xfw { defaults { dst: allow; } } ")
     await xfw.restart_daemon()
