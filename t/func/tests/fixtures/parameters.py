@@ -3,6 +3,8 @@
 
 import pytest
 
+from framework.xfw import XfwMode
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
@@ -14,6 +16,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
             "restarting XFW. Without this flag xfw is restarted after each test. "
             "Tests that always need a reboot should request the xfw_restart fixture."
         ),
+    )
+    parser.addoption(
+        "--xfw-mode",
+        action="store",
+        default=None,
+        choices=list(XfwMode),
+        help="Run tests only for a specific XFW mode (e.g., normal, evaluate)",
     )
 
 
