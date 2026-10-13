@@ -12,6 +12,7 @@ from scapy.layers.inet import TCP, UDP
 
 from framework.metrics import ClickhouseSingleMetric
 from framework.utils import get_tcp_packet
+from framework.xfw import XfwMode
 from tests.metrics.utils import DnsRequests, InvalidEthTypeRawClient
 
 
@@ -99,7 +100,7 @@ async def test_icmp(
         clickhouse_client, ip_to_search=icmp_raw_client.ip_clickhouse
     ) as metric:
         await icmp_raw_client.ping()
-        assert await icmp_raw_client.pong() is False
+        assert await icmp_raw_client.receive_block()
 
     assert expected_metric(metric)
 
@@ -247,9 +248,12 @@ async def test_tcp_anomaly(
     assert expected_metric(metric)
 
 
-@pytest.mark.parametrize("port_type", ["sport", "dport"], ids=["src", "dst"])
+@pytest.mark.parametrize(
+    "port_type, server_port_type", [("sport", "remote_port"), ("dport", "port")], ids=["src", "dst"]
+)
 async def test_blocked_by_tcp_anomaly_zero_port_20_bit(
     port_type: str,
+    server_port_type: str,
     xfw,
     tcp_raw_client,
     tcp_raw_server,
@@ -264,19 +268,23 @@ async def test_blocked_by_tcp_anomaly_zero_port_20_bit(
     packet = get_tcp_packet(flag="S")
     packet.sport = tcp_raw_client.port
     packet.dport = tcp_raw_server.port
+
     setattr(packet, port_type, 0)
+    setattr(tcp_raw_server, server_port_type, 0)
 
-    await xfw.rules_set("xfw { tcp_anomaly_filter; }")
-
+    await xfw.rules_set(
+        "xfw { tcp_anomaly_filter syn_without_opt syn_with_payload syn_with_seqno=0 bad_flags; }"
+    )
     async with metric_analyzer.track_clickhouse_metric(
         clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
     ) as metric:
         await tcp_raw_client.send_packet(packet)
-        assert await tcp_raw_server.receive_block()
+        assert await tcp_raw_server.receive_block(), f"Zero {port_type} port is not blocked"
 
     assert metric.blocked_by_tcp_anomaly_zero_source_or_destination_port()
 
 
+@pytest.mark.xfw_mode(XfwMode.normal)
 @pytest.mark.parametrize("port_type", ["sport", "dport"], ids=["src", "dst"])
 async def test_blocked_by_udp_anomaly_zero_port_21_bit(
     port_type: str,
@@ -302,7 +310,7 @@ async def test_blocked_by_udp_anomaly_zero_port_21_bit(
         clickhouse_client, ip_to_search=udp_raw_client.ip_clickhouse
     ) as metric:
         await udp_raw_client.send_packet(packet / "Hello :)")
-        assert await udp_server.receive_block()
+        assert await udp_server.receive_block(), f"Zero {port_type} port is not blocked"
 
     assert metric.blocked_by_udp_anomaly_zero_source_or_destination_port()
 
@@ -622,7 +630,7 @@ class TestBlockedByDNS:
             clickhouse_client, ip_to_search=dns_udp_client.ip_clickhouse
         ) as metric:
             await dns_udp_client._send(data_to_send)
-            assert not await dns_udp_server.receive_dns_record()
+            assert await dns_udp_server.receive_block()
 
         assert expected_metric(metric)
 
@@ -677,7 +685,7 @@ class TestBlockedByDNS:
             clickhouse_client, ip_to_search=dns_udp_client.ip_clickhouse
         ) as metric:
             await dns_udp_client.send_query(data_to_send)
-            assert not await dns_udp_server.receive_dns_record()
+            assert await dns_udp_server.receive_block()
 
         assert expected_metric(metric)
 
@@ -731,7 +739,7 @@ async def test_blocked_by_dns_anomaly_server(
     ) as metric:
         await inverted_dns_client.request_dns_server()
         assert await server_reply_method(inverted_dns_server_mtu) is True
-        assert not await inverted_dns_client.receive_dns_record()
+        assert await inverted_dns_client.receive_block()
 
     assert expected_metric(metric)
 

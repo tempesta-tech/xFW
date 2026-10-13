@@ -1,9 +1,7 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import pytest
-
-from framework.cmp import check_connection
+from framework.cmp import check_block_connection, check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
 
@@ -26,8 +24,8 @@ async def test_src_allow_by_ip(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -52,8 +50,8 @@ async def test_src_allow_by_multiple_ip(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -75,8 +73,8 @@ async def test_src_allow_by_mask(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -101,8 +99,8 @@ async def test_src_allow_by_multiple_mask(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -124,8 +122,8 @@ async def test_src_allow_by_port(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -150,8 +148,8 @@ async def test_src_allow_by_multiple_port(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -174,8 +172,8 @@ async def test_src_allow_by_port_range(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -200,8 +198,8 @@ async def test_src_allow_by_multiple_port_range(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -221,8 +219,8 @@ async def test_src_allow_by_geoip_country(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -248,8 +246,8 @@ async def test_src_allow_by_ratelimit_ip(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -275,8 +273,8 @@ async def test_src_allow_by_ratelimit_port(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {client.ip_testing}:{client.port} is not allowed"
 
 
@@ -299,8 +297,8 @@ async def test_src_allow_only_one_protocol_subtype(
         """)
 
     for new_client, new_server in remaining_client_server_group.items():
-        assert (
-            await check_connection(new_client, new_server) is False
+        assert await check_block_connection(
+            new_client, new_server
         ), f"Server {new_server.ip_testing}:{new_server.port} is not blocked"
 
 
@@ -325,6 +323,6 @@ async def test_src_allowed_by_ip_mapped(
         }}
         """)
 
-    assert (
-        await check_connection(udp_ip4_client, udp_ip4_mapped_ip6_server) is True
+    assert await check_connection(
+        udp_ip4_client, udp_ip4_mapped_ip6_server
     ), f"Client {udp_ip4_client.ip_testing} is not allowed"

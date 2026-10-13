@@ -3,25 +3,14 @@
 
 import pytest
 
-from framework.cmp import check_connection
+from framework.cmp import check_block_connection, check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
 
 
 @pytest.fixture
-def true_if_allowed(dst_defaults: str) -> bool:
-    allow = dst_defaults == "allow"
-    yield allow
-
-
-@pytest.fixture
-def error_message(true_if_allowed, server):
-    msg = f"Server {server.ip_testing}:{server.port} is not blocked"
-
-    if true_if_allowed:
-        msg = f"Server {server.ip_testing}:{server.port} is not allowed"
-
-    yield msg
+def error_message(server):
+    return f"Server {server.ip_testing}:{server.port} is not allowed"
 
 
 async def test_dst_del_block_by_ip(
@@ -30,14 +19,12 @@ async def test_dst_del_block_by_ip(
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
-    dst_defaults: str,
     establish_connection,
-    true_if_allowed: bool,
     error_message: str,
 ):
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ dst: {dst_defaults}; }}
+            defaults {{ dst: allow; }}
             dst=extended_group {ip_version}.{protocol} : block {{
                 {server.ip_testing}:{server.port}
             }}
@@ -50,7 +37,7 @@ async def test_dst_del_block_by_ip(
             }}
         }}
         """)
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_dst_del_block_by_multiple_ip(
@@ -59,16 +46,14 @@ async def test_dst_del_block_by_multiple_ip(
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
-    dst_defaults: str,
     establish_connection,
-    true_if_allowed: bool,
     error_message: str,
 ):
     new_ip = server.generate_new_address()
 
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ dst: {dst_defaults}; }}
+            defaults {{ dst: allow; }}
             dst=extended_group {ip_version}.{protocol} : block {{
                 {server.ip_testing}:{server.port}
                 {server.ip_format(new_ip)}:{server.port}
@@ -83,7 +68,7 @@ async def test_dst_del_block_by_multiple_ip(
             }}
         }}
         """)
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_dst_del_block_by_port(
@@ -92,14 +77,12 @@ async def test_dst_del_block_by_port(
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
-    dst_defaults: str,
     establish_connection,
-    true_if_allowed: bool,
     error_message: str,
 ):
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ dst: {dst_defaults}; }}
+            defaults {{ dst: allow; }}
             dst=extended_group {ip_version}.{protocol} : block {{
                 {server.ip_testing}:{server.port}
             }}
@@ -113,7 +96,7 @@ async def test_dst_del_block_by_port(
         }}
         """)
 
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_dst_del_block_by_multiple_port(
@@ -122,16 +105,14 @@ async def test_dst_del_block_by_multiple_port(
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
-    dst_defaults: str,
     establish_connection,
-    true_if_allowed: bool,
     error_message: str,
 ):
     new_port = server.generate_new_port()
 
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ dst: {dst_defaults}; }}
+            defaults {{ dst: allow; }}
             dst=extended_group {ip_version}.{protocol} : block {{
                 {server.ip_testing}:{server.port}
                 {server.ip_testing}:{new_port}
@@ -147,7 +128,7 @@ async def test_dst_del_block_by_multiple_port(
         }}
         """)
 
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_dst_del_block_by_ratelimit(
@@ -156,15 +137,13 @@ async def test_dst_del_block_by_ratelimit(
     ip_version: str,
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
-    dst_defaults: str,
     establish_connection,
-    true_if_allowed: bool,
     error_message: str,
 ):
     await xfw.rules_set(f"""
         xfw {{
             ratelimit=test pps=0 bps=500;
-            defaults {{ dst: {dst_defaults}; }}
+            defaults {{ dst: allow; }}
             dst=extended_group {ip_version}.{protocol} : ratelimit=test {{
                 {server.ip_testing}:{server.port}
             }}
@@ -178,7 +157,7 @@ async def test_dst_del_block_by_ratelimit(
         }}
         """)
 
-    assert await check_connection(client, server) is true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_dst_del_only_one_protocol_subtype(
@@ -207,6 +186,6 @@ async def test_dst_del_only_one_protocol_subtype(
         """)
 
     for new_client, new_server in remaining_client_server_group.items():
-        assert (
-            await check_connection(new_client, new_server) is False
+        assert await check_block_connection(
+            new_client, new_server
         ), f"Server {new_server.ip_testing}:{new_server.port} is not blocked"

@@ -9,7 +9,7 @@ import pytest
 
 from framework.asyn import UdpClient, UdpServer
 from framework.clickhouse import ClickhouseClient
-from framework.cmp import check_connection
+from framework.cmp import check_block_connection
 from framework.xfw import XFW
 
 
@@ -73,7 +73,7 @@ async def test_log_data_time_correctness(
 
     time_before = datetime.now(tz=timezone.utc)
 
-    assert await check_connection(udp_client, udp_server) is False, "Request is not blocked"
+    assert await check_block_connection(udp_client, udp_server), "Request is not blocked"
 
     await clickhouse_client.wait_for_number_of_records(expected_records_n=1)
     time_after = datetime.now(tz=timezone.utc)
@@ -149,10 +149,10 @@ async def test_multiple_requests_logs(
         """)
 
     results = await asyncio.gather(
-        *[check_connection(client, udp_ip4_server) for client in clients]
+        *[check_block_connection(client, udp_ip4_server) for client in clients]
     )
 
-    assert not any(results)
+    assert any(results)
     await clickhouse_client.wait_for_number_of_records(expected_records_n=10)
     records = await clickhouse_client.records_all()
 

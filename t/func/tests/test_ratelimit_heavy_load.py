@@ -69,7 +69,7 @@ def xfw_ratelimits(
 @pytest.fixture(scope="function")
 def udp_raw_server(
     udp_server: RegularKernelSocketNetworkStateful,
-) -> tuple[RegularKernelSocketNetworkStateful]:
+) -> RegularKernelSocketNetworkStateful:
     return udp_server
 
 
@@ -80,7 +80,7 @@ async def xfw_with_ratelimits(xfw: XFW, xfw_ratelimits: XFWRatelimits) -> XFW:
     )
 
     await xfw.rules_set(f"xfw {{\n {limits} }}\n")
-    yield xfw
+    return xfw
 
 
 @pytest.fixture
@@ -148,6 +148,7 @@ async def __check_limits_tcp(
     xfw_low_pps_ratelimit,
     ratelimit_checker,
 ):
+    print("__check_limits_tcp")
     await tcp_raw_client.start()
     await tcp_raw_server.start()
 
@@ -177,8 +178,7 @@ async def __check_limits_udp(
 
     async def send_udp_datagram(msg: str = "") -> None:
         await udp_raw_client.send_packet(UDP() / b"ping")
-        received = await udp_server.receive_block()
-        assert received is not True, msg
+        assert await udp_server.receive_message(), msg
 
     await ratelimit_checker.check_pps_ratelimit(
         client=udp_raw_client, limit=xfw_low_pps_ratelimit, function=send_udp_datagram

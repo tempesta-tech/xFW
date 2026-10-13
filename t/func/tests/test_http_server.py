@@ -10,15 +10,15 @@ from framework.xfw import XFW
 
 
 @pytest.fixture(scope="function")
-async def xfw_with_updated_port(xfw_global):
+async def xfw_with_updated_port(xfw):
     new_port = 12345
-    old_port = xfw_global.http_port
-    xfw_global.http_port = new_port
-    await xfw_global.restart()
+    old_port = xfw.http_port
+    xfw.http_port = new_port
+    await xfw.restart()
 
-    yield xfw_global
-    xfw_global.http_port = old_port
-    await xfw_global.stop()
+    yield xfw
+    xfw.http_port = old_port
+    await xfw.stop()
 
 
 async def test_http_server_on_different_port(xfw_with_updated_port: XFW):

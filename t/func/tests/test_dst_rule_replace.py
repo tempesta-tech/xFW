@@ -1,9 +1,6 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
-
-import pytest
-
-from framework.cmp import check_connection
+from framework.cmp import check_block_connection, check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
 
@@ -157,6 +154,6 @@ async def test_dst_replace_only_one_protocol_subtype(
         """)
 
     for new_client, new_server in remaining_client_server_group.items():
-        assert (
-            await check_connection(new_client, new_server) is False
+        assert await check_block_connection(
+            new_client, new_server
         ), f"Server {new_server.ip_testing}:{new_server.port} is not blocked"

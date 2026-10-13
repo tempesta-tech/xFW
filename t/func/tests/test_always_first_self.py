@@ -26,7 +26,7 @@ from framework.utils import run_cmd
 async def test_warmup_nic_e1000(
     tcp_server: TcpServer, tcp_client: TcpClient, start_tcp_server_and_clients
 ):
-    assert check_connection(tcp_client, tcp_server) is True
+    assert await check_connection(tcp_client, tcp_server)
 
 
 async def test_server_client_connection(
@@ -36,8 +36,8 @@ async def test_server_client_connection(
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
 ):
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Server ({server.ip}:{server.port}) is not available"
 
 

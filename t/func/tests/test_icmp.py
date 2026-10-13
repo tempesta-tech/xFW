@@ -9,8 +9,6 @@ IPv6/ICMP Reqeust/Response Types
 https://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xhtml
 """
 
-import asyncio
-
 import pytest
 
 from framework.asyn import IcmpRawClient, UdpServer
@@ -56,7 +54,7 @@ async def test_default_block(
     await xfw.rules_set(f"xfw {{ defaults {{ icmp: block; }} }}")
 
     await icmp_raw_client.ping()
-    assert await icmp_raw_client.pong() is False
+    assert await icmp_raw_client.receive_block()
 
 
 async def test_allow_by_type(
@@ -92,7 +90,7 @@ async def test_block_by_type(
         """)
 
     await icmp_raw_client.ping()
-    assert await icmp_raw_client.pong() is False
+    assert await icmp_raw_client.receive_block()
 
 
 @pytest.mark.fail_in_gate_mode("ISSUE: 456")
@@ -177,4 +175,4 @@ async def test_block_by_src_filter(
         """)
 
     await icmp_raw_client.ping()
-    assert await icmp_raw_client.pong() is False, "ICMP packet is not blocked by src filter"
+    assert await icmp_raw_client.receive_block(), "ICMP packet is not blocked by src filter"
