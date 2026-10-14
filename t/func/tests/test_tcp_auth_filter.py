@@ -8,7 +8,7 @@ from scapy.layers.inet import TCP
 
 from framework.asyn import TcpClient, TcpRawClient, TcpRawServer, TcpServer
 from framework.cmp import check_block_connection, check_connection
-from framework.xfw import XFW
+from framework.xfw import XFW, XfwMode
 
 
 @pytest.fixture(scope="session", params=["A", "R"], ids=["ACK", "RST"])
@@ -44,6 +44,7 @@ async def test_send_data_after_filter_turned_on(
 
 async def test_block_tcp_flood_from_non_existing_session(
     tcp_flag: str,
+    xfw_restarted,
     xfw: XFW,
     tcp_raw_server: TcpRawServer,
     tcp_raw_client: TcpRawClient,
@@ -186,6 +187,7 @@ async def test_connection_under_filter_resetting(
     assert await check_connection(tcp_client, tcp_server)
 
 
+@pytest.mark.xfw_mode(XfwMode.normal)
 async def test_clean_stored_session_after_xfw_restart(
     xfw: XFW,
     tcp_server: TcpServer,

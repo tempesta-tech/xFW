@@ -6,7 +6,7 @@ from typing import AsyncGenerator
 
 import pytest
 
-from framework.xfw import XFW
+from framework.xfw import XFW, XfwMode
 
 
 @pytest.fixture
@@ -45,11 +45,13 @@ async def xfw_deployment_mode(
     await xfw_global.stop_or_reset(xfw_use_rule_reset)
 
 
+@pytest.mark.xfw_mode(XfwMode.normal)
 async def test_dns_filter_requires_dns_mode(xfw_disable_dns_mode):
     with pytest.raises(ValueError, match="dns_filter requires DNS mode"):
         await xfw_disable_dns_mode.rules_set("xfw { dns_filter; }")
 
 
+@pytest.mark.xfw_mode(XfwMode.normal)
 async def test_syncookies_require_host_mode(xfw_deployment_mode):
     with pytest.raises(ValueError, match="tcp_syncookies requires host deployment mode"):
         await xfw_deployment_mode.rules_set("xfw { tcp_syncookies flood_timer=1 passive_timer=1; }")
