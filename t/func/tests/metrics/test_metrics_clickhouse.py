@@ -388,7 +388,7 @@ async def test_invalid_l2_l3(
         clickhouse_client, ip_to_search=expected_address
     ) as metric:
         await getattr(invalid_l2_raw_client, send_method)(src_mac, dst_mac)
-        assert await ether_raw_server.receive_block()
+        assert await ether_raw_server.receive_block(src_mac, dst_mac)
 
     assert expected_metric(metric)
 
@@ -441,7 +441,7 @@ async def test_invalid_l4(
         clickhouse_client, ip_to_search=invalid_l2_ip4_raw_client.ip_clickhouse
     ) as metric:
         await getattr(invalid_l2_ip4_raw_client, send_method)(src_mac, dst_mac)
-        assert await ether_raw_server.receive_block()
+        assert await ether_raw_server.receive_block(src_mac, dst_mac)
 
     assert expected_metric(metric)
 
@@ -490,7 +490,7 @@ async def test_invalid_src_ip(
         clickhouse_client, ip_to_search=expected_log_addr
     ) as metric:
         await getattr(invalid_l2_raw_client, send_method)(src_mac, dst_mac)
-        assert await ether_raw_server.receive_block()
+        assert await ether_raw_server.receive_block(src_mac, dst_mac)
 
     assert expected_metric(metric)
 
@@ -774,6 +774,6 @@ async def test_blocked_by_dns_anomaly_udp_response_packet_is_too_large_43_bit(
         clickhouse_client, ip_to_search=invalid_l2_raw_client.ip_clickhouse
     ) as metric:
         await getattr(invalid_l2_raw_client, send_method)(src_mac, dst_mac)
-        assert await ether_raw_server.receive_block()
+        assert await ether_raw_server.receive_block(src_mac, dst_mac)
 
     assert metric.blocked_by_dns_anomaly_dns_udp_response_packet_is_too_large

@@ -151,9 +151,10 @@ class TcpRawSynCookieIpv6Client(TcpRawSynCookieClient, TcpIpV6RawClient):
 
 @pytest.fixture
 async def tcp_ip4_raw_syncookie_client(
-    config: ConfigSettings, logging_level: int
+    config: ConfigSettings, logging_level: int, xfw_mode
 ) -> AsyncGenerator[TcpRawSynCookieIpv4Client, None]:
     client = client_fabric(
+        xfw_mode=xfw_mode,
         logging_level=logging_level,
         config=config,
         local_class=TcpRawSynCookieIpv4Client,
@@ -163,9 +164,10 @@ async def tcp_ip4_raw_syncookie_client(
 
 @pytest.fixture
 async def tcp_ip6_raw_syncookie_client(
-    config: ConfigSettings, logging_level
+    config: ConfigSettings, logging_level, xfw_mode
 ) -> AsyncGenerator[TcpRawSynCookieIpv6Client, None]:
     client = client_fabric(
+        xfw_mode=xfw_mode,
         logging_level=logging_level,
         config=config,
         local_class=TcpRawSynCookieIpv6Client,

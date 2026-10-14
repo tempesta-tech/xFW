@@ -92,6 +92,22 @@ async def xfw_paused(xfw: XFW, config: ConfigSettings) -> XFW:
 
 
 @pytest.fixture
+async def xfw_restarted(
+    xfw_global: XFW, xfw_use_rule_reset: bool, config: ConfigSettings
+) -> AsyncGenerator[XFW, None]:
+    """
+    Some of the tests in a fast mode require
+    the xfw restart, for instance to drop
+    the tcp connection
+    """
+    await xfw_global.restart()
+
+    yield xfw_global
+
+    await xfw_global.stop_or_reset(xfw_use_rule_reset)
+
+
+@pytest.fixture
 async def xfw_with_forced_syncookie(
     xfw_global, xfw_use_rule_reset, xfw_syncookie_config
 ) -> AsyncGenerator[XFW, None]:

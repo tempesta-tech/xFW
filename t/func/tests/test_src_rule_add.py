@@ -275,7 +275,7 @@ async def test_src_add_block_by_ratelimit(
 
     await xfw.rules_set(f"""
         xfw {{
-            ratelimit=test pps=5 bps=500;
+            ratelimit=test pps=20 bps=5000;
             defaults {{ src_port {ip_version}: block; }}
             src=extended_group {ip_version}.{protocol} : ratelimit=test {{
                 :{new_port[3]}-{new_port[4]}
