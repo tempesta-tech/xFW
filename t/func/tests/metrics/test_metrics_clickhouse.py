@@ -36,7 +36,7 @@ from tests.metrics.utils import DnsRequests, InvalidEthTypeRawClient
 )
 async def test_tcp_flags(
     xfw_setup,
-    expected_metric: Callable,
+    expected_metric: int,
     blocking_packet: TCP,
     xfw,
     tcp_raw_client,
@@ -49,12 +49,10 @@ async def test_tcp_flags(
     await tcp_raw_client.start()
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
-    ) as metric:
+        clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse, expected_bit=expected_metric
+    ):
         await tcp_raw_client.send_packet(blocking_packet)
         assert await tcp_raw_server.receive_block()
-
-    assert expected_metric(metric)
 
 
 @pytest.mark.parametrize(
@@ -85,7 +83,7 @@ async def test_tcp_flags(
 )
 async def test_icmp(
     xfw_setup,
-    expected_metric: Callable,
+    expected_metric: int,
     xfw,
     icmp_raw_client,
     udp_server,
@@ -97,12 +95,10 @@ async def test_icmp(
     await clickhouse_client.connect()
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=icmp_raw_client.ip_clickhouse
-    ) as metric:
+        clickhouse_client, ip_to_search=icmp_raw_client.ip_clickhouse, expected_bit=expected_metric
+    ):
         await icmp_raw_client.ping()
         assert await icmp_raw_client.receive_block()
-
-    assert expected_metric(metric)
 
 
 @pytest.mark.parametrize(
@@ -122,17 +118,15 @@ async def test_icmp(
     indirect=["xfw_setup"],
 )
 async def test_dst(
-    xfw_setup, expected_metric: Callable, xfw, client, server, clickhouse_client, metric_analyzer
+    xfw_setup, expected_metric: int, xfw, client, server, clickhouse_client, metric_analyzer
 ):
     await clickhouse_client.connect()
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=client.ip_clickhouse
-    ) as metric:
+        clickhouse_client, ip_to_search=client.ip_clickhouse, expected_bit=expected_metric
+    ):
         await client.ping()
         assert await server.receive_block()
-
-    assert expected_metric(metric)
 
 
 @pytest.mark.parametrize(
@@ -182,17 +176,15 @@ async def test_dst(
     indirect=["xfw_setup"],
 )
 async def test_src(
-    xfw_setup, expected_metric: Callable, xfw, client, server, clickhouse_client, metric_analyzer
+    xfw_setup, expected_metric: int, xfw, client, server, clickhouse_client, metric_analyzer
 ):
     await clickhouse_client.connect()
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=client.ip_clickhouse
-    ) as metric:
+        clickhouse_client, ip_to_search=client.ip_clickhouse, expected_bit=expected_metric
+    ):
         await client.ping()
         assert await server.receive_block()
-
-    assert expected_metric(metric)
 
 
 @pytest.mark.parametrize(
@@ -227,7 +219,7 @@ async def test_src(
 )
 async def test_tcp_anomaly(
     xfw_setup,
-    expected_metric: Callable,
+    expected_metric: int,
     blocking_packet: TCP,
     xfw,
     tcp_raw_client,
@@ -240,12 +232,10 @@ async def test_tcp_anomaly(
     await tcp_raw_client.start()
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
-    ) as metric:
+        clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse, expected_bit=expected_metric
+    ):
         await tcp_raw_client.send_packet(blocking_packet)
         assert await tcp_raw_server.receive_block()
-
-    assert expected_metric(metric)
 
 
 @pytest.mark.parametrize(
@@ -276,12 +266,12 @@ async def test_blocked_by_tcp_anomaly_zero_port_20_bit(
         "xfw { tcp_anomaly_filter syn_without_opt syn_with_payload syn_with_seqno=0 bad_flags; }"
     )
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
-    ) as metric:
+        clickhouse_client,
+        ip_to_search=tcp_raw_client.ip_clickhouse,
+        expected_bit=ClickhouseSingleMetric.blocked_by_tcp_anomaly_zero_source_or_destination_port,
+    ):
         await tcp_raw_client.send_packet(packet)
         assert await tcp_raw_server.receive_block(), f"Zero {port_type} port is not blocked"
-
-    assert metric.blocked_by_tcp_anomaly_zero_source_or_destination_port()
 
 
 @pytest.mark.xfw_mode(XfwMode.normal)
@@ -307,12 +297,12 @@ async def test_blocked_by_udp_anomaly_zero_port_21_bit(
     await xfw.rules_set("xfw { }")
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=udp_raw_client.ip_clickhouse
-    ) as metric:
+        clickhouse_client,
+        ip_to_search=udp_raw_client.ip_clickhouse,
+        expected_bit=ClickhouseSingleMetric.blocked_by_udp_anomaly_zero_source_or_destination_port,
+    ):
         await udp_raw_client.send_packet(packet / "Hello :)")
         assert await udp_server.receive_block(), f"Zero {port_type} port is not blocked"
-
-    assert metric.blocked_by_udp_anomaly_zero_source_or_destination_port()
 
 
 @pytest.mark.skip_on_virtio
@@ -367,7 +357,7 @@ async def test_blocked_by_udp_anomaly_zero_port_21_bit(
 )
 async def test_invalid_l2_l3(
     send_method: str,
-    expected_metric: Callable,
+    expected_metric: int,
     clickhouse_client,
     metric_analyzer,
     invalid_l2_raw_client,
@@ -385,12 +375,10 @@ async def test_invalid_l2_l3(
     await xfw.rules_set("xfw {}")
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=expected_address
-    ) as metric:
+        clickhouse_client, ip_to_search=expected_address, expected_bit=expected_metric
+    ):
         await getattr(invalid_l2_raw_client, send_method)(src_mac, dst_mac)
         assert await ether_raw_server.receive_block(src_mac, dst_mac)
-
-    assert expected_metric(metric)
 
 
 @pytest.mark.parametrize(
@@ -420,7 +408,7 @@ async def test_invalid_l2_l3(
 )
 async def test_invalid_l4(
     send_method: str,
-    expected_metric: Callable,
+    expected_metric: int,
     xfw,
     invalid_l2_ip4_raw_client,
     ether_raw_server,
@@ -438,12 +426,12 @@ async def test_invalid_l4(
     await xfw.rules_set("xfw { }")
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=invalid_l2_ip4_raw_client.ip_clickhouse
-    ) as metric:
+        clickhouse_client,
+        ip_to_search=invalid_l2_ip4_raw_client.ip_clickhouse,
+        expected_bit=expected_metric,
+    ):
         await getattr(invalid_l2_ip4_raw_client, send_method)(src_mac, dst_mac)
         assert await ether_raw_server.receive_block(src_mac, dst_mac)
-
-    assert expected_metric(metric)
 
 
 @pytest.mark.skip_on_virtio
@@ -469,7 +457,7 @@ async def test_invalid_l4(
 )
 async def test_invalid_src_ip(
     send_method: str,
-    expected_metric: Callable,
+    expected_metric: int,
     expected_log_addr: str,
     xfw,
     invalid_l2_raw_client,
@@ -487,12 +475,10 @@ async def test_invalid_src_ip(
     await xfw.rules_set("xfw {}")
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=expected_log_addr
-    ) as metric:
+        clickhouse_client, ip_to_search=expected_log_addr, expected_bit=expected_metric
+    ):
         await getattr(invalid_l2_raw_client, send_method)(src_mac, dst_mac)
         assert await ether_raw_server.receive_block(src_mac, dst_mac)
-
-    assert expected_metric(metric)
 
 
 async def test_blocked_by_tcp_auth_filter_unknown_connection_32_bit(
@@ -509,12 +495,12 @@ async def test_blocked_by_tcp_auth_filter_unknown_connection_32_bit(
     await tcp_raw_client.start()
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
-    ) as metric:
+        clickhouse_client,
+        ip_to_search=tcp_raw_client.ip_clickhouse,
+        expected_bit=ClickhouseSingleMetric.blocked_by_tcp_auth_filter_unknown_connection,
+    ):
         await tcp_raw_client.send_packet(TCP(flags="A"))
         assert await tcp_raw_server.receive_block()
-
-    assert metric.blocked_by_tcp_auth_filter_unknown_connection()
 
 
 @pytest.mark.long
@@ -544,12 +530,12 @@ async def test_blocked_by_tcp_auth_filter_expired_connection_33_bit(
     await asyncio.sleep(65)
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
-    ) as metric:
+        clickhouse_client,
+        ip_to_search=tcp_raw_client.ip_clickhouse,
+        expected_bit=ClickhouseSingleMetric.blocked_by_tcp_auth_filter_expired_connection,
+    ):
         await tcp_raw_client.send_packet(TCP(flags="P") / b"111")
         assert await tcp_raw_server.receive_packet()
-
-    assert metric.blocked_by_tcp_auth_filter_expired_connection()
 
 
 async def test_blocked_by_tcp_syncookies_rule_invalid_syn_cookie_34_bit(
@@ -571,8 +557,10 @@ async def test_blocked_by_tcp_syncookies_rule_invalid_syn_cookie_34_bit(
     tcp_raw_client.auto_ack_seq = False
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=tcp_raw_client.ip_clickhouse
-    ) as metric:
+        clickhouse_client,
+        ip_to_search=tcp_raw_client.ip_clickhouse,
+        expected_bit=ClickhouseSingleMetric.blocked_by_tcp_syncookies_rule_invalid_syn_cookie,
+    ):
         await tcp_raw_client.send_packet(get_tcp_packet(flag="S", seq=random.randrange(1, 9999999)))
 
         syn_ack = await tcp_raw_client.receive_packet()
@@ -582,8 +570,6 @@ async def test_blocked_by_tcp_syncookies_rule_invalid_syn_cookie_34_bit(
         ), f"Unexpected reply flags {syn_ack.flags}; expected SA"
 
         await tcp_raw_client.send_packet(get_tcp_packet(flag="A"))
-
-    assert metric.blocked_by_tcp_syncookies_rule_invalid_syn_cookie()
 
 
 class TestBlockedByDNS:
@@ -613,7 +599,7 @@ class TestBlockedByDNS:
     async def test_blocked_during_parsing_malformed_dns(
         self,
         data_to_send,
-        expected_metric: Callable,
+        expected_metric: int,
         xfw,
         dns_udp_client,
         dns_udp_server,
@@ -627,12 +613,12 @@ class TestBlockedByDNS:
         await dns_udp_client.start()
 
         async with metric_analyzer.track_clickhouse_metric(
-            clickhouse_client, ip_to_search=dns_udp_client.ip_clickhouse
-        ) as metric:
+            clickhouse_client,
+            ip_to_search=dns_udp_client.ip_clickhouse,
+            expected_bit=expected_metric,
+        ):
             await dns_udp_client._send(data_to_send)
             assert await dns_udp_server.receive_block()
-
-        assert expected_metric(metric)
 
     @pytest.mark.parametrize(
         "data_to_send, expected_metric",
@@ -668,7 +654,7 @@ class TestBlockedByDNS:
     async def test_blocked_by_dns_anomaly(
         self,
         data_to_send: DNSRecord,
-        expected_metric: Callable,
+        expected_metric: int,
         xfw,
         dns_udp_client,
         dns_udp_server,
@@ -682,12 +668,12 @@ class TestBlockedByDNS:
         await clickhouse_client.connect()
 
         async with metric_analyzer.track_clickhouse_metric(
-            clickhouse_client, ip_to_search=dns_udp_client.ip_clickhouse
-        ) as metric:
+            clickhouse_client,
+            ip_to_search=dns_udp_client.ip_clickhouse,
+            expected_bit=expected_metric,
+        ):
             await dns_udp_client.send_query(data_to_send)
             assert await dns_udp_server.receive_block()
-
-        assert expected_metric(metric)
 
 
 @pytest.mark.skip_on_virtio
@@ -725,7 +711,7 @@ class TestBlockedByDNS:
 async def test_blocked_by_dns_anomaly_server(
     xfw_setup,
     server_reply_method: Callable,
-    expected_metric: Callable,
+    expected_metric: int,
     inverted_dns_client,
     inverted_dns_server_mtu,
     clickhouse_client,
@@ -735,13 +721,13 @@ async def test_blocked_by_dns_anomaly_server(
     await xfw_setup.rules_set("xfw { dns_filter; }")
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=inverted_dns_server_mtu.ip_clickhouse
-    ) as metric:
+        clickhouse_client,
+        ip_to_search=inverted_dns_server_mtu.ip_clickhouse,
+        expected_bit=expected_metric,
+    ):
         await inverted_dns_client.request_dns_server()
         assert await server_reply_method(inverted_dns_server_mtu) is True
         assert await inverted_dns_client.receive_block()
-
-    assert expected_metric(metric)
 
 
 @pytest.mark.skip_on_virtio
@@ -771,9 +757,9 @@ async def test_blocked_by_dns_anomaly_udp_response_packet_is_too_large_43_bit(
     await xfw.rules_set("xfw { dns_filter; }")
 
     async with metric_analyzer.track_clickhouse_metric(
-        clickhouse_client, ip_to_search=invalid_l2_raw_client.ip_clickhouse
-    ) as metric:
+        clickhouse_client,
+        ip_to_search=invalid_l2_raw_client.ip_clickhouse,
+        expected_bit=ClickhouseSingleMetric.blocked_by_dns_anomaly_dns_udp_response_packet_is_too_large,
+    ):
         await getattr(invalid_l2_raw_client, send_method)(src_mac, dst_mac)
         assert await ether_raw_server.receive_block(src_mac, dst_mac)
-
-    assert metric.blocked_by_dns_anomaly_dns_udp_response_packet_is_too_large
