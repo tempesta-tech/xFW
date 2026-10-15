@@ -108,7 +108,10 @@ class ClickhouseClient:
         )
 
     async def records_with(
-        self, addr: ipaddress.IPv6Address | None = None, timestamp: datetime.datetime | None = None
+        self,
+        addr: ipaddress.IPv6Address | None = None,
+        timestamp: datetime.datetime | None = None,
+        reason_bit: int | None = None,
     ) -> typing.List[LogRecord]:
         conditions = ""
         where_clauses = []
@@ -118,6 +121,9 @@ class ClickhouseClient:
 
         if timestamp is not None:
             where_clauses.append(f"timestamp >= '{timestamp}'")
+
+        if reason_bit is not None:
+            where_clauses.append(f"bitAnd(reason, {reason_bit}) != 0")
 
         if where_clauses:
             conditions = "WHERE " + " AND ".join(where_clauses)
@@ -177,7 +183,15 @@ class ClickhouseClient:
 
     @retry_on_failure(AssertionError)
     async def wait_for_new_records(
-        self, timestamp: datetime.datetime, addr: ipaddress.IPv6Address | None = None
+        self,
+        timestamp: datetime.datetime,
+        addr: ipaddress.IPv6Address | None = None,
+        reason_bit: int | None = None,
     ) -> None:
-        records = await self.records_with(addr=addr, timestamp=timestamp)
-        assert len(records) >= 1, f"Last record: {await self.records_last()}"
+        records = await self.records_with(addr=addr, timestamp=timestamp, reason_bit=reason_bit)
+        assert len(records) >= 1, (
+            f"Expected timestamp: {timestamp};\n"
+            f"Expected IP: {addr};\n"
+            f"Expected bit: {reason_bit};\n"
+            f"All records: {await self.records_all()}"
+        )
