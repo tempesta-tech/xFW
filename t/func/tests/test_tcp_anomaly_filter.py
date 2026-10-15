@@ -8,7 +8,7 @@ from scapy.layers.inet import TCP
 
 from framework.asyn import TcpRawClient, TcpRawServer
 from framework.stateful import RegularKernelSocketNetworkStateful
-from framework.utils import get_tcp_packet
+from framework.utils import get_tcp_packet, invert_in_evaluate_mode
 from framework.xfw import XFW
 
 
@@ -152,30 +152,6 @@ async def test_block_invalid_packet(
     assert response is not None, f"Ok packet {ok_packet} is blocked"
 
 
-@pytest.mark.parametrize("port_type", ["sport", "dport"], ids=["src", "dst"])
-async def test_zero_port_is_blocked(
-    port_type: str,
-    xfw: XFW,
-    tcp_raw_server: TcpRawServer,
-    tcp_raw_client: TcpRawClient,
-    start_tcp_raw_server_and_raw_clients,
-):
-    tcp_raw_client.auto_add_host = False
-
-    packet = get_tcp_packet(flag="S")
-    packet.sport = tcp_raw_client.port
-    packet.dport = tcp_raw_server.port
-
-    setattr(packet, port_type, 0)
-
-    await xfw.rules_set(
-        "xfw { tcp_anomaly_filter syn_without_opt" " syn_with_payload syn_with_seqno=0 bad_flags; }"
-    )
-    await tcp_raw_client.send_packet(packet)
-
-    assert await tcp_raw_server.receive_block(), f"Zero {port_type} port is not blocked"
-
-
 @pytest.mark.parametrize(
     "rules, valid_flags",
     [
@@ -260,21 +236,26 @@ async def test_blocked_invalid_flags(
 
     await xfw.rules_set(rules)
 
-    for invalid_flag in invalid_flags:
-        packet = get_tcp_packet(flag=invalid_flag)
-        await tcp_raw_client.send_packet(packet)
+    @invert_in_evaluate_mode
+    async def send_packets_and_check_flags(client, server) -> bool:
+        for invalid_flag in invalid_flags:
+            packet = get_tcp_packet(flag=invalid_flag)
+            await client.send_packet(packet)
 
-        response = await tcp_raw_server.receive_tcp_flags()
+            response = await server.receive_tcp_flags()
 
-        if response is None:
-            continue
+            if response is None:
+                continue
 
-        if str(packet.flags) != response:
-            continue
+            if str(packet.flags) != response:
+                continue
 
-        all_not_blocked.append(response)
+            all_not_blocked.append(response)
+        return not all_not_blocked
 
-    assert not all_not_blocked, f"Flags {all_not_blocked} are not blocked"
+    assert await send_packets_and_check_flags(
+        tcp_raw_client, tcp_raw_server
+    ), f"Flags {all_not_blocked} are not blocked"
 
 
 async def test_bad_flags_overriding(

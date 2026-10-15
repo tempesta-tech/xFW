@@ -9,7 +9,19 @@ from framework.asyn import *
 from framework.clickhouse import ClickhouseClient
 from framework.fabrics import xfw_fabric
 from framework.rpc.client import RpcClient
-from framework.xfw import XFW, XFWRemote
+from framework.xfw import XFW, XfwMode, XFWRemote
+
+
+@pytest.fixture(scope="function", autouse=True)
+def xfw_mode(xfw_mode_param) -> str:
+    """
+    Autouse fixture that provides and activates the current XFW mode for a test.
+
+    Since this fixture runs automatically for every test function, it forces
+    `pytest_generate_tests` to trigger parameterization. It returns the active
+    mode string for the current test iteration.
+    """
+    return xfw_mode_param
 
 
 @pytest.fixture(scope="session")
@@ -20,6 +32,7 @@ async def xfw_global(
     clickhouse_global: ClickhouseClient,
 ) -> AsyncGenerator[XFW, None]:
     xfw = xfw_fabric(
+        xfw_mode=XfwMode.normal,
         config=config,
         logging_level=logging_level,
         rpc_connection=rpc_connection,
@@ -53,9 +66,14 @@ def xfw_syncookie_config(xfw_global) -> str:
 async def xfw(
     xfw_global: XFW,
     xfw_use_rule_reset: bool,
+    xfw_mode: str,
 ) -> AsyncGenerator[XFW, None]:
+    xfw_global.xfw_mode = xfw_mode
     if not xfw_global.is_running:
         await xfw_global.start()
+
+    if xfw_mode == XfwMode.evaluate:
+        await xfw_global.rules_set("""xfw { evaluation_mode; }""")
 
     yield xfw_global
 
@@ -63,21 +81,14 @@ async def xfw(
 
 
 @pytest.fixture
-async def xfw_paused(
-    xfw_global: XFW, xfw_use_rule_reset: bool, config: ConfigSettings
-) -> AsyncGenerator[XFW, None]:
+async def xfw_paused(xfw: XFW, config: ConfigSettings) -> XFW:
     """
     Some of the tests in a fast mode require a pause.
     For instance, some of the ratelimits requires
     some time to reset the traffic block
     """
-    if not xfw_global.is_running:
-        await xfw_global.start()
     await asyncio.sleep(config.fast_mode_xfw_paused_timeout_sec)
-
-    yield xfw_global
-
-    await xfw_global.stop_or_reset(xfw_use_rule_reset)
+    return xfw
 
 
 @pytest.fixture

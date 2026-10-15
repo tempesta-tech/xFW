@@ -20,7 +20,7 @@ from framework.asyn import (
 from framework.fabrics import client_fabric
 from framework.metrics import KernelMetricsDiff, PrometheusMetricsDiff
 from framework.utils import get_tcp_packet, run_in_background
-from framework.xfw import XFW
+from framework.xfw import XFW, XfwMode
 
 bad_packet = TCP(flags="S")
 ok_packet = TCP(
@@ -31,6 +31,11 @@ ok_packet = TCP(
         ("MSS", 1460),
     ],
 )
+
+
+@pytest.fixture(autouse=True)
+async def xfw_mode() -> str:
+    return XfwMode.normal
 
 
 class TcpRawSynCookieClient(TcpRawClient, abc.ABC):
@@ -146,9 +151,10 @@ class TcpRawSynCookieIpv6Client(TcpRawSynCookieClient, TcpIpV6RawClient):
 
 @pytest.fixture
 async def tcp_ip4_raw_syncookie_client(
-    config: ConfigSettings, logging_level: int
+    config: ConfigSettings, logging_level: int, xfw_mode
 ) -> AsyncGenerator[TcpRawSynCookieIpv4Client, None]:
     client = client_fabric(
+        xfw_mode=xfw_mode,
         logging_level=logging_level,
         config=config,
         local_class=TcpRawSynCookieIpv4Client,
@@ -158,9 +164,10 @@ async def tcp_ip4_raw_syncookie_client(
 
 @pytest.fixture
 async def tcp_ip6_raw_syncookie_client(
-    config: ConfigSettings, logging_level
+    config: ConfigSettings, logging_level, xfw_mode
 ) -> AsyncGenerator[TcpRawSynCookieIpv6Client, None]:
     client = client_fabric(
+        xfw_mode=xfw_mode,
         logging_level=logging_level,
         config=config,
         local_class=TcpRawSynCookieIpv6Client,

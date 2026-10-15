@@ -18,6 +18,7 @@ from scapy.layers.inet6 import (
 from scapy.layers.l2 import ARP, Ether
 
 from framework.stateful import SocketBaseNetworkStateful
+from framework.utils import invert_in_evaluate_mode
 
 _SYSTEM_LAYERS = (
     ARP,  # IPv4 ARP
@@ -110,14 +111,24 @@ class EtherRawClient(SocketBaseNetworkStateful):
         self.logger.info("The expected L2 packet was not received - the timeout was exceeded")
         return None
 
-    async def receive_block(self) -> bool:
+    @invert_in_evaluate_mode
+    async def receive_block(self, src_mac: str, dst_msc: str) -> bool:
         """
         This method returns False if a non‑system package is received.
         """
         result = await self.receive_packet()
-        if result is not None:
-            self.logger.info(f"Received unexpected L2 packet {result}")
-        return result is None
+
+        if result is None:
+            return True
+
+        if not result.haslayer(Ether):
+            return await self.receive_block(src_mac, dst_msc)
+
+        if src_mac != result.src and dst_msc != result.dst:
+            return await self.receive_block(src_mac, dst_msc)
+
+        self.logger.info(f"Received unexpected L2 packet {result}")
+        return False
 
     async def set_sock_proto(self, proto: int):
         self.socket_proto = proto

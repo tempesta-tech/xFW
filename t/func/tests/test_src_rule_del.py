@@ -3,25 +3,14 @@
 
 import pytest
 
-from framework.cmp import check_connection
+from framework.cmp import check_block_connection, check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
 
 
 @pytest.fixture
-def true_if_allowed(src_defaults: str) -> bool:
-    allow = src_defaults == "allow"
-    yield allow
-
-
-@pytest.fixture
-def error_message(true_if_allowed, client):
-    msg = f"Client {client.ip_testing}:{client.port} is not blocked"
-
-    if true_if_allowed:
-        msg = f"Client {client.ip_testing}:{client.port} is not allowed"
-
-    yield msg
+def error_message(client):
+    return f"Client {client.ip_testing}:{client.port} is not blocked"
 
 
 async def test_src_del_block_by_ip(
@@ -31,13 +20,11 @@ async def test_src_del_block_by_ip(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
-    true_if_allowed: bool,
     error_message: str,
 ):
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_ip: {src_defaults}; }}
+            defaults {{ src_ip: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{
                 {client.ip_testing}
             }}
@@ -50,7 +37,7 @@ async def test_src_del_block_by_ip(
             }}
         }}
         """)
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_src_del_block_by_multiple_ip(
@@ -60,15 +47,13 @@ async def test_src_del_block_by_multiple_ip(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
-    true_if_allowed: bool,
     error_message: str,
 ):
     new_ip = client.generate_new_address()
 
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_ip: {src_defaults}; }}
+            defaults {{ src_ip: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{
                 {client.ip_testing}
                 {client.ip_format(new_ip)}
@@ -83,7 +68,7 @@ async def test_src_del_block_by_multiple_ip(
             }}
         }}
         """)
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_src_del_block_by_mask(
@@ -93,13 +78,11 @@ async def test_src_del_block_by_mask(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
-    true_if_allowed: bool,
     error_message: str,
 ):
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_ip: {src_defaults}; }}
+            defaults {{ src_ip: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{
                 {client.mask_formatted}
             }}
@@ -112,7 +95,7 @@ async def test_src_del_block_by_mask(
             }}
         }}
         """)
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_src_del_block_by_multiple_mask(
@@ -122,15 +105,13 @@ async def test_src_del_block_by_multiple_mask(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
-    true_if_allowed: bool,
     error_message: str,
 ):
     new_ip = client.generate_new_address()
 
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_ip: {src_defaults}; }}
+            defaults {{ src_ip: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{
                 {client.mask_formatted}
                 {client.mask_format(new_ip)}
@@ -145,7 +126,7 @@ async def test_src_del_block_by_multiple_mask(
             }}
         }}
         """)
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_src_del_block_by_port(
@@ -155,13 +136,11 @@ async def test_src_del_block_by_port(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
-    true_if_allowed: bool,
     error_message: str,
 ):
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_port: {src_defaults}; }}
+            defaults {{ src_port: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{
                 :{client.port}
             }}
@@ -174,7 +153,7 @@ async def test_src_del_block_by_port(
             }}
         }}
         """)
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_src_del_block_by_multiple_port(
@@ -184,15 +163,13 @@ async def test_src_del_block_by_multiple_port(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
-    true_if_allowed: bool,
     error_message: str,
 ):
     new_port = client.generate_new_port()
 
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_port: {src_defaults}; }}
+            defaults {{ src_port: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{
                 :{client.port}
                 :{new_port}
@@ -207,7 +184,7 @@ async def test_src_del_block_by_multiple_port(
             }}
         }}
         """)
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_src_del_block_by_port_range(
@@ -217,15 +194,13 @@ async def test_src_del_block_by_port_range(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
-    true_if_allowed: bool,
     error_message: str,
 ):
     new_port = client.generate_new_port()
 
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_port: {src_defaults}; }}
+            defaults {{ src_port: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{
                 :{client.port}-{new_port}
             }}
@@ -238,7 +213,7 @@ async def test_src_del_block_by_port_range(
             }}
         }}
         """)
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_src_del_block_by_multiple_port_range(
@@ -248,15 +223,13 @@ async def test_src_del_block_by_multiple_port_range(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
-    true_if_allowed: bool,
     error_message: str,
 ):
     new_port = client.generate_new_ports(3)
 
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_port: {src_defaults}; }}
+            defaults {{ src_port: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{
                 :{client.port}-{new_port[0]}
                 :{new_port[1]}-{new_port[2]}
@@ -271,7 +244,7 @@ async def test_src_del_block_by_multiple_port_range(
             }}
         }}
         """)
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_src_replace_block_by_geoip_country(
@@ -281,13 +254,11 @@ async def test_src_replace_block_by_geoip_country(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
-    true_if_allowed: bool,
     error_message: str,
 ):
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_ip {ip_version}: {src_defaults}; }}
+            defaults {{ src_ip {ip_version}: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{ rs }}
         }}
         """)
@@ -298,7 +269,7 @@ async def test_src_replace_block_by_geoip_country(
         }}
         """)
 
-    assert await check_connection(client, server) is true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_src_del_block_by_ratelimit(
@@ -308,15 +279,13 @@ async def test_src_del_block_by_ratelimit(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
-    true_if_allowed: bool,
     error_message: str,
 ):
     new_port = client.generate_new_ports(3)
 
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_port: {src_defaults}; }}
+            defaults {{ src_port: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{
                 :{client.port}-{new_port[0]}
                 :{new_port[1]}-{new_port[2]}
@@ -332,7 +301,7 @@ async def test_src_del_block_by_ratelimit(
             }}
         }}
         """)
-    assert await check_connection(client, server) == true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_src_del_only_one_protocol_subtype(
@@ -361,6 +330,6 @@ async def test_src_del_only_one_protocol_subtype(
         """)
 
     for new_client, new_server in remaining_client_server_group.items():
-        assert (
-            await check_connection(new_client, new_server) is False
+        assert await check_block_connection(
+            new_client, new_server
         ), f"Server {new_server.ip_testing}:{new_server.port} is not blocked"

@@ -1,29 +1,16 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import asyncio
-
 import pytest
 
-from framework.cmp import check_connection
+from framework.cmp import check_block_connection, check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
 
 
 @pytest.fixture
-def true_if_allowed(src_defaults: str) -> bool:
-    allow = src_defaults == "allow"
-    yield allow
-
-
-@pytest.fixture
-def error_message(true_if_allowed, server):
-    msg = f"Server {server.ip_testing}:{server.port} is not blocked"
-
-    if true_if_allowed:
-        msg = f"Server {server.ip_testing}:{server.port} is not allowed"
-
-    yield msg
+def error_message(server):
+    return f"Server {server.ip_testing}:{server.port} is not allowed"
 
 
 @pytest.fixture(params=["src_ip", "src_port"], ids=["ip", "port"])
@@ -44,13 +31,12 @@ async def test_src_add_block_by_multiple_port_range_with_crossing_port_ranges(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
 ):
     new_port = client.generate_new_ports(4)
 
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_ip ip4: {src_defaults}; src_ip ip6: {src_defaults}; }}
+            defaults {{ src_ip ip4: allow; src_ip ip6: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{
                 :{new_port[2]}-{new_port[3]}
             }}
@@ -64,8 +50,8 @@ async def test_src_add_block_by_multiple_port_range_with_crossing_port_ranges(
             }}
         }}
         """)
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
@@ -76,20 +62,19 @@ async def test_src_block_by_port_range_with_spaced_dash_between_ports(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
 ):
     new_port = client.generate_new_port()
     await xfw.rules_set(f"""
         xfw {{
-            defaults {{ src_ip {ip_version}: {src_defaults}; }}
+            defaults {{ src_ip {ip_version}: allow; }}
             src=extended_group {ip_version}.{protocol} : block {{
                 :{client.port} - {new_port}
             }}
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
@@ -100,7 +85,6 @@ async def test_src_change_ratelimit(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
     src_policy: str,
     src_value: str,
 ):
@@ -109,15 +93,15 @@ async def test_src_change_ratelimit(
             xfw {{
                 ratelimit=a pps=0 bps=0;
                 ratelimit=b pps=10 bps=1000;
-                defaults {{ {src_policy} {ip_version}: {src_defaults}; }}
+                defaults {{ {src_policy} {ip_version}: allow; }}
                 src=extended_group {ip_version}.{protocol} : ratelimit=a {{
                     {src_value}
                 }}
             }}
         """)
 
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Server {server.ip_testing}:{server.port} is not blocked"
 
     await client.stop()
@@ -130,8 +114,8 @@ async def test_src_change_ratelimit(
         """)
 
     await client.start()
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Server {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -142,7 +126,6 @@ async def test_src_change_ratelimit_value(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
     src_policy: str,
     src_value: str,
 ):
@@ -150,15 +133,15 @@ async def test_src_change_ratelimit_value(
     await xfw_paused.rules_set(f"""
             xfw {{
                 ratelimit=a pps=0 bps=0;
-                defaults {{ {src_policy} {ip_version}: {src_defaults}; }}
+                defaults {{ {src_policy} {ip_version}: allow; }}
                 src=extended_group {ip_version}.{protocol} : ratelimit=a {{
                     {src_value}
                 }}
             }}
         """)
 
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Server {server.ip_testing}:{server.port} is not blocked"
     await client.stop()
 
@@ -172,8 +155,8 @@ async def test_src_change_ratelimit_value(
         """)
 
     await client.start()
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Server {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -184,8 +167,6 @@ async def test_src_switch_ratelimit_to_another_rule(
     server: RegularKernelSocketNetworkStateful,
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
-    src_defaults: str,
-    true_if_allowed: bool,
     error_message: str,
     src_policy: str,
     src_value: str,
@@ -200,20 +181,20 @@ async def test_src_switch_ratelimit_to_another_rule(
                 }}
             }}
         """)
-    assert await check_connection(client, server) is True, "Server is not allowed"
+    assert await check_connection(client, server), "Server is not allowed"
 
     await xfw.rules_patch(f"""
         xfw {{
-            src=extended_group {ip_version}.{protocol} : {src_defaults} {{
+            src=extended_group {ip_version}.{protocol} : allow {{
                 {src_value}
             }}
         }}
         """)
 
     # we receive 3 times allowed or blocked, where ratelimit is 1
-    assert await check_connection(client, server) is true_if_allowed, error_message
-    assert await check_connection(client, server) is true_if_allowed, error_message
-    assert await check_connection(client, server) is true_if_allowed, error_message
+    assert await check_connection(client, server), error_message
+    assert await check_connection(client, server), error_message
+    assert await check_connection(client, server), error_message
 
 
 async def test_src_block_port_range_and_allow_some_of_them(
@@ -231,7 +212,7 @@ async def test_src_block_port_range_and_allow_some_of_them(
     with pytest.raises(ValueError):
         await xfw.rules_set(f"""
                 xfw {{
-                    defaults {{ src_port: block; }}
+                    defaults {{ src_port: allow; }}
                     ratelimit=test pps=100 bps=10000;
                     
                     src=dangerous_clients {ip_version}.{protocol} : block {{
@@ -243,7 +224,7 @@ async def test_src_block_port_range_and_allow_some_of_them(
                     }}
                 }}
             """)
-        assert await check_connection(client, server) is False, "Client is allowed"
+        assert await check_block_connection(client, server), "Client is allowed"
 
 
 async def test_recommended_config(
@@ -301,4 +282,4 @@ async def test_recommended_config(
             }}
         }}
         """)
-    assert await check_connection(tcp_ip4_client, tcp_ip4_server) is True, "Client is blocked"
+    assert await check_connection(tcp_ip4_client, tcp_ip4_server), "Client is blocked"

@@ -102,7 +102,7 @@ async def test_change_ratelimit(
         """)
 
     await tcp_raw_client.send_packet(blocking_packet)
-    assert await tcp_raw_server.receive_packet() is None
+    assert await tcp_raw_server.receive_block()
 
 
 async def test_del_ratelimit(

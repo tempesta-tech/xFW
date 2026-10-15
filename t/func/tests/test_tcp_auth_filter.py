@@ -7,8 +7,8 @@ import pytest
 from scapy.layers.inet import TCP
 
 from framework.asyn import TcpClient, TcpRawClient, TcpRawServer, TcpServer
-from framework.cmp import check_connection
-from framework.xfw import XFW
+from framework.cmp import check_block_connection, check_connection
+from framework.xfw import XFW, XfwMode
 
 
 @pytest.fixture(scope="session", params=["A", "R"], ids=["ACK", "RST"])
@@ -36,15 +36,16 @@ async def test_send_data_after_filter_turned_on(
     It's possible to communicate if the connection
     was established before the filter is turned on
     """
-    assert await check_connection(tcp_client, tcp_server) is True
+    assert await check_connection(tcp_client, tcp_server)
 
     await xfw.rules_set("xfw { tcp_auth_filter; }")
-    assert await check_connection(tcp_client, tcp_server) is True
+    assert await check_connection(tcp_client, tcp_server)
 
 
 async def test_block_tcp_flood_from_non_existing_session(
     tcp_flag: str,
-    xfw_restarted: XFW,
+    xfw_restarted,
+    xfw: XFW,
     tcp_raw_server: TcpRawServer,
     tcp_raw_client: TcpRawClient,
     start_tcp_raw_server_and_raw_clients,
@@ -53,7 +54,7 @@ async def test_block_tcp_flood_from_non_existing_session(
     Any NON-SYN packets should be blocked if the
     connection was not established with the turned on filter
     """
-    await xfw_restarted.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_auth_filter; }")
     await tcp_raw_client.send_packet(TCP(flags=tcp_flag))
 
     assert (
@@ -174,18 +175,19 @@ async def test_connection_under_filter_resetting(
     then turning on the filter should not effect the opened
     connection.
     """
-    assert await check_connection(tcp_client, tcp_server) is True
+    assert await check_connection(tcp_client, tcp_server)
 
     await xfw.rules_patch("xfw { tcp_auth_filter; }")
-    assert await check_connection(tcp_client, tcp_server) is True
+    assert await check_connection(tcp_client, tcp_server)
 
     await xfw.rules_patch("xfw { tcp_auth_filter/del; }")
-    assert await check_connection(tcp_client, tcp_server) is True
+    assert await check_connection(tcp_client, tcp_server)
 
     await xfw.rules_set("xfw { tcp_auth_filter; }")
-    assert await check_connection(tcp_client, tcp_server) is True
+    assert await check_connection(tcp_client, tcp_server)
 
 
+@pytest.mark.xfw_mode(XfwMode.normal)
 async def test_clean_stored_session_after_xfw_restart(
     xfw: XFW,
     tcp_server: TcpServer,
@@ -197,11 +199,11 @@ async def test_clean_stored_session_after_xfw_restart(
     sessions
     """
     await xfw.rules_set("xfw { tcp_auth_filter; }")
-    assert await check_connection(tcp_client, tcp_server) is True
+    assert await check_connection(tcp_client, tcp_server)
 
     await xfw.restart()
     await xfw.rules_set("xfw { tcp_auth_filter; }")
-    assert await check_connection(tcp_client, tcp_server) is False
+    assert await check_block_connection(tcp_client, tcp_server)
 
 
 async def test_allow_tcp_flood_after_connection(

@@ -82,7 +82,6 @@ async def test_allow(xfw, dynamic_client, dynamic_server, proto_config, flush_ar
         pytest.param("tcp_client", "tcp_server", "1, 17, 47, 58", id="tcp"),
         pytest.param("udp_client", "udp_server", "1, 6, 47, 58", id="udp"),
         pytest.param("gre_raw_client", "gre_raw_server", "1, 6, 17, 58", id="gre"),
-        pytest.param("icmp_raw_client", "udp_server", "6, 17, 47", id="icmp"),
     ],
     indirect=["dynamic_client", "dynamic_server"],
 )
@@ -97,6 +96,19 @@ async def test_block(xfw, dynamic_client, dynamic_server, proto_config, flush_ar
 
     await dynamic_client.ping()
     assert await dynamic_server.receive_block()
+
+
+async def test_block_icmp(xfw, icmp_raw_client, udp_server, flush_arp_cache):
+    """
+    Verify that xFW blocks an undeclared proto.
+    """
+    await icmp_raw_client.start()
+    await udp_server.start()
+
+    await xfw.rules_set("xfw { ip_proto { 6, 17, 47 } }")
+
+    await icmp_raw_client.ping()
+    assert await icmp_raw_client.receive_block()
 
 
 @pytest.mark.parametrize(

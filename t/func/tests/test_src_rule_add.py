@@ -1,9 +1,7 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import pytest
-
-from framework.cmp import check_connection
+from framework.cmp import check_block_connection, check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
 
@@ -34,8 +32,8 @@ async def test_src_add_block_by_ip(
             }}
         }}
         """)
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
@@ -67,8 +65,8 @@ async def test_src_add_block_by_multiple_ip(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
@@ -98,8 +96,8 @@ async def test_src_add_block_by_mask(
             }}
         }}
         """)
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
@@ -130,8 +128,8 @@ async def test_src_add_block_by_multiple_mask(
             }}
         }}
         """)
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Client {client.ip_testing}:{client.port} is not blocked"
 
 
@@ -161,8 +159,8 @@ async def test_src_add_block_by_port(
             }}
         }}
         """)
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
@@ -193,8 +191,8 @@ async def test_src_add_block_by_multiple_port(
             }}
         }}
         """)
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
@@ -224,8 +222,8 @@ async def test_src_add_block_by_port_range(
             }}
         }}
         """)
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
@@ -256,8 +254,8 @@ async def test_src_add_block_by_multiple_port_range(
             }}
         }}
         """)
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
 
 
@@ -277,7 +275,7 @@ async def test_src_add_block_by_ratelimit(
 
     await xfw.rules_set(f"""
         xfw {{
-            ratelimit=test pps=5 bps=500;
+            ratelimit=test pps=20 bps=5000;
             defaults {{ src_port {ip_version}: block; }}
             src=extended_group {ip_version}.{protocol} : ratelimit=test {{
                 :{new_port[3]}-{new_port[4]}
@@ -294,8 +292,8 @@ async def test_src_add_block_by_ratelimit(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is True
+    assert await check_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not allowed"
 
 
@@ -326,8 +324,8 @@ async def test_src_add_only_one_protocol_subtype(
         """)
 
     for new_client, new_server in remaining_client_server_group.items():
-        assert (
-            await check_connection(new_client, new_server) is True
+        assert await check_connection(
+            new_client, new_server
         ), f"Server {new_server.ip_testing}:{new_server.port} is not allowed"
 
 
@@ -353,6 +351,6 @@ async def test_src_add_block_by_geoip_country(
         }}
         """)
 
-    assert (
-        await check_connection(client, server) is False
+    assert await check_block_connection(
+        client, server
     ), f"Client {server.ip_testing}:{server.port} is not blocked"
