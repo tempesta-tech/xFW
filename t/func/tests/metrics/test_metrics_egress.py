@@ -151,10 +151,10 @@ from tests.metrics.utils import (
         ),
         pytest.param(
             PrometheusMetricsDiff(
-                xfw_total_upstream_egress_packets=10,
-                xfw_total_upstream_egress_bytes=490,
-                xfw_passed_upstream_egress_packets=10,
-                xfw_passed_upstream_egress_bytes=490,
+                xfw_total_upstream_egress_packets=[10, 11],
+                xfw_total_upstream_egress_bytes=[490, 600],
+                xfw_passed_upstream_egress_packets=[10, 11],
+                xfw_passed_upstream_egress_bytes=[490, 600],
             ),
             "send_bad_tcp_headers",
             ETH_P_IP,

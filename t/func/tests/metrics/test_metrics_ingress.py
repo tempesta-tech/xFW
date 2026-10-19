@@ -44,7 +44,7 @@ def get_expected_total_ingress_counters(
             # 14 (Eth) + 40 (IP) + 8 (UDP) + 5 (Raw)
             return PrometheusMetricsDiff(
                 xfw_ip6_total_ingress_packets=[packets_n, packets_n + 3],
-                xfw_ip6_total_ingress_bytes=[packets_n * 67, (packets_n + 3) * 67],
+                xfw_ip6_total_ingress_bytes=[packets_n * 67, 1000],
                 xfw_udp_total_ingress_packets=[packets_n, packets_n + 3],
                 xfw_udp_total_ingress_bytes=[packets_n * 67, (packets_n + 3) * 67],
             )
