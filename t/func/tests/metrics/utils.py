@@ -35,40 +35,6 @@ def make_l4_packet(protocol: str, sport: int, dport: int) -> Packet:
 
 
 class SendInvalidPacketsMixin(EtherRawClient):
-    async def send_dns_ip4_large_response_packet(self, src_mac: str, dst_mac: str):
-        reply = DNSRecord(DNSHeader(id=1234, qr=1, aa=1, ra=1, qdcount=1, ancount=1))
-        reply.add_question(DNSQuestion("google.com", QTYPE.TXT))
-        reply.add_answer(RR("google.com", QTYPE.TXT, rdata=TXT("test")))
-
-        packet = (
-            Ether(dst=dst_mac, src=src_mac, type=0x0800)
-            / IP(src=self.ipv4, dst=self.remote_ip, len=4170)
-            / UDP(sport=53, dport=53, len=4150)
-            / Raw(load=reply.pack())
-        )
-
-        await self.loop.sock_sendall(self.socket, bytes(packet))
-        self.logger.info(
-            f"Sending fake large DNS response L2 packet (bytes len: {len(bytes(packet))}): {packet}"
-        )
-
-    async def send_dns_ip6_large_response_packet(self, src_mac: str, dst_mac: str):
-        reply = DNSRecord(DNSHeader(id=1234, qr=1, aa=1, ra=1, qdcount=1, ancount=1))
-        reply.add_question(DNSQuestion("google.com", QTYPE.TXT))
-        reply.add_answer(RR("google.com", QTYPE.TXT, rdata=TXT("test")))
-
-        packet = (
-            Ether(dst=dst_mac, src=src_mac, type=0x86DD)
-            / IPv6(src=self.ipv6, dst=self.remote_ip, plen=4150)
-            / UDP(sport=53, dport=53, len=4150)
-            / Raw(load=reply.pack())
-        )
-
-        await self.loop.sock_sendall(self.socket, bytes(packet))
-        self.logger.info(
-            f"Sending fake large DNS response L2 packet (bytes len: {len(bytes(packet))}): {packet}"
-        )
-
     async def send_eth_eapol_packet(self, src_mac: str, dst_mac: str):
         packet = Ether(dst=dst_mac, src=src_mac, type=socket.ETHERTYPE_VLAN) / Raw(
             load=b"some_data"

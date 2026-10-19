@@ -730,36 +730,34 @@ async def test_blocked_by_dns_anomaly_server(
         assert await inverted_dns_client.receive_block()
 
 
-@pytest.mark.skip_on_virtio
-@pytest.mark.parametrize(
-    "invalid_l2_raw_client, send_method",
-    [
-        pytest.param("invalid_l2_ip4_raw_client", "send_dns_ip4_large_response_packet", id="ip4"),
-        pytest.param("invalid_l2_ip6_raw_client", "send_dns_ip6_large_response_packet", id="ip6"),
-    ],
-    indirect=["invalid_l2_raw_client"],
-)
+@pytest.fixture
+async def setup_mtu_10000(dns_udp_client, dns_udp_server) -> AsyncGenerator[None, None]:
+    await dns_udp_client.set_mtu(10000)
+    await dns_udp_server.set_mtu(10000)
+    yield
+    await dns_udp_client.set_mtu()
+    await dns_udp_server.set_mtu()
+
+
 async def test_blocked_by_dns_anomaly_udp_response_packet_is_too_large_43_bit(
-    invalid_l2_raw_client: InvalidEthTypeRawClient,
-    send_method: str,
+    dns_udp_client,
+    dns_udp_server,
     clickhouse_client,
     metric_analyzer,
-    ether_raw_server,
     xfw,
+    setup_mtu_10000,
 ):
     await clickhouse_client.connect()
-    await ether_raw_server.start()
-    await invalid_l2_raw_client.start()
+    await dns_udp_server.start()
+    await dns_udp_client.start()
 
-    src_mac, dst_mac = await asyncio.gather(
-        ether_raw_server.get_mac_address(), invalid_l2_raw_client.get_mac_address()
-    )
     await xfw.rules_set("xfw { dns_filter; }")
 
     async with metric_analyzer.track_clickhouse_metric(
         clickhouse_client,
-        ip_to_search=invalid_l2_raw_client.ip_clickhouse,
+        ip_to_search=dns_udp_client.ip_clickhouse,
         expected_bit=ClickhouseSingleMetric.blocked_by_dns_anomaly_dns_udp_response_packet_is_too_large,
     ):
-        await getattr(invalid_l2_raw_client, send_method)(src_mac, dst_mac)
-        assert await ether_raw_server.receive_block(src_mac, dst_mac)
+        await dns_udp_server.request_dns_server()
+        await dns_udp_client.reply_with_size_bytes(4096)
+        assert await dns_udp_server.receive_block()
