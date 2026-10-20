@@ -116,19 +116,20 @@ class EtherRawClient(SocketBaseNetworkStateful):
         """
         This method returns False if a non‑system package is received.
         """
-        result = await self.receive_packet()
+        while True:
+            result = await self.receive_packet()
 
-        if result is None:
-            return True
+            if result is None:
+                return True
 
-        if not result.haslayer(Ether):
-            return await self.receive_block(src_mac, dst_msc)
+            if not result.haslayer(Ether):
+                continue
 
-        if src_mac != result.src and dst_msc != result.dst:
-            return await self.receive_block(src_mac, dst_msc)
+            if src_mac != result.src or dst_msc != result.dst:
+                continue
 
-        self.logger.info(f"Received unexpected L2 packet {result}")
-        return False
+            self.logger.info(f"Received unexpected L2 packet {result}")
+            return False
 
     async def set_sock_proto(self, proto: int):
         self.socket_proto = proto

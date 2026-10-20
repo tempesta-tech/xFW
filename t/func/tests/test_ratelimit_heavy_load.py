@@ -148,7 +148,6 @@ async def __check_limits_tcp(
     xfw_low_pps_ratelimit,
     ratelimit_checker,
 ):
-    print("__check_limits_tcp")
     await tcp_raw_client.start()
     await tcp_raw_server.start()
 
