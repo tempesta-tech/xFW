@@ -525,17 +525,24 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 
 
 static __always_inline int
-tcp_syn_drop_filter(XfwGlobalCtx *ctx)
+tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
-	if (!xfw_is_valid_initial_syn(ctx->th))
+	if (!xfw_is_valid_initial_syn(th))
 		return XFW_CTX_CONTINUE;
 
 	uint64_t hash, hash_salt = ctx->cfg->rules.tcp_syn_drop.hash_salt;
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
-		xfw_hash_ipv4_syn(ctx->iph4, ctx->th, hash_salt, &hash);
+		struct iphdr *iph4 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr);
+
+		XFW_ASSERT((void *)(iph4 + 1) <= ctx->hdr_cur.end);
+		xfw_hash_ipv4_syn(iph4, th, hash_salt, &hash);
 	} else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
-		XFW_ASSERT((void *)(ctx->iph6 + 1) <= ctx->hdr_cur.end);
-		xfw_hash_ipv6_syn(ctx->iph6, ctx->th, hash_salt, &hash);
+		struct ipv6hdr *iph6 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
+
+		XFW_ASSERT((void *)(iph6 + 1) <= ctx->hdr_cur.end);
+		xfw_hash_ipv6_syn(iph6, th, hash_salt, &hash);
 	} else {
 		return XFW_CTX_CONTINUE;
 	}
@@ -571,7 +578,7 @@ tcp_syn_drop_filter(XfwGlobalCtx *ctx)
 	XfwSynRetry *retry = bpf_map_lookup_elem(&MAP_SYN_RETRY_REF, &hash);
 	if (retry)
 		return xfw_process_retry_filter(ctx, retry, hash, ctx->ts_jiff);
-	
+
 	/*
 	 * The tuple was not found in the retry map, therefore either this is
 	 * the first SYN we see for this TCP connection attempt, or the tuple
