@@ -455,7 +455,7 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 
 	if (deployment_mode == XFW_MODE_SCRUBBER
 	    && ctx->cfg->rules.tcp_syn_drop.enabled)
-		CHAIN(tcp_syn_drop_filter, ctx);
+		CHAIN(tcp_syn_drop_filter, ctx, th);
 
 	/* We do not add the connection to the trusted set here.
 	 * The trusted entry will be created later in tc.c, which is less
