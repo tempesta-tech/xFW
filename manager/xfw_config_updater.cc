@@ -518,7 +518,6 @@ XfwConfigUpdater::prepare_tcp_syn_drop_filter()
 	       "tcp_syn_drop: retry_count must be greater than zero");
 
 	config_.tcp_syn_drop_filter_.emplace(
-		filter->hash_salt(),
 		filter->time_min(),
 		filter->max_delay(),
 		filter->block_timeout(),

@@ -346,7 +346,6 @@ BpfMapsManager::set_simple_rules(const XfwConfig &config)
 			return (msecs * hz_) / 1000;
 		};
 		const auto &data = config.tcp_syn_drop_filter_.value();
-		cfg.rules.tcp_syn_drop.hash_salt = data.hash_salt_;
 		cfg.rules.tcp_syn_drop.time_min_jiff =
 			msecs_to_jiffies(data.time_min_ms_);
 		cfg.rules.tcp_syn_drop.max_delay_jiff =
