@@ -14,11 +14,7 @@ TcpSynDropSection::process_attributes()
 	using namespace std::literals;
 
 	auto name = peek_until_delimeters();
-	if (name == "hash_salt") {
-		hash_salt_ = consume_typed_assignment<uint64_t>(name);
-		return true;
-	}
-	else if (name == "time_min") {
+	if (name == "time_min") {
 		time_min_ms_ = consume_typed_assignment<uint64_t>(name);
 		return true;
 	}
@@ -49,16 +45,6 @@ TcpSynDropSection::commit()
 				     EditProcessor::to_string(edit_action.value()));
 		xfw_conf_.flags_.set(XfwConf::Opt::TCP_SYN_DROP_FILTER_OFF);
 		return;
-	}
-
-	/*
-	 * The salt cannot safely have a generic default because it is part of
-	 * the protection against predictable hash collisions.
-	 */
-	if (!hash_salt_.has_value()) {
-		throw Except(
-			"tcp_syn_drop requires the 'hash_salt' parameter."
-		);
 	}
 
 	/*
@@ -101,8 +87,7 @@ TcpSynDropSection::commit()
 		);
 	}
 
-	xfw_conf_.tcp_syn_drop_.emplace(hash_salt_.value(),
-					time_min_ms, max_delay_ms,
+	xfw_conf_.tcp_syn_drop_.emplace(time_min_ms, max_delay_ms,
 					block_timeout_ms,
 					retry_count_.value());
 }

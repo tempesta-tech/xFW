@@ -58,7 +58,6 @@ table Syncookie {
 }
 
 table TcpSynDrop {
-	hash_salt: uint64;
 	time_min: uint64;
 	max_delay: uint64;
 	block_timeout: uint64;
