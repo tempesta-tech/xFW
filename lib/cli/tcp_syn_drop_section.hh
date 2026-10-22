@@ -25,7 +25,6 @@ private:
 
 private:
 	XfwConf				&xfw_conf_;
-	std::optional<uint64_t>		hash_salt_;
 	std::optional<uint64_t>		time_min_ms_;
 	std::optional<uint64_t>		max_delay_ms_;
 	std::optional<uint64_t>		block_timeout_ms_;
