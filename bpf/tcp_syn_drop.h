@@ -14,10 +14,16 @@
 #include "log.h"
 
 #include "filter.h"
-#include "syn_hash.h"
+#include "tcp_flow.h"
 
 #define XFW_SYN_PENDING_MAX_ENTRIES	10000000
 #define XFW_SYN_RETRY_MAX_ENTRIES	1000000
+
+typedef struct XfwSynDropCtx {
+	void *stage1_map;
+	void *stage2_map;
+	const void *key;
+} XfwSynDropCtx;
 
 /*
  * Pending-entry states.
@@ -97,6 +103,19 @@ typedef struct XfwSynRetry {
 	uint32_t	retry_count;
 } XfwSynRetry;
 
+typedef struct XfwIpv4SynKey {
+	XfwIpv4TcpFlow flow;
+	uint32_t seq;
+} XfwIpv4SynKey;
+
+typedef struct XfwIpv6SynKey {
+	XfwIpv6TcpFlow flow;
+	uint32_t seq;
+} XfwIpv6SynKey;
+
+STATIC_ASSERT(sizeof(XfwIpv4SynKey) == 16, "Unexpected IPv4 SYN key size");
+STATIC_ASSERT(sizeof(XfwIpv6SynKey) == 40, "Unexpected IPv6 SYN key size");
+
 /*
  * First-stage map:
  *
@@ -107,9 +126,16 @@ typedef struct XfwSynRetry {
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
 	__uint(max_entries, XFW_SYN_PENDING_MAX_ENTRIES);
-	__type(key, uint64_t);
+	__type(key, XfwIpv4SynKey);
 	__type(value, XfwSynPending);
-} MAP_SYN_PENDING_REF SEC(".maps");
+} MAP_SYN_STAGE1_IPV4_REF SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, XFW_SYN_PENDING_MAX_ENTRIES);
+	__type(key, XfwIpv6SynKey);
+	__type(value, XfwSynPending);
+} MAP_SYN_STAGE1_IPV6_REF SEC(".maps");
 
 /*
  * Second-stage map:
@@ -120,9 +146,16 @@ struct {
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
 	__uint(max_entries, XFW_SYN_RETRY_MAX_ENTRIES);
-	__type(key, uint64_t);
+	__type(key, XfwIpv4SynKey);
 	__type(value, XfwSynRetry);
-} MAP_SYN_RETRY_REF SEC(".maps");
+} MAP_SYN_STAGE2_IPV4_REF SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, XFW_SYN_RETRY_MAX_ENTRIES);
+	__type(key, XfwIpv6SynKey);
+	__type(value, XfwSynRetry);
+} MAP_SYN_STAGE2_IPV6_REF SEC(".maps");
 
 static __always_inline bool
 xfw_is_valid_initial_syn(const struct tcphdr *th)
@@ -134,38 +167,6 @@ xfw_is_valid_initial_syn(const struct tcphdr *th)
 	return (tcp_flags & mask) == XFW_BIT_SYN;
 }
 
-static __always_inline void
-xfw_hash_ipv4_syn(const struct iphdr *ipv4, const struct tcphdr *th,
-		  uint64_t salt, uint64_t *hash)
-{
-	XfwIpv4SynTuple tuple;
-
-	tuple.src_ip = ipv4->saddr;
-	tuple.dst_ip = ipv4->daddr;
-	tuple.seq = th->seq;
-	tuple.sport = th->source;
-	tuple.dport = th->dest;
-
-	*hash = syn_xxh64_ipv4(&tuple, salt);
-}
-
-static __always_inline void
-xfw_hash_ipv6_syn(const struct ipv6hdr *ipv6,
-		  const struct tcphdr *th,
-		  uint64_t salt, uint64_t *hash)
-{
-	XfwIpv6SynTuple tuple;
-
-	__builtin_memcpy(tuple.src_ip, &ipv6->saddr, sizeof(tuple.src_ip));
-	__builtin_memcpy(tuple.dst_ip, &ipv6->daddr, sizeof(tuple.dst_ip));
-
-	tuple.seq = th->seq;
-	tuple.sport = th->source;
-	tuple.dport = th->dest;
-
-	*hash = syn_xxh64_ipv6(&tuple, salt);
-}
-
 /*
  * Move a tuple from the large pending map to the smaller validated map.
  *
@@ -173,7 +174,7 @@ xfw_hash_ipv6_syn(const struct ipv6hdr *ipv6,
  * not remove the only existing protection state.
  */
 static __always_inline bool
-xfw_promote_syn(uint64_t hash, uint64_t now,
+xfw_promote_syn(const XfwSynDropCtx *drop_ctx, uint64_t now,
 		const XfwRulesCfgTcpSynDrop *cfg)
 {
 	XfwSynRetry retry = {
@@ -194,14 +195,14 @@ xfw_promote_syn(uint64_t hash, uint64_t now,
 	 * dropped conservatively instead of destroying the existing protection
 	 * state.
 	 */
-	if (bpf_map_update_elem(&MAP_SYN_RETRY_REF, &hash, &retry,
-				BPF_NOEXIST))
+	if (bpf_map_update_elem(drop_ctx->stage2_map, drop_ctx->key,
+				&retry, BPF_NOEXIST))
 	{
 		XFW_CTX_DBG("Failed to add SYN tuple to the syn retry table");
 		return false;
 	}
 
-	bpf_map_delete_elem(&MAP_SYN_PENDING_REF, &hash);
+	bpf_map_delete_elem(drop_ctx->stage1_map, drop_ctx->key);
 
 	return true;
 }
@@ -250,7 +251,7 @@ xfw_promote_syn(uint64_t hash, uint64_t now,
  */
 static __always_inline int
 xfw_process_pending_filter(const XfwGlobalCtx *ctx, XfwSynPending *entry,
-			   uint64_t hash, uint64_t now)
+			   const XfwSynDropCtx *drop_ctx, uint64_t now)
 {
 	uint64_t state =
 		__sync_val_compare_and_swap(&entry->state,
@@ -286,7 +287,7 @@ xfw_process_pending_filter(const XfwGlobalCtx *ctx, XfwSynPending *entry,
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
 
-	if (!xfw_promote_syn(hash, now, syn_cfg)) {
+	if (!xfw_promote_syn(drop_ctx, now, syn_cfg)) {
 		/*
 		 * Restore PENDING entry state if no retry entry was created,
 		 * otherwise this entry was removed from the LRU hash table.
@@ -304,7 +305,7 @@ xfw_process_pending_filter(const XfwGlobalCtx *ctx, XfwSynPending *entry,
 }
 
 static __always_inline bool
-xfw_start_validation(uint64_t hash, uint64_t now)
+xfw_start_validation(const XfwSynDropCtx *drop_ctx, uint64_t now)
 {
 	XfwSynPending pending = {
 		.jtxtstamp = now,
@@ -323,7 +324,7 @@ xfw_start_validation(uint64_t hash, uint64_t now)
 	 * The current SYN is always dropped after this function is called, so
 	 * -EEXIST does not require any special handling.
 	 */
-	if (bpf_map_update_elem(&MAP_SYN_PENDING_REF, &hash,
+	if (bpf_map_update_elem(drop_ctx->stage1_map, drop_ctx->key,
 				&pending, BPF_NOEXIST))
 	{
 		XFW_CTX_DBG("Failed to add SYN tuple to the syn pending table");
@@ -396,11 +397,10 @@ xfw_start_validation(uint64_t hash, uint64_t now)
  *
  *          now + time_min <= next_syn <= now + max_delay_with_backoff.
  *
- * @hash:  salted hash of the complete TCP SYN tuple
- *         <src_ip, dst_ip, src_port, dst_port, initial_seqno>.
- * @entry: retry-map state for the tuple.
- * @now:   current jiffies value.
- * @cfg:   TCP SYN drop filter configuration.
+ * @ctx:      packet context and TCP SYN drop configuration.
+ * @entry:    retry-map state for the tuple.
+ * @drop_ctx: family-specific maps and complete TCP SYN key.
+ * @now:      current jiffies value.
  *
  * Return `XFW_CTX_CONTINUE` for a valid retransmitted SYN which may be
  * forwarded to upstream, or XDP_DROP when the tuple is blocked or the
@@ -414,7 +414,7 @@ xfw_start_validation(uint64_t hash, uint64_t now)
  */
 static __always_inline int
 xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
-			 uint64_t hash, uint64_t now)
+			 const XfwSynDropCtx *drop_ctx, uint64_t now)
 {
 	uint64_t state =
 		__sync_val_compare_and_swap(&entry->state,
@@ -456,8 +456,9 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 		 * deleting the retry entry would lose all state for this tuple
 		 * and allow the next SYN to start validation from scratch.
 		 */
-		if (xfw_start_validation(hash, now)) {
-			bpf_map_delete_elem(&MAP_SYN_RETRY_REF, &hash);
+		if (xfw_start_validation(drop_ctx, now)) {
+			bpf_map_delete_elem(drop_ctx->stage2_map,
+					    drop_ctx->key);
 			/*
 			 * This SYN is treated as initial SYN. Initial SYNs are
 			 * intentionally dropped silently as part of the normal
@@ -523,30 +524,10 @@ xfw_process_retry_filter(const XfwGlobalCtx *ctx, XfwSynRetry *entry,
 	return XFW_CTX_CONTINUE;
 }
 
-
 static __always_inline int
-tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
+xfw_process_syn_drop_state(const XfwGlobalCtx *ctx,
+			   const XfwSynDropCtx *drop_ctx)
 {
-	if (!xfw_is_valid_initial_syn(th))
-		return XFW_CTX_CONTINUE;
-
-	uint64_t hash, hash_salt = ctx->cfg->rules.tcp_syn_drop.hash_salt;
-	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
-		struct iphdr *iph4 =
-			XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr);
-
-		XFW_ASSERT((void *)(iph4 + 1) <= ctx->hdr_cur.end);
-		xfw_hash_ipv4_syn(iph4, th, hash_salt, &hash);
-	} else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
-		struct ipv6hdr *iph6 =
-			XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
-
-		XFW_ASSERT((void *)(iph6 + 1) <= ctx->hdr_cur.end);
-		xfw_hash_ipv6_syn(iph6, th, hash_salt, &hash);
-	} else {
-		return XFW_CTX_CONTINUE;
-	}
-
 	/*
 	 * Check the retry map first.
 	 *
@@ -575,9 +556,11 @@ tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	 * advanced validation state and avoids processing a stale pending
 	 * entry.
 	 */
-	XfwSynRetry *retry = bpf_map_lookup_elem(&MAP_SYN_RETRY_REF, &hash);
+	XfwSynRetry *retry =
+		bpf_map_lookup_elem(drop_ctx->stage2_map, drop_ctx->key);
 	if (retry)
-		return xfw_process_retry_filter(ctx, retry, hash, ctx->ts_jiff);
+		return xfw_process_retry_filter(ctx, retry, drop_ctx,
+						ctx->ts_jiff);
 
 	/*
 	 * The tuple was not found in the retry map, therefore either this is
@@ -590,12 +573,13 @@ tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	 * tuple is permanently blocked until it is evicted from the LRU map.
 	 */
 	XfwSynPending *pending =
-		bpf_map_lookup_elem(&MAP_SYN_PENDING_REF, &hash);
+		bpf_map_lookup_elem(drop_ctx->stage1_map,
+				    drop_ctx->key);
 	if (pending)
-		return xfw_process_pending_filter(ctx, pending, hash,
+		return xfw_process_pending_filter(ctx, pending, drop_ctx,
 						  ctx->ts_jiff);
 
-	if (!xfw_start_validation(hash, ctx->ts_jiff))
+	if (!xfw_start_validation(drop_ctx, ctx->ts_jiff))
 		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYN_BLOCKED,
 					     ": %s", "pending entry"
 					     " already exists, possibly due"
@@ -609,6 +593,55 @@ tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	 * of malicious traffic.
 	 */
 	return XDP_DROP;
+}
+
+static __always_inline int
+tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
+{
+	if (!xfw_is_valid_initial_syn(th))
+		return XFW_CTX_CONTINUE;
+
+	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
+		XfwIpv4SynKey key;
+		const XfwSynDropCtx drop_ctx = {
+			.stage1_map = &MAP_SYN_STAGE1_IPV4_REF,
+			.stage2_map = &MAP_SYN_STAGE2_IPV4_REF,
+			.key = &key,
+		};
+		struct iphdr *iph4 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct iphdr);
+
+		XFW_ASSERT((void *)(iph4 + 1) <= ctx->hdr_cur.end);
+
+		key.flow.clnt_ip = iph4->saddr;
+		key.flow.srv_ip = iph4->daddr;
+		key.flow.clnt_port = th->source;
+		key.flow.srv_port = th->dest;
+		key.seq = th->seq;
+
+		return xfw_process_syn_drop_state(ctx, &drop_ctx);
+	} else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
+		XfwIpv6SynKey key;
+		const XfwSynDropCtx drop_ctx = {
+			.stage1_map = &MAP_SYN_STAGE1_IPV6_REF,
+			.stage2_map = &MAP_SYN_STAGE2_IPV6_REF,
+			.key = &key,
+		};
+		struct ipv6hdr *iph6 =
+			XFW_PKT_PTR(ctx, ctx->ip_off, struct ipv6hdr);
+
+		XFW_ASSERT((void *)(iph6 + 1) <= ctx->hdr_cur.end);
+
+		memcpy(key.flow.clnt_ip, &iph6->saddr, sizeof(key.flow.clnt_ip));
+		memcpy(key.flow.srv_ip, &iph6->daddr, sizeof(key.flow.srv_ip));
+		key.flow.clnt_port = th->source;
+		key.flow.srv_port = th->dest;
+		key.seq = th->seq;
+
+		return xfw_process_syn_drop_state(ctx, &drop_ctx);
+	}
+
+	return XFW_CTX_CONTINUE;
 }
 
 #undef BANNER
