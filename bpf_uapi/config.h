@@ -59,7 +59,6 @@ typedef struct XfwRulesCfgIpProto {
 } XfwRulesCfgIpProto;
 
 typedef struct XfwRulesCfgTcpSynDrop {
-	uint64_t	hash_salt;
 	uint64_t	time_min_jiff;
 	uint64_t	max_delay_jiff;
 	uint64_t	block_timeout_jiff;

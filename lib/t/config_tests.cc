@@ -20,7 +20,7 @@ const std::string max_tfw_out = "tfw{srv_group static{ {server 192.168.1.1}}}";
 const std::string max_tl = "tl {\nsome\nprogram\nhere\n}";
 const std::string max_xfw = "xfw {"
 	"tcp_syncookies passive_timer=1 flood_timer=5;"
-	"tcp_syn_drop hash_salt=12345 time_min=500 max_delay=3000 retry_count=3 block_timeout=0;"
+	"tcp_syn_drop time_min=500 max_delay=3000 retry_count=3 block_timeout=0;"
 	"tcp_anomaly_filter; tcp_auth_filter/del;"
 	"ratelimit=my_ratelimit pps=300 bps=1024;"
 	"icmp ip6 : ratelimit=my_ratelimit { 13, 30 }"
@@ -94,7 +94,6 @@ TEST(ParsesFullConfig, HandlesMaximumData)
 
 	auto &tcp_syn_drop = conf->prvt->xfw_conf.value().tcp_syn_drop_;
 	ASSERT_TRUE(tcp_syn_drop.has_value());
-	ASSERT_EQ(tcp_syn_drop->hash_salt_, 12345);
 	ASSERT_EQ(tcp_syn_drop->time_min_ms_, 500);
 	ASSERT_EQ(tcp_syn_drop->max_delay_ms_, 3000);
 	ASSERT_EQ(tcp_syn_drop->retry_count_, 3);
@@ -397,7 +396,7 @@ TEST(ParsesXfwConfig, WithDeleteTcpSynDrop)
 TEST(ParsesXfwConfig, TcpSynDropUsesDefaultValues)
 {
 	const std::string prog = "xfw {"
-		"tcp_syn_drop hash_salt=12345 retry_count=3;"
+		"tcp_syn_drop retry_count=3;"
 	"}";
 
 	std::unique_ptr<TlProgConf> conf(tcl_parse_full_conf(prog.c_str(), prog.length()));
@@ -410,7 +409,6 @@ TEST(ParsesXfwConfig, TcpSynDropUsesDefaultValues)
 		conf->prvt->xfw_conf->tcp_syn_drop_;
 
 	ASSERT_TRUE(tcp_syn_drop.has_value());
-	EXPECT_EQ(tcp_syn_drop->hash_salt_, 12345);
 	EXPECT_EQ(tcp_syn_drop->time_min_ms_, TCP_SYN_DROP_DEFAULT_MIN_DELAY_MS);
 	EXPECT_EQ(tcp_syn_drop->max_delay_ms_, TCP_SYN_DROP_DEFAULT_MAX_DELAY_MS);
 	EXPECT_EQ(tcp_syn_drop->retry_count_, 3);
@@ -426,7 +424,7 @@ TEST(ParsesXfwConfig, TcpSynDropUsesDefaultValues)
 TEST(ParsesXfwConfig, TcpSynDropAcceptsEqualWindowBounds)
 {
 	const std::string prog = "xfw {"
-		"tcp_syn_drop hash_salt=1 time_min=500 max_delay=500 retry_count=1;"
+		"tcp_syn_drop time_min=500 max_delay=500 retry_count=1;"
 	"}";
 
 	std::unique_ptr<TlProgConf> conf(
@@ -462,16 +460,14 @@ INSTANTIATE_TEST_SUITE_P(
 	RejectsInvalidTcpSynDrop,
 	::testing::Values(
 		/*
-		 * hash_salt and retry_count do not have defaults and
-		 * therefore must be specified explicitly.
+		 * retry_count has no default and must be specified explicitly.
 		 */
-		"retry_count=3",
-		"hash_salt=12345",
+		"",
 		/*
 		 * retry_count defines how many retransmitted SYNs may
 		 * pass before the tuple is blocked.
 		 */
-		"hash_salt=12345 retry_count=0",
+		"retry_count=0",
 		/*
 		 * The valid retransmission window is:
 		 *
@@ -480,13 +476,13 @@ INSTANTIATE_TEST_SUITE_P(
 		 *
 		 * Therefore, time_min must not exceed max_delay.
 		 */
-		"hash_salt=12345 time_min=3001 "
-			"max_delay=3000 retry_count=3",
+		"time_min=3001 max_delay=3000 retry_count=3",
 		/* Unknown attributes must be rejected. */
-		"hash_salt=12345 retry_count=3 unknown=1",
+		"retry_count=3 unknown=1",
+		"hash_salt=12345 retry_count=3",
 		/* Invalid edit operations must be rejected. */
-		"/add hash_salt=12345 retry_count=3",
-		"/replace hash_salt=12345 retry_count=3"
+		"/add retry_count=3",
+		"/replace retry_count=3"
 	)
 );
 
@@ -552,7 +548,6 @@ TEST(SerializesConfig, WithMaximumData)
 	ASSERT_EQ(xfw_cfg->syncookie()->passive_timer(), 1);
 	ASSERT_EQ(xfw_cfg->syncookie()->flood_timer(), 5);
 	ASSERT_TRUE(xfw_cfg->tcp_syn_drop());
-	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->hash_salt(), 12345);
 	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->time_min(), 500);
 	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->max_delay(), 3000);
 	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->retry_count(), 3);

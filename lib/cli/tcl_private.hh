@@ -27,7 +27,6 @@ struct Syncookie {
 };
 
 struct TcpSynDrop {
-	uint64_t	hash_salt_ = 0;
 	uint64_t	time_min_ms_ = 0;
 	uint64_t	max_delay_ms_ = 0;
 	uint64_t	block_timeout_ms_ = 0;

@@ -127,7 +127,7 @@ async def test_first_syn_dropped_second_syn_passed(
 
     await xfw.rules_set(
         "xfw { "
-        f"tcp_syn_drop hash_salt=12345 "
+        "tcp_syn_drop "
         f"time_min={time_min} "
         f"max_delay={max_delay} "
         f"retry_count=3 "
@@ -165,7 +165,7 @@ async def test_second_syn_before_time_min_blocks_tuple(
 
     await xfw.rules_set(
         "xfw { "
-        f"tcp_syn_drop hash_salt=12345 "
+        "tcp_syn_drop "
         f"time_min={time_min} "
         f"max_delay={max_delay} "
         f"retry_count=3 "
@@ -207,7 +207,7 @@ async def test_second_syn_after_max_delay_blocks_tuple(
 
     await xfw.rules_set(
         "xfw { "
-        f"tcp_syn_drop hash_salt=12345 "
+        "tcp_syn_drop "
         f"time_min={time_min} "
         f"max_delay={max_delay} "
         f"retry_count=3 "
@@ -249,7 +249,7 @@ async def test_retry_count_blocks_following_syns(
 
     await xfw.rules_set(
         "xfw { "
-        f"tcp_syn_drop hash_salt=12345 "
+        "tcp_syn_drop "
         f"time_min={time_min} "
         f"max_delay={max_delay} "
         f"retry_count={retry_count} "
@@ -301,7 +301,7 @@ async def test_finite_block_timeout_restarts_validation(
 
     await xfw.rules_set(
         "xfw { "
-        f"tcp_syn_drop hash_salt=12345 "
+        "tcp_syn_drop "
         f"time_min={time_min} "
         f"max_delay={max_delay} "
         f"retry_count={retry_count} "
@@ -373,7 +373,7 @@ async def test_retry_max_delay_exponential_backoff(
 
     await xfw.rules_set(
         "xfw { "
-        f"tcp_syn_drop hash_salt=12345 "
+        "tcp_syn_drop "
         f"time_min={time_min} "
         f"max_delay={max_delay} "
         f"retry_count=5 "
@@ -420,7 +420,6 @@ async def test_dst_rules_with_tcp_syn_drop_enabled(
             defaults {{ dst: allow; }}
 
             tcp_syn_drop
-                hash_salt=12345
                 time_min={time_min}
                 max_delay={max_delay}
                 retry_count=3
@@ -462,7 +461,7 @@ async def test_syn_ratelimit_with_syn_drop(
 
             tcp_flags syn : ratelimit=test;
 
-            tcp_syn_drop hash_salt=12345
+            tcp_syn_drop
                 time_min={time_min}
                 max_delay={max_delay}
                 retry_count=3
