@@ -287,6 +287,7 @@ class XFW(NetworkStateful):
         self.second_config = False
         return None
 
+    @retry_on_failure(ValueError, max_time=5)
     async def __rules_push(self, cmd: str):
         code, stdout, stderr = await run_cmd(
             cmd=f"LD_LIBRARY_PATH={self.build_dir}/lib  ./bin/tfw push "
