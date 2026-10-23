@@ -415,6 +415,24 @@ class NetworkStateful(Stateful, abc.ABC):
 
         return stdout.replace("\n", "")
 
+    async def setup_static_neighbors(self, remote_side: "NetworkStateful") -> None:
+        pairs = [(self, remote_side), (remote_side, self)]
+
+        for node, neighbor in pairs:
+            base_cmd = f"ip netns exec {node.namespace} " if node.namespace else ""
+            mac = await neighbor.get_mac_address()
+
+            ip_address = neighbor.ipv4 if neighbor.is_ip4 else neighbor.ipv6
+            ip_flag = "" if neighbor.is_ip4 else "-6 "
+            cmd = (
+                f"{base_cmd}ip {ip_flag}neigh replace {ip_address} lladdr "
+                f"{mac} nud permanent dev {node.network_interface}"
+            )
+
+            code, stdout, stderr = await run_cmd(cmd, self.logger, log_output=True)
+
+            assert code == 0, f"Failed to set static neighbor. Cmd: {cmd}. Error: {stderr}"
+
 
 class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
     socket_family: int
