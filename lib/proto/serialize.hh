@@ -9,7 +9,7 @@
 #include "../cli/tempesta_client.hh"
 #include "generated/proto.grpc.fb.h"
 
-const uint32_t ProtoVersion = 0;
+const uint32_t ProtoVersion = 1;
 
 flatbuffers::grpc::Message<TempestaRPC::Request>
 build_set_config_request(const TlProgConf &conf);

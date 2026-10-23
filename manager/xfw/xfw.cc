@@ -131,6 +131,10 @@ Xfw::load_geo_entry(XfwConfig::NetGeo &entry, bool includeIp4, bool includeIp6) 
 void
 Xfw::set_config(XfwConfig &&config)
 {
+	std::lock_guard lock(update_mutex_);
+	synproxy_.validate(config.synproxy_filter_);
+	if (config.evaluation_mode_.enabled_ && !config.synproxy_filter_.empty())
+		throw UpdateError("SYN proxy is not allowed in evaluation mode");
 	if (config.dns_filter_.enabled_ && !has_pinned_map(MAP_DNS_EGR_FD_STR))
 		throw UpdateError("dns_filter requires DNS mode in the loaded "
 				  "BPF programs");
@@ -191,6 +195,9 @@ Xfw::set_config(XfwConfig &&config)
 
 	if (!config_.has_value())
 		maps_manager_.turn_filtration_on();
+
+	/* Commit the coupled nft/BPF subsystem after other map updates. */
+	synproxy_.set_config(config.synproxy_filter_);
 
 	// At this point all kernel updates completed successfully,
 	// so we can safely replace the full userspace configuration.

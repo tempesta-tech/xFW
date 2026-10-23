@@ -38,6 +38,25 @@ serialize(flatbuffers::grpc::MessageBuilder &builder, const XfwConf &xfw)
 					    xfw.syncookie_.value().flood_timer_);
 	}
 
+	// Create SYN-proxy destination scope.
+	flatbuffers::Offset<TempestaRPC::Synproxy> synproxy;
+	if (xfw.synproxy_) {
+		const auto &rule = *xfw.synproxy_;
+		std::vector<flatbuffers::Offset<TempestaRPC::Net4>> nets4;
+		std::vector<flatbuffers::Offset<TempestaRPC::Net6>> nets6;
+		for (const auto &net : rule.net4s_)
+			nets4.push_back(CreateNet4(builder,
+				builder.CreateVector(net.addr_, sizeof(net.addr_)),
+				net.port_, net.prefix_));
+		for (const auto &net : rule.net6s_)
+			nets6.push_back(CreateNet6(builder,
+				builder.CreateVector(net.addr_, sizeof(net.addr_)),
+				net.port_, net.prefix_));
+		synproxy = CreateSynproxy(builder,
+			static_cast<SynproxyOperation>(rule.operation_),
+			builder.CreateVector(nets4), builder.CreateVector(nets6));
+	}
+
 	// Create TcpFlags.
 	std::vector<flatbuffers::Offset<TempestaRPC::TcpFlagsFilter>> tcp_flags;
 	if (!xfw.tcp_flags_.empty()) {
@@ -167,7 +186,8 @@ serialize(flatbuffers::grpc::MessageBuilder &builder, const XfwConf &xfw)
 			    xfw.icmp_rules_.empty() ? 0 : builder.CreateVector(icmp_rules),
 			    xfw.ratelimits_.empty() ? 0: builder.CreateVector(ratelimits),
 			    xfw.defaults_.empty() ? 0 : builder.CreateVector(defaults),
-			    xfw.tcp_anomaly_.has_value() ? tcp_anomaly: 0);
+			    xfw.tcp_anomaly_.has_value() ? tcp_anomaly: 0,
+			    xfw.synproxy_.has_value() ? synproxy : 0);
 }
 
 flatbuffers::grpc::Message<TempestaRPC::Request>

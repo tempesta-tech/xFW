@@ -56,6 +56,15 @@ public:
 		uint64_t	flood_timer_ = 1;
 	};
 
+	struct SynproxySelector {
+		std::array<uint8_t, 16> addr_{};
+		uint16_t port_ = 0; /* Host byte order; zero selects all TCP ports. */
+		uint8_t prefix_ = 0;
+		bool ipv6_ = false;
+		auto operator<=>(const SynproxySelector &) const = default;
+	};
+	using SynproxyFilter = std::set<SynproxySelector>;
+
 	struct TcpFlagFilter
 	{
 		RatelimitIndex ratelimit_index_ = -1;
@@ -283,6 +292,7 @@ public:
 	EvaluationMode			evaluation_mode_;
 	std::optional<IpProtoFilter>	ip_proto_filter_;
 	std::optional<SynCookieFilter>	syncookie_filter_;
+	SynproxyFilter			synproxy_filter_;
 	std::optional<TcpFlagFilter>	tcp_syn_flag_filter_;
 	std::optional<TcpFlagFilter>	tcp_rst_flag_filter_;
 	TcpAnomalyFilter		anomaly_filter_;

@@ -20,4 +20,5 @@ Depends:
     libbpf-tools,
     libgtest-dev,
     xdp-tools
+Recommends: nftables
 Description: eBPF based comprehensive DDoS and bot protection network filter.
