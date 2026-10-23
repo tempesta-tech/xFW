@@ -329,6 +329,30 @@ class LocalVeth(BaseNetwork):
             ),
         )
 
+    async def disable_mld(self) -> None:
+        self.logger.info("disabling MLD unsolicited reports to prevent IPv6 background noise")
+
+        base_rules = [
+            "ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 131 -j DROP",
+            "ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 133 -j DROP",
+            "ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 143 -j DROP",
+        ]
+
+        iptables_cmds = []
+        iptables_cmds.extend(base_rules)
+
+        client_ns = self.config.client_namespace
+        if client_ns:
+            iptables_cmds.extend([f"ip netns exec {client_ns} {rule}" for rule in base_rules])
+
+        server_ns = self.config.backend_namespace
+        if server_ns:
+            iptables_cmds.extend([f"ip netns exec {server_ns} {rule}" for rule in base_rules])
+
+        await asyncio.gather(
+            *[run_cmd(cmd, self.logger, log_output=False) for cmd in iptables_cmds]
+        )
+
 
 class LocalGateVeth(LocalVeth):
 
