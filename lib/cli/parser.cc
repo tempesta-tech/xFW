@@ -282,6 +282,23 @@ protected:
 		std::optional<uint32_t>		p_timer_;
 	};
 
+	class TcpSynproxySection final : public Section {
+	public:
+		TcpSynproxySection(XfwConf &conf)
+			: Section("tcp_synproxy", {},
+				  std::make_unique<EditProcessor>()), conf_(conf)
+		{}
+
+	private:
+		bool process_attributes() override { return false; }
+		std::pair<bool, std::shared_ptr<LineConsumer>>
+		process_body() override;
+		void commit() override;
+		XfwConf	&conf_;
+		Synproxy rule_;
+		bool body_seen_ = false;
+	};
+
 	class RatelimitSection final: public Section
 	{
 	public:
@@ -460,6 +477,8 @@ XfwSection::process_body()
 		return {true, std::make_shared<TcpAuthSection>(xfw_conf_)};
 	else if (name == "tcp_syncookies"sv)
 		return {true, std::make_shared<TcpSyncookieSection>(xfw_conf_)};
+	else if (name == "tcp_synproxy"sv)
+		return {true, std::make_shared<TcpSynproxySection>(xfw_conf_)};
 	else if (name == "net"sv)
 		return {true, std::make_shared<ProtectedNetSection>(xfw_conf_)};
 	else if (name == "icmp"sv)
@@ -609,6 +628,86 @@ read_port(std::string_view lv)
 		throw Except("Port must be 0 < {} <= {}", port, MAX_PORTS);
 
 	return port;
+}
+
+std::pair<bool, std::shared_ptr<LineConsumer>>
+XfwSection::TcpSynproxySection::process_body()
+{
+	body_seen_ = true;
+	auto token = consume_until_delimeters();
+	if (token.empty())
+		return {false, nullptr};
+
+	std::string_view address, tail;
+	if (token.front() == '[') {
+		auto end = token.find(']');
+		if (end == std::string_view::npos)
+			throw Except("Missing ']' in tcp_synproxy selector");
+		address = token.substr(1, end - 1);
+		tail = token.substr(end + 1);
+	} else {
+		auto slash = token.find('/');
+		auto colon = token.find(':');
+		if (colon != token.rfind(':'))
+			colon = std::string_view::npos;
+		auto end = std::min(slash, colon);
+		address = token.substr(0, end);
+		if (end != std::string_view::npos)
+			tail = token.substr(end);
+	}
+	auto ip = convert_ip(address);
+	uint8_t prefix = ip.is_v4() ? 32 : 128;
+	uint16_t port = 0;
+	if (tail.starts_with('/')) {
+		auto end = tail.find(':');
+		auto value = parsing_helpers::parse_as<uint32_t>(
+			tail.substr(1, end == std::string_view::npos ? end : end - 1));
+		if (value > prefix)
+			throw Except("Invalid tcp_synproxy prefix length {}", value);
+		prefix = value;
+		tail = end == std::string_view::npos ? std::string_view{} : tail.substr(end);
+	}
+	if (tail.starts_with(':')) {
+		port = read_port(tail.substr(1));
+		tail = {};
+	}
+	if (!tail.empty())
+		throw Except("Invalid tcp_synproxy selector '{}'", token);
+	if (ip.is_v4()) {
+		Net4 net{};
+		auto bytes = ip.to_v4().to_bytes();
+		std::copy(bytes.begin(), bytes.end(), net.addr_);
+		net.prefix_ = prefix;
+		net.port_ = port;
+		rule_.net4s_.push_back(net);
+	} else {
+		Net6 net{};
+		auto bytes = ip.to_v6().to_bytes();
+		std::copy(bytes.begin(), bytes.end(), net.addr_);
+		net.prefix_ = prefix;
+		net.port_ = port;
+		rule_.net6s_.push_back(net);
+	}
+	if (peek() == ',')
+		consume(1);
+	return {true, shared_from_this()};
+}
+
+void
+XfwSection::TcpSynproxySection::commit()
+{
+	if (!section_alias_.empty() || conf_.synproxy_)
+		throw Except("Only one unnamed tcp_synproxy section is allowed");
+	auto operation = edit_processor_->get_result().value_or(
+		EditProcessor::EditType::REPLACE);
+	if (operation == EditProcessor::EditType::ADD)
+		rule_.operation_ = Synproxy::Operation::Add;
+	else if (operation == EditProcessor::EditType::DELETE)
+		rule_.operation_ = Synproxy::Operation::Delete;
+	if (rule_.net4s_.empty() && rule_.net6s_.empty()
+	    && (body_seen_ || operation != EditProcessor::EditType::DELETE))
+		throw Except("tcp_synproxy requires a nonempty destination scope");
+	conf_.synproxy_ = std::move(rule_);
 }
 
 std::optional<uint16_t>

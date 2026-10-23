@@ -79,9 +79,9 @@ techniques, observability, and performance evaluation.
 
 - **Volumetric flood mitigation:** TCP SYN, ACK, RST, FIN, NULL, XMAS, and other
   flag floods; UDP floods; and ICMPv4/ICMPv6 floods.
-- **TCP defenses:** high-performance SYN cookies in host mode, SYN/RST rate
-  limiting in gateway mode, handshake-aware authentication, and configurable
-  anomaly checks.
+- **TCP defenses:** high-performance SYN cookies in host mode, a draft IPv4/IPv6
+  SYN proxy for selected gateway prefixes and ports, SYN/RST rate limiting,
+  handshake-aware authentication, and configurable anomaly checks.
 - **DNS protection:** protects authoritative and recursive DNS over UDP/53 from
   malformed traffic, reflection, and amplification, including unsolicited or
   oversized responses and anomalous queries.
@@ -250,6 +250,78 @@ the `tcp_syncookies` rule cannot be enabled together.
 The repository also includes a [native-XDP gateway configuration](examples/xfw-native-gate.json),
 [DNS protection rules](examples/xfw-dns-rules.conf), and more context in the
 [step-by-step policy guide](https://tempesta-tech.com/tempesta-escudo/knowledge-base/Quick-start/).
+
+### Gateway SYN proxy (draft)
+
+The SYN proxy answers SYNs in XDP and hands validated cookie ACKs to Linux
+SYNPROXY. Linux establishes the backend connection and translates TCP sequence
+numbers, ACKs, SACK blocks and timestamps. Both directions must traverse the
+same gateway. This draft supports address-preserving routing in the default
+conntrack zone; NAT on protected flows and GRE inner-flow proxying are not
+supported.
+
+Opt in when starting a gateway, using the real interface names:
+
+```json
+{
+    "devices": "ens3 ens4",
+    "devices-mode": "native",
+    "deployment-mode": "gw",
+    "synproxy": true,
+    "dns": false
+}
+```
+
+Opt-in prepares conntrack and nftables but does not activate protection. Push
+[SYN-proxy rules](examples/xfw-synproxy-rules.conf) with explicit destinations:
+
+```text
+xfw {
+    tcp_synproxy {
+        192.0.2.0/24:443
+        [2001:db8::]/48:443
+        198.51.100.10
+    }
+}
+```
+
+An address or prefix without a port selects all TCP ports. A single port may
+qualify an address or prefix; port ranges are not supported. Overlapping
+selectors form a union. In an `xfw` configuration sent with `tfw push --patch`, use
+`tcp_synproxy/add { ... }` to add selectors, `tcp_synproxy/del { ... }` to remove
+exact selectors, or `tcp_synproxy/del;` to stop new challenges. Deleting a child
+selector does not exclude it from an encompassing prefix. A full configuration
+that omits `tcp_synproxy` also disables it.
+
+Source rules have the same position as for host SYN cookies: explicit source
+ALLOW bypasses the challenge, while blocks and rate limits retain their normal
+behavior. SYN proxy cannot be enabled in host, scrubbing or evaluation mode.
+Existing host `tcp_syncookies` configuration is unchanged.
+
+The fixed advertisements match current host cookies: IPv4 MSS 536, IPv6 MSS
+1220, window scale 7 and TTL/hop limit 64. Protected backends must be compatible
+with window scale 7. Timestamp-capable clients retain WSCALE, SACK and ECN;
+without timestamps, negotiation falls back to MSS only. SYN data is rejected.
+
+Preparation requires `nftables`, conntrack, SYNPROXY, IPv6 and conntrack BTF
+kfunc support, including module BTF when conntrack is modular. It sets
+`net.netfilter.nf_conntrack_tcp_loose=0` for the network namespace, which can
+affect other forwarded traffic. Connections established before preparation may
+need to reconnect. Include VLAN interfaces before preparation; topology changes
+require re-preparing the gateway.
+
+Runtime disable keeps outstanding cookie handoff for at least 120 seconds and
+allows established connections to drain. Closing tuples follow Linux conntrack
+retention before reuse. Manager restart preserves and reconciles SYN-proxy state.
+Full datapath reload requires the normal policy push again. Full stop restores
+the saved conntrack setting when still owned, preserves conntrack entries, and
+retains a dormant owned nftables object needed for live TCP timestamp translation.
+Detaching XDP ends SYN protection. CLI, client library and daemon must be upgraded
+together because this feature uses RPC protocol version 1.
+
+The draft has build-only validation; verifier acceptance, functional behavior
+and PPS/CPS remain untested. Spoofed SYNs and invalid cookie ACKs stop in XDP;
+accepted traffic still pays for Linux forwarding and conntrack translation.
 
 ### Daily operations
 

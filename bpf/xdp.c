@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #define BPF_PROGRAM
+#define BPF_NO_KFUNC_PROTOTYPES
 #define XFW_XDP
 #define BANNER "xdp"
 
@@ -19,6 +20,7 @@
 #include "tcp_anomaly_filter.h"
 #include "tcp_auth.h"
 #include "tcp_syncookies.h"
+#include "tcp_synproxy.h"
 
 #define SHADOW_SRC_IP_MAP(basename, key_t)				\
 	SHADOW_MAP(basename, BPF_MAP_TYPE_LPM_TRIE, XFW_MAX_SRC_IP_RULES, \
@@ -543,6 +545,28 @@ static __always_inline int
 tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
 		 const XfwSockAddr *addr)
 {
+	/* Source ALLOW has already bypassed this stage, as with host cookies. */
+	if (deployment_mode == XFW_MODE_GW && synproxy_mode) {
+		int scope = tcp_synproxy_scope_match(ctx, th);
+		if (scope < 0)
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYNPROXY_FAILED);
+		if (scope) {
+			if (th->fin)
+				count_traffic_stat(ctx, XFW_FIN);
+			else if (th->rst) {
+				count_traffic_stat(ctx, XFW_RST);
+				CHAIN(rst_rlimit, ctx);
+			} else if (th->syn && th->ack)
+				count_traffic_stat(ctx, XFW_SYNACK);
+			else if (th->syn) {
+				count_traffic_stat(ctx, XFW_SYN);
+				CHAIN(syn_rlimit, ctx);
+			} else if (th->ack)
+				count_traffic_stat(ctx, XFW_ACK);
+			return tcp_synproxy_filter(ctx, th, addr);
+		}
+	}
+
 	/* FIN: track connection for closing. */
 	if (th->fin) {
 		count_traffic_stat(ctx, XFW_FIN);

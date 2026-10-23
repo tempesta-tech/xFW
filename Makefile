@@ -120,6 +120,8 @@ install:
 	@echo "Installing executables to $(BINDIR)"
 	@install -d -m 755 ${BINDIR} ${SBINDIR} ${LIBDIR} ${INCLUDEDIR}
 	install -m 755 xfwctl $(BINDIR)
+	install -d -m 755 $(LIBDIR)/xfw
+	install -m 644 scripts/xfw_synproxy.sh $(LIBDIR)/xfw/
 	@for dir in $(SUBDIRS); do \
 		echo "Installing $$dir..."; \
 		$(MAKE) -C $$dir install; \
