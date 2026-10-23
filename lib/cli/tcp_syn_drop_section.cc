@@ -14,8 +14,8 @@ TcpSynDropSection::process_attributes()
 	using namespace std::literals;
 
 	auto name = peek_until_delimeters();
-	if (name == "time_min") {
-		time_min_ms_ = consume_typed_assignment<uint64_t>(name);
+	if (name == "min_delay") {
+		min_delay_ms_ = consume_typed_assignment<uint64_t>(name);
 		return true;
 	}
 	else if (name == "max_delay") {
@@ -61,8 +61,8 @@ TcpSynDropSection::commit()
 			"tcp_syn_drop: 'retry_count' must be greater than zero."
 		);
 
-	const uint64_t time_min_ms =
-		time_min_ms_.value_or(TCP_SYN_DROP_DEFAULT_MIN_DELAY_MS);
+	const uint64_t min_delay_ms =
+		min_delay_ms_.value_or(TCP_SYN_DROP_DEFAULT_MIN_DELAY_MS);
 
 	const uint64_t max_delay_ms =
 		max_delay_ms_.value_or(TCP_SYN_DROP_DEFAULT_MAX_DELAY_MS);
@@ -73,17 +73,17 @@ TcpSynDropSection::commit()
 	/*
 	 * The valid retransmission window is defined as:
 	 *
-	 *     stored_time + time_min <= now <= stored_time + max_delay
+	 *     stored_time + min_delay <= now <= stored_time + max_delay
 	 *
-	 * Therefore, time_min must not exceed max_delay, otherwise no
+	 * Therefore, min_delay must not exceed max_delay, otherwise no
 	 * retransmission could ever satisfy the condition.
 	 */
-	if (time_min_ms > max_delay_ms)
+	if (min_delay_ms > max_delay_ms)
 		throw Except(
-			"tcp_syn_drop: 'time_min' ({}) must not exceed "
-			"'max_delay' ({}).", time_min_ms, max_delay_ms
+			"tcp_syn_drop: 'min_delay' ({}) must not exceed "
+			"'max_delay' ({}).", min_delay_ms, max_delay_ms
 		);
 
-	xfw_conf_.tcp_syn_drop_.emplace(time_min_ms, max_delay_ms,
+	xfw_conf_.tcp_syn_drop_.emplace(min_delay_ms, max_delay_ms,
 					block_timeout_ms, retry_count_.value());
 }

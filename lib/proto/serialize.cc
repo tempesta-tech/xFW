@@ -42,7 +42,7 @@ serialize(flatbuffers::grpc::MessageBuilder &builder, const XfwConf &xfw)
 	if (xfw.tcp_syn_drop_.has_value()) {
 		tcp_syn_drop = CreateTcpSynDrop(
 			builder,
-			xfw.tcp_syn_drop_.value().time_min_ms_,
+			xfw.tcp_syn_drop_.value().min_delay_ms_,
 			xfw.tcp_syn_drop_.value().max_delay_ms_,
 			xfw.tcp_syn_drop_.value().block_timeout_ms_,
 			xfw.tcp_syn_drop_.value().retry_count_
