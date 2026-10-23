@@ -209,7 +209,7 @@ xfw_promote_syn(const XfwSynDropCtx *drop_ctx, uint64_t now,
  *
  * Validate the retransmission against the inclusive timing window:
  *
- *     jtxtstamp + time_min_jiff <= now <= jtxtstamp + max_delay_jiff.
+ *     jtxtstamp + min_delay_jiff <= now <= jtxtstamp + max_delay_jiff.
  *
  * A SYN outside this window marks the entry BLOCKED until LRU eviction.
  *
@@ -254,12 +254,12 @@ xfw_process_syn_stage1(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	/*
 	 * The valid retransmission window is:
 	 *
-	 *     jtxtstamp + time_min <= now <= jtxtstamp + max_delay
+	 *     jtxtstamp + min_delay <= now <= jtxtstamp + max_delay
 	 *
 	 * Any SYN outside the window blocks the tuple until LRU eviction.
 	 */
 	const XfwRulesCfgTcpSynDrop *syn_cfg = &ctx->cfg->rules.tcp_syn_drop;
-	if (entry->jtxtstamp + syn_cfg->time_min_jiff > now
+	if (entry->jtxtstamp + syn_cfg->min_delay_jiff > now
 	    || now > entry->jtxtstamp + syn_cfg->max_delay_jiff)
 	{
 		WRITE_ONCE(entry->state, XFW_SYN_STAGE1_STATE_BLOCKED);
@@ -320,7 +320,7 @@ xfw_add_syn_stage1(const XfwSynDropCtx *drop_ctx, uint64_t now)
  *   1. the first SYN was dropped and recorded in the stage 1 map;
  *   2. a retransmitted SYN arrived within the initial valid time window:
  *
- *          stored_jiffies + time_min <= now <= stored_jiffies + max_delay;
+ *          stored_jiffies + min_delay <= now <= stored_jiffies + max_delay;
  *
  *   3. the tuple was removed from the stage 1 map and promoted to the
  *      stage 2 map;
@@ -349,9 +349,9 @@ xfw_add_syn_stage1(const XfwSynDropCtx *drop_ctx, uint64_t now)
  * For a non-blocked entry, validate the current SYN against the
  * retransmission window:
  *
- *          stored_jiffies + time_min <= now <= stored_jiffies + max_delay.
+ *          stored_jiffies + min_delay <= now <= stored_jiffies + max_delay.
  *
- * If the SYN arrives earlier than time_min or later than max_delay, the
+ * If the SYN arrives earlier than min_delay or later than max_delay, the
  * tuple is blocked indefinitely and the packet is dropped.
  *
  * If the timing is valid, count the SYN as a successful retransmission.
@@ -372,7 +372,7 @@ xfw_add_syn_stage1(const XfwSynDropCtx *drop_ctx, uint64_t now)
  * Thus every successfully validated retransmission starts a new timing
  * window:
  *
- *          now + time_min <= next_syn <= now + max_delay_with_backoff.
+ *          now + min_delay <= next_syn <= now + max_delay_with_backoff.
  *
  * @ctx:      packet context and TCP SYN drop configuration.
  * @drop_ctx: family-specific maps and complete TCP SYN key.
@@ -456,7 +456,7 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	}
 
 	const XfwRulesCfgTcpSynDrop *syn_cfg = &ctx->cfg->rules.tcp_syn_drop;
-	if (entry->jtxtstamp + syn_cfg->time_min_jiff > now
+	if (entry->jtxtstamp + syn_cfg->min_delay_jiff > now
 	    || now > entry->jtxtstamp + entry->max_delay)
 	{
 	    	/*
@@ -491,7 +491,7 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 
 	/*
 	 * The protected server may not answer with SYN-ACK, so allow another
-	 * retransmission after time_min and increase the maximum delay using
+	 * retransmission after min_delay and increase the maximum delay using
 	 * exponential backoff.
 	 */
 	entry->max_delay = entry->max_delay * 2;

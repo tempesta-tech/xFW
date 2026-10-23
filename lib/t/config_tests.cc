@@ -20,7 +20,7 @@ const std::string max_tfw_out = "tfw{srv_group static{ {server 192.168.1.1}}}";
 const std::string max_tl = "tl {\nsome\nprogram\nhere\n}";
 const std::string max_xfw = "xfw {"
 	"tcp_syncookies passive_timer=1 flood_timer=5;"
-	"tcp_syn_drop time_min=500 max_delay=3000 retry_count=3 block_timeout=0;"
+	"tcp_syn_drop min_delay=500 max_delay=3000 retry_count=3 block_timeout=0;"
 	"tcp_anomaly_filter; tcp_auth_filter/del;"
 	"ratelimit=my_ratelimit pps=300 bps=1024;"
 	"icmp ip6 : ratelimit=my_ratelimit { 13, 30 }"
@@ -94,7 +94,7 @@ TEST(ParsesFullConfig, HandlesMaximumData)
 
 	auto &tcp_syn_drop = conf->prvt->xfw_conf.value().tcp_syn_drop_;
 	ASSERT_TRUE(tcp_syn_drop.has_value());
-	ASSERT_EQ(tcp_syn_drop->time_min_ms_, 500);
+	ASSERT_EQ(tcp_syn_drop->min_delay_ms_, 500);
 	ASSERT_EQ(tcp_syn_drop->max_delay_ms_, 3000);
 	ASSERT_EQ(tcp_syn_drop->retry_count_, 3);
 	ASSERT_EQ(tcp_syn_drop->block_timeout_ms_, 0);
@@ -409,7 +409,7 @@ TEST(ParsesXfwConfig, TcpSynDropUsesDefaultValues)
 		conf->prvt->xfw_conf->tcp_syn_drop_;
 
 	ASSERT_TRUE(tcp_syn_drop.has_value());
-	EXPECT_EQ(tcp_syn_drop->time_min_ms_, TCP_SYN_DROP_DEFAULT_MIN_DELAY_MS);
+	EXPECT_EQ(tcp_syn_drop->min_delay_ms_, TCP_SYN_DROP_DEFAULT_MIN_DELAY_MS);
 	EXPECT_EQ(tcp_syn_drop->max_delay_ms_, TCP_SYN_DROP_DEFAULT_MAX_DELAY_MS);
 	EXPECT_EQ(tcp_syn_drop->retry_count_, 3);
 
@@ -424,7 +424,7 @@ TEST(ParsesXfwConfig, TcpSynDropUsesDefaultValues)
 TEST(ParsesXfwConfig, TcpSynDropAcceptsEqualWindowBounds)
 {
 	const std::string prog = "xfw {"
-		"tcp_syn_drop time_min=500 max_delay=500 retry_count=1;"
+		"tcp_syn_drop min_delay=500 max_delay=500 retry_count=1;"
 	"}";
 
 	std::unique_ptr<TlProgConf> conf(
@@ -437,7 +437,7 @@ TEST(ParsesXfwConfig, TcpSynDropAcceptsEqualWindowBounds)
 		conf->prvt->xfw_conf->tcp_syn_drop_;
 
 	ASSERT_TRUE(tcp_syn_drop.has_value());
-	EXPECT_EQ(tcp_syn_drop->time_min_ms_, 500);
+	EXPECT_EQ(tcp_syn_drop->min_delay_ms_, 500);
 	EXPECT_EQ(tcp_syn_drop->max_delay_ms_, 500);
 }
 
@@ -471,12 +471,12 @@ INSTANTIATE_TEST_SUITE_P(
 		/*
 		 * The valid retransmission window is:
 		 *
-		 * stored_time + time_min <= now
+		 * stored_time + min_delay <= now
 		 *     <= stored_time + max_delay
 		 *
-		 * Therefore, time_min must not exceed max_delay.
+		 * Therefore, min_delay must not exceed max_delay.
 		 */
-		"time_min=3001 max_delay=3000 retry_count=3",
+		"min_delay=3001 max_delay=3000 retry_count=3",
 		/* Unknown attributes must be rejected. */
 		"retry_count=3 unknown=1",
 		"hash_salt=12345 retry_count=3",
@@ -548,7 +548,7 @@ TEST(SerializesConfig, WithMaximumData)
 	ASSERT_EQ(xfw_cfg->syncookie()->passive_timer(), 1);
 	ASSERT_EQ(xfw_cfg->syncookie()->flood_timer(), 5);
 	ASSERT_TRUE(xfw_cfg->tcp_syn_drop());
-	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->time_min(), 500);
+	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->min_delay(), 500);
 	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->max_delay(), 3000);
 	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->retry_count(), 3);
 	ASSERT_EQ(xfw_cfg->tcp_syn_drop()->block_timeout(), 0);
