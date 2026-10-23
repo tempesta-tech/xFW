@@ -202,10 +202,10 @@ async def group_of_clients(
 @pytest.mark.parametrize(
     "tcp_syncookies_parameter",
     [
-        pytest.param("flood_timer=2 passive_timer=3", id="custom"),
-        pytest.param("flood_timer=2", id="flood"),
-        pytest.param("passive_timer=2", id="passive"),
-        pytest.param("flood_timer=1 passive_timer=0", id="always-passive"),
+        pytest.param("flood_timer=10 passive_timer=15", id="custom"),
+        pytest.param("flood_timer=10 passive_timer=5", id="flood"),
+        pytest.param("flood_timer=5 passive_timer=10", id="passive"),
+        pytest.param("flood_timer=10 passive_timer=0", id="always-passive"),
         pytest.param(
             # This configuration is not recommeded by our wiki.
             # The problem with it that it's very non-deterministic: zero passive
@@ -234,7 +234,7 @@ async def test_normal_connection(
     )
 
     # It's required to have a unique client because syncookie is issued at 4-tuple.
-    tcp_raw_client.port = random.randrange(1, 65000)
+    tcp_raw_client.port = tcp_raw_client.generate_new_port()
 
     # STAGE 1: Connection
     async with (
@@ -495,7 +495,7 @@ async def test_syncookie_with_options(
     )
 
     # It's required to have a unique client because syncookie is issued at 4-tuple.
-    tcp_raw_client.port = random.randrange(1, 65000)
+    tcp_raw_client.port = tcp_raw_client.generate_new_port()
 
     async with (
         metric_analyzer.expected_metrics_diff(
@@ -551,7 +551,7 @@ async def test_flood_mode(
     """
 
     flood_timer = 3
-    tcp_raw_client.port = random.randrange(1, 65000)
+    tcp_raw_client.port = tcp_raw_client.generate_new_port()
 
     # XFW requests the kernel whether syncookie should be issued, so we make the
     # kernel always consider to generate a cyncookie with net.ipv4.tcp_syncookies=2.
@@ -592,6 +592,7 @@ async def test_flood_mode(
     middle_of_flood_timer_loop = flood_timer / 2
     await asyncio.sleep(flood_timer + middle_of_flood_timer_loop)
 
+    tcp_raw_client.port = tcp_raw_client.generate_new_port()
     async with (
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -619,6 +620,7 @@ async def test_flood_mode(
     await xfw_with_forced_syncookie.syncookies_never()
     await asyncio.sleep(flood_timer)
 
+    tcp_raw_client.port = tcp_raw_client.generate_new_port()
     async with (
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -645,6 +647,7 @@ async def test_flood_mode(
     await xfw_with_forced_syncookie.syncookies_always()
     await asyncio.sleep(flood_timer)
 
+    tcp_raw_client.port = tcp_raw_client.generate_new_port()
     async with (
         metric_analyzer.expected_metrics_diff(
             xfw=xfw_with_forced_syncookie,
@@ -682,7 +685,7 @@ async def test_passive_mode(
     """
 
     passive_timer = 3
-    tcp_raw_client.port = random.randrange(1, 65000)
+    tcp_raw_client.port = tcp_raw_client.generate_new_port()
 
     # Configure xFW while SYN cookies are enabled to pass the sysctl check in
     # the manager (see Xfw::set_config()), then force the kernel to report no
