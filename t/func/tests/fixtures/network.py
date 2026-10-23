@@ -1,9 +1,11 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+from typing import AsyncGenerator
+
 import pytest
 
-from config import ConfigSettings, NetworkType, TestingModel
+from config import NetworkType, TestingModel
 from framework.asyn import *
 from framework.networks import (
     LocalGateVeth,
@@ -14,7 +16,7 @@ from framework.networks import (
 
 
 @pytest.fixture(scope="session")
-async def network(config: ConfigSettings, conf_logger) -> LocalVeth:
+async def network(config, conf_logger) -> LocalVeth:
     network_class = {
         NetworkType.nic: LocalVirtualizedNIC,
         NetworkType.veth: LocalVeth,
@@ -29,17 +31,18 @@ async def network(config: ConfigSettings, conf_logger) -> LocalVeth:
 
     conf_logger.info(f"Create network using {network_class.__name__} network")
     network = network_class(logger=conf_logger, config=config)
-    yield network
+    return network
 
 
 @pytest.fixture(scope="session", autouse=True)
-async def prepare_network(config: ConfigSettings, network: LocalVeth, conf_logger):
+async def prepare_network(config, network, conf_logger) -> AsyncGenerator[None, None]:
     if config.testing_model != TestingModel.same_host:
         yield
         return
 
     conf_logger.info("starting to prepare network")
     await network.prepare()
+    await network.disable_mld()
     conf_logger.info("network prepared")
 
     yield
@@ -49,7 +52,7 @@ async def prepare_network(config: ConfigSettings, network: LocalVeth, conf_logge
 
 
 @pytest.fixture(scope="function")
-async def flush_arp_cache(config: ConfigSettings, network: LocalVeth) -> None:
+async def flush_arp_cache(config, network) -> None:
     """
     Clears the ARP and IPv6 Neighbor cache before each test.
 
@@ -67,4 +70,3 @@ async def flush_arp_cache(config: ConfigSettings, network: LocalVeth) -> None:
         network.flush_arp_cache(config.backend_namespace),
         network.flush_arp_cache(config.client_namespace),
     )
-    yield
