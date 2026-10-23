@@ -58,7 +58,7 @@ table Syncookie {
 }
 
 table TcpSynDrop {
-	time_min: uint64;
+	min_delay: uint64;
 	max_delay: uint64;
 	block_timeout: uint64;
 	retry_count: uint32;

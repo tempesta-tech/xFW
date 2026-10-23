@@ -25,7 +25,7 @@ private:
 
 private:
 	XfwConf				&xfw_conf_;
-	std::optional<uint64_t>		time_min_ms_;
+	std::optional<uint64_t>		min_delay_ms_;
 	std::optional<uint64_t>		max_delay_ms_;
 	std::optional<uint64_t>		block_timeout_ms_;
 	std::optional<uint32_t>		retry_count_;
