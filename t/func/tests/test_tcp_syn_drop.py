@@ -99,14 +99,14 @@ async def complete_initial_syn_validation(
     client: TcpRawClient,
     server: TcpRawServer,
     packet: TCP,
-    time_min: int,
+    min_delay: int,
 ):
     # First SYN starts validation and must be dropped.
     await client.send_packet(packet)
     assert await server.receive_packet() is None
 
     # Valid retransmission promotes stage 1 -> stage 2 and is passed.
-    await asyncio.sleep(time_min / 1000 + 0.2)
+    await asyncio.sleep(min_delay / 1000 + 0.2)
 
     await client.send_packet(packet)
     received = await server.receive_packet()
@@ -121,14 +121,14 @@ async def test_first_syn_dropped_second_syn_passed(
     tcp_syn_drop_client: TcpRawClient,
     start_tcp_server_and_raw_clients,
 ):
-    time_min = 1000
+    min_delay = 1000
     max_delay = 5000
     seq = random.randrange(1, 2**31)
 
     await xfw.rules_set(
         "xfw { "
         "tcp_syn_drop "
-        f"time_min={time_min} "
+        f"min_delay={min_delay} "
         f"max_delay={max_delay} "
         f"retry_count=3 "
         f"block_timeout=0; "
@@ -143,7 +143,7 @@ async def test_first_syn_dropped_second_syn_passed(
     await expect_no_reply(tcp_syn_drop_client)
 
     # Wait until the valid retransmission window.
-    await asyncio.sleep(time_min / 1000 + 0.2)
+    await asyncio.sleep(min_delay / 1000 + 0.2)
 
     # Same 5-tuple + same ISN => lookup in stage 1 map succeeds.
     await tcp_syn_drop_client.send_packet(packet)
@@ -153,20 +153,20 @@ async def test_first_syn_dropped_second_syn_passed(
     await expect_synack(tcp_syn_drop_client)
 
 
-async def test_second_syn_before_time_min_blocks_tuple(
+async def test_second_syn_before_min_delay_blocks_tuple(
     xfw: XFW,
     tcp_server: TcpServer,
     tcp_syn_drop_client: TcpRawClient,
     start_tcp_server_and_raw_clients,
 ):
-    time_min = 1000
+    min_delay = 1000
     max_delay = 5000
     seq = random.randrange(1, 2**31)
 
     await xfw.rules_set(
         "xfw { "
         "tcp_syn_drop "
-        f"time_min={time_min} "
+        f"min_delay={min_delay} "
         f"max_delay={max_delay} "
         f"retry_count=3 "
         f"block_timeout=0; "
@@ -180,7 +180,7 @@ async def test_second_syn_before_time_min_blocks_tuple(
     await expect_no_reply(tcp_syn_drop_client)
 
     # Too early.
-    await asyncio.sleep(time_min / 1000 - 0.2)
+    await asyncio.sleep(min_delay / 1000 - 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
     await expect_no_reply(tcp_syn_drop_client)
@@ -189,7 +189,7 @@ async def test_second_syn_before_time_min_blocks_tuple(
     # The early retransmission permanently poisons the stage 1 entry.
     # Even after entering the otherwise valid window it must stay blocked.
     #
-    await asyncio.sleep(time_min / 1000 + 0.2)
+    await asyncio.sleep(min_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
     await expect_no_reply(tcp_syn_drop_client)
@@ -201,14 +201,14 @@ async def test_second_syn_after_max_delay_blocks_tuple(
     tcp_syn_drop_client: TcpRawClient,
     start_tcp_server_and_raw_clients,
 ):
-    time_min = 1000
+    min_delay = 1000
     max_delay = 2000
     seq = random.randrange(1, 2**31)
 
     await xfw.rules_set(
         "xfw { "
         "tcp_syn_drop "
-        f"time_min={time_min} "
+        f"min_delay={min_delay} "
         f"max_delay={max_delay} "
         f"retry_count=3 "
         f"block_timeout=0; "
@@ -230,7 +230,7 @@ async def test_second_syn_after_max_delay_blocks_tuple(
     # The later retransmission permanently poisons the stage 1 entry.
     # Even after entering the otherwise valid window it must stay blocked.
     #
-    await asyncio.sleep(time_min / 1000 + 0.2)
+    await asyncio.sleep(min_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
     await expect_no_reply(tcp_syn_drop_client)
@@ -242,7 +242,7 @@ async def test_retry_count_blocks_following_syns(
     tcp_raw_server: TcpRawServer,
     start_tcp_raw_server_and_raw_clients,
 ):
-    time_min = 1000
+    min_delay = 1000
     max_delay = 3000
     retry_count = 3
     seq = random.randrange(1, 2**31)
@@ -250,7 +250,7 @@ async def test_retry_count_blocks_following_syns(
     await xfw.rules_set(
         "xfw { "
         "tcp_syn_drop "
-        f"time_min={time_min} "
+        f"min_delay={min_delay} "
         f"max_delay={max_delay} "
         f"retry_count={retry_count} "
         f"block_timeout=0; "
@@ -258,7 +258,7 @@ async def test_retry_count_blocks_following_syns(
     )
 
     packet = syn_packet(seq)
-    await complete_initial_syn_validation(tcp_syn_drop_client, tcp_raw_server, packet, time_min)
+    await complete_initial_syn_validation(tcp_syn_drop_client, tcp_raw_server, packet, min_delay)
 
     #
     # retry_count valid retransmissions must be passed upstream.
@@ -268,7 +268,7 @@ async def test_retry_count_blocks_following_syns(
     # still passed upstream.
     #
     for _ in range(retry_count - 1):
-        await asyncio.sleep(time_min / 1000 + 0.2)
+        await asyncio.sleep(min_delay / 1000 + 0.2)
 
         await tcp_syn_drop_client.send_packet(packet)
 
@@ -281,7 +281,7 @@ async def test_retry_count_blocks_following_syns(
     # retry_count has been reached. The previous SYN was still passed,
     # but the tuple is now blocked indefinitely because block_timeout=0.
     #
-    await asyncio.sleep(time_min / 1000 + 0.2)
+    await asyncio.sleep(min_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
     assert await tcp_raw_server.receive_packet() is None
@@ -293,7 +293,7 @@ async def test_finite_block_timeout_restarts_validation(
     tcp_raw_server: TcpRawServer,
     start_tcp_raw_server_and_raw_clients,
 ):
-    time_min = 1000
+    min_delay = 1000
     max_delay = 5000
     retry_count = 2
     block_timeout = 1000
@@ -302,7 +302,7 @@ async def test_finite_block_timeout_restarts_validation(
     await xfw.rules_set(
         "xfw { "
         "tcp_syn_drop "
-        f"time_min={time_min} "
+        f"min_delay={min_delay} "
         f"max_delay={max_delay} "
         f"retry_count={retry_count} "
         f"block_timeout={block_timeout}; "
@@ -310,14 +310,14 @@ async def test_finite_block_timeout_restarts_validation(
     )
 
     packet = syn_packet(seq)
-    await complete_initial_syn_validation(tcp_syn_drop_client, tcp_raw_server, packet, time_min)
+    await complete_initial_syn_validation(tcp_syn_drop_client, tcp_raw_server, packet, min_delay)
 
     #
     # First valid retransmission reaches retry_count=1.
     # This SYN is still passed upstream, but the stage 2 entry is
     # simultaneously put into the blocked state.
     #
-    await asyncio.sleep(time_min / 1000 + 0.2)
+    await asyncio.sleep(min_delay / 1000 + 0.2)
     await tcp_syn_drop_client.send_packet(packet)
     received = await tcp_raw_server.receive_packet()
     assert received is not None
@@ -352,7 +352,7 @@ async def test_finite_block_timeout_restarts_validation(
     # A retransmission inside the new validation window must now be
     # promoted from stage 1 to stage 2 and passed upstream.
     #
-    await asyncio.sleep(time_min / 1000 + 0.2)
+    await asyncio.sleep(min_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
 
@@ -367,14 +367,14 @@ async def test_retry_max_delay_exponential_backoff(
     tcp_raw_server: TcpRawServer,
     start_tcp_raw_server_and_raw_clients,
 ):
-    time_min = 500
+    min_delay = 500
     max_delay = 1000
     seq = random.randrange(1, 2**31)
 
     await xfw.rules_set(
         "xfw { "
         "tcp_syn_drop "
-        f"time_min={time_min} "
+        f"min_delay={min_delay} "
         f"max_delay={max_delay} "
         f"retry_count=5 "
         f"block_timeout=0; "
@@ -382,12 +382,12 @@ async def test_retry_max_delay_exponential_backoff(
     )
 
     packet = syn_packet(seq)
-    await complete_initial_syn_validation(tcp_syn_drop_client, tcp_raw_server, packet, time_min)
+    await complete_initial_syn_validation(tcp_syn_drop_client, tcp_raw_server, packet, min_delay)
 
     #
     # The first SYN already promoted the tuple and doubles max_delay.
     #
-    await asyncio.sleep(time_min / 1000 + 0.1)
+    await asyncio.sleep(min_delay / 1000 + 0.1)
 
     #
     # max_delay is now 2000 ms.
@@ -411,7 +411,7 @@ async def test_dst_rules_with_tcp_syn_drop_enabled(
     tcp_raw_server: TcpRawServer,
     start_tcp_raw_server_and_raw_clients,
 ):
-    time_min = 1000
+    min_delay = 1000
     max_delay = 5000
     seq = random.randrange(1, 2**31)
 
@@ -420,7 +420,7 @@ async def test_dst_rules_with_tcp_syn_drop_enabled(
             defaults {{ dst: allow; }}
 
             tcp_syn_drop
-                time_min={time_min}
+                min_delay={min_delay}
                 max_delay={max_delay}
                 retry_count=3
                 block_timeout=0;
@@ -437,7 +437,7 @@ async def test_dst_rules_with_tcp_syn_drop_enabled(
     await tcp_syn_drop_client.send_packet(packet)
     assert await tcp_raw_server.receive_packet() is None
 
-    await asyncio.sleep(time_min / 1000 + 0.2)
+    await asyncio.sleep(min_delay / 1000 + 0.2)
 
     # tcp_syn_drop accepts the retransmission, but dst_filter must
     # still process and block it.
@@ -451,7 +451,7 @@ async def test_syn_ratelimit_with_syn_drop(
     tcp_raw_server: TcpRawServer,
     start_tcp_raw_server_and_raw_clients,
 ):
-    time_min = 1
+    min_delay = 1
     max_delay = 5000
     seq = random.randrange(1, 2**31)
 
@@ -462,7 +462,7 @@ async def test_syn_ratelimit_with_syn_drop(
             tcp_flags syn : ratelimit=test;
 
             tcp_syn_drop
-                time_min={time_min}
+                min_delay={min_delay}
                 max_delay={max_delay}
                 retry_count=3
                 block_timeout=0;

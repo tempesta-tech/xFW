@@ -511,14 +511,14 @@ XfwConfigUpdater::prepare_tcp_syn_drop_filter()
 
 	const auto *filter = msg_.tcp_syn_drop();
 
-	verify(filter->time_min() <= filter->max_delay(),
-	       "tcp_syn_drop: time_min must not exceed max_delay");
+	verify(filter->min_delay() <= filter->max_delay(),
+	       "tcp_syn_drop: min_delay must not exceed max_delay");
 
 	verify(filter->retry_count() > 0,
 	       "tcp_syn_drop: retry_count must be greater than zero");
 
 	config_.tcp_syn_drop_filter_.emplace(
-		filter->time_min(),
+		filter->min_delay(),
 		filter->max_delay(),
 		filter->block_timeout(),
 		filter->retry_count()
