@@ -11,6 +11,7 @@
 #include "default_index.h"
 #include "supported_protocols.h"
 #include "tcp_control_bits.h"
+#include "tcp_synproxy.h"
 
 #include "bpf_bitset.h"
 #include "action_rules.h"
@@ -111,4 +112,7 @@ typedef struct XfwFilterCfg {
 
 	XfwRlWindow		rl_window;
 	XfwPacketRate		named_rates[XFW_MAX_NAMED_RATELIMITS];
+
+	/* Keep last: ordinary configuration writes exclude publication state. */
+	XfwSynproxyCfg		synproxy;
 } XfwFilterCfg;

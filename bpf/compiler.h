@@ -29,6 +29,9 @@
 #define NSEC_PER_SEC		1000000000L
 #endif
 
+#ifndef ENOENT
+#define ENOENT			2
+#endif
 #ifndef E2BIG
 #define E2BIG			7
 #endif

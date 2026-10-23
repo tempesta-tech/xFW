@@ -7,10 +7,15 @@
 #include <chrono>
 #include <fstream>
 #include <sys/utsname.h>
+#include <arpa/inet.h>
+#include <cerrno>
+#include <cstddef>
+#include <cstring>
 
 #include "../../lib/log.hh"
 #include "../../lib/error.hh"
 #include "../../bpf_uapi/ip_helpers.h"
+#include "../../bpf_uapi/tcp_synproxy.h"
 
 #include "../ip_formatter.hh"
 #include "../xfw_update_error.hh"
@@ -649,14 +654,126 @@ BpfMapsManager::turn_filtration_on()
 	upload_config_changes(cfg, no_ratelimit_buckets);
 }
 
+namespace {
+
+FdGuard
+open_synproxy_map(const char *name, uint32_t key_size, uint32_t value_size,
+		 enum bpf_map_type type)
+{
+	std::string path = std::string("/sys/fs/bpf/xfw/") + name;
+	FdGuard fd(bpf_obj_get(path.c_str()), path);
+	bpf_map_info info{};
+	uint32_t size = sizeof(info);
+	verify(bpf_obj_get_info_by_fd(fd.get(), &info, &size) == 0
+	       && info.key_size == key_size && info.value_size == value_size
+	       && info.type == type,
+	       "Incompatible SYN-proxy map {}", name);
+	return fd;
+}
+
+template<typename Key>
+void
+fill_synproxy_map(const char *name, const XfwConfig::SynproxyFilter &selectors,
+		  bool ipv6)
+{
+	auto fd = open_synproxy_map(name, sizeof(Key), sizeof(uint8_t), BPF_MAP_TYPE_LPM_TRIE);
+	Key key{};
+	while (bpf_map_get_next_key(fd.get(), nullptr, &key) == 0)
+		verify(bpf_map_delete_elem(fd.get(), &key) == 0,
+		       "Unable to clear SYN-proxy map {}", name);
+	verify(errno == ENOENT, "Unable to enumerate SYN-proxy map {}", name);
+	for (const auto &selector : selectors) {
+		if (selector.ipv6_ != ipv6)
+			continue;
+		key = {};
+		key.prefixlen = XFW_SYNPROXY_PORT_BITS + selector.prefix_;
+		key.port = htons(selector.port_);
+		std::memcpy(&key.addr, selector.addr_.data(), ipv6 ? 16 : 4);
+		const uint8_t value = 1;
+		verify(bpf_map_update_elem(fd.get(), &key, &value, BPF_ANY) == 0,
+		       "Unable to stage SYN-proxy selector in {}", name);
+	}
+}
+
+uint32_t
+synproxy_scope_flags(const XfwConfig::SynproxyFilter &selectors)
+{
+	uint32_t flags = 0;
+	for (const auto &selector : selectors) {
+		if (selector.ipv6_)
+			flags |= selector.port_ ? XFW_SYNPROXY_IP6_PORT
+						: XFW_SYNPROXY_IP6_ALL;
+		else
+			flags |= selector.port_ ? XFW_SYNPROXY_IP4_PORT
+						: XFW_SYNPROXY_IP4_ALL;
+	}
+	return flags;
+}
+
+} // anonymous namespace
+
+uint64_t
+BpfMapsManager::synproxy_generation()
+{
+	return __atomic_load_n(&(*cfg_map_)[0].synproxy.generation,
+			       __ATOMIC_ACQUIRE);
+}
+
+void
+BpfMapsManager::stage_synproxy(uint64_t generation,
+	const XfwConfig::SynproxyFilter &active,
+	const XfwConfig::SynproxyFilter &retired, uint64_t retired_until_ns)
+{
+	verify(active.size() <= XFW_SYNPROXY_MAX_TARGETS
+	       && retired.size() <= XFW_SYNPROXY_MAX_RETIRED,
+	       "SYN-proxy selector limit exceeded");
+	const bool slot = generation & 1;
+	verify(slot != (synproxy_generation() & 1),
+	       "Cannot stage SYN-proxy selectors in the active slot");
+	XfwConfig::SynproxyFilter ack;
+	if (!retired.empty()) {
+		ack = active;
+		ack.insert(retired.begin(), retired.end());
+	}
+	fill_synproxy_map<XfwSynproxyKey4>(slot
+		? SHADOW_MAP_STR(MAP_SYNPROXY_4_BASENAME, MAP_SECONDARY_IDX)
+		: SHADOW_MAP_STR(MAP_SYNPROXY_4_BASENAME, MAP_PRIMARY_IDX), active, false);
+	fill_synproxy_map<XfwSynproxyKey6>(slot
+		? SHADOW_MAP_STR(MAP_SYNPROXY_6_BASENAME, MAP_SECONDARY_IDX)
+		: SHADOW_MAP_STR(MAP_SYNPROXY_6_BASENAME, MAP_PRIMARY_IDX), active, true);
+	fill_synproxy_map<XfwSynproxyKey4>(slot
+		? SHADOW_MAP_STR(MAP_SYNPROXY_ACK_4_BASENAME, MAP_SECONDARY_IDX)
+		: SHADOW_MAP_STR(MAP_SYNPROXY_ACK_4_BASENAME, MAP_PRIMARY_IDX), ack, false);
+	fill_synproxy_map<XfwSynproxyKey6>(slot
+		? SHADOW_MAP_STR(MAP_SYNPROXY_ACK_6_BASENAME, MAP_SECONDARY_IDX)
+		: SHADOW_MAP_STR(MAP_SYNPROXY_ACK_6_BASENAME, MAP_PRIMARY_IDX), ack, true);
+	auto &meta = (*cfg_map_)[0].synproxy.slots[slot];
+	meta.active_flags = synproxy_scope_flags(active);
+	meta.ack_flags = synproxy_scope_flags(ack);
+	__atomic_store_n(&meta.retired_until_ns, retired_until_ns, __ATOMIC_RELEASE);
+}
+
+void
+BpfMapsManager::finish_synproxy(uint64_t generation, uint64_t retired_until_ns)
+{
+	verify(generation == synproxy_generation(),
+	       "Cannot finish an unpublished SYN-proxy generation");
+	auto &meta = (*cfg_map_)[0].synproxy.slots[generation & 1];
+	__atomic_store_n(&meta.retired_until_ns, retired_until_ns, __ATOMIC_RELEASE);
+}
+
+void
+BpfMapsManager::publish_synproxy(uint64_t generation)
+{
+	/* Publish the completed slot with one aligned store visible to BPF. */
+	__atomic_store_n(&(*cfg_map_)[0].synproxy.generation, generation,
+			 __ATOMIC_RELEASE);
+}
+
 XfwFilterCfg
 BpfMapsManager::get_config()
 {
-	XfwFilterCfg cfg;
-	if (cfg_map_.get(cfg) == 0) [[likely]]
-		return cfg;
-
-	throw Except("XfwFilterCfg load failed, map fd: {}", MAP_CFG_STR);
+	return (*cfg_map_)[0];
 }
 
 void
@@ -665,8 +782,8 @@ BpfMapsManager::upload_config_changes(
 	std::optional<std::reference_wrapper<IndexPoolTransaction>> tx
 )
 {
-	verify(cfg_map_.set(cfg) == 0, "Unable to update configuration "
-	       "in the BPF core");
+	/* Never overwrite the separately published SYN-proxy generation/slots. */
+	std::memcpy(&(*cfg_map_)[0], &cfg, offsetof(XfwFilterCfg, synproxy));
 
 	if (tx)
 		tx->get().commit();

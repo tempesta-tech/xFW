@@ -124,6 +124,13 @@ public:
 
 public:
 	void turn_filtration_on();
+	uint64_t synproxy_generation();
+	void stage_synproxy(uint64_t generation,
+			   const XfwConfig::SynproxyFilter &active,
+			   const XfwConfig::SynproxyFilter &retired,
+			   uint64_t retired_until_ns);
+	void publish_synproxy(uint64_t generation);
+	void finish_synproxy(uint64_t generation, uint64_t retired_until_ns);
 	
 private:
 	struct SrcRules
@@ -248,7 +255,7 @@ private:
 	scale_rl_to_window(uint64_t rlps) const noexcept;
 
 private:
-	using FilterCfgMap = BpfSingleElementMap<XfwFilterCfg>;
+	using FilterCfgMap = BpfMmapedArrayMap<XfwFilterCfg, 1>;
 
 	/*
 	 * Kernel tick frequency (CONFIG_HZ).
