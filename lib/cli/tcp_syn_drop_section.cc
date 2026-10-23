@@ -51,17 +51,15 @@ TcpSynDropSection::commit()
 	 * The design does not specify a default retry count, so it must be
 	 * explicitly configured.
 	 */
-	if (!retry_count_.has_value()) {
+	if (!retry_count_.has_value())
 		throw Except(
 			"tcp_syn_drop requires the 'retry_count' parameter."
 		);
-	}
 
-	if (!retry_count_.value()) {
+	if (!retry_count_.value())
 		throw Except(
 			"tcp_syn_drop: 'retry_count' must be greater than zero."
 		);
-	}
 
 	const uint64_t time_min_ms =
 		time_min_ms_.value_or(TCP_SYN_DROP_DEFAULT_MIN_DELAY_MS);
@@ -80,14 +78,12 @@ TcpSynDropSection::commit()
 	 * Therefore, time_min must not exceed max_delay, otherwise no
 	 * retransmission could ever satisfy the condition.
 	 */
-	if (time_min_ms > max_delay_ms) {
+	if (time_min_ms > max_delay_ms)
 		throw Except(
 			"tcp_syn_drop: 'time_min' ({}) must not exceed "
 			"'max_delay' ({}).", time_min_ms, max_delay_ms
 		);
-	}
 
 	xfw_conf_.tcp_syn_drop_.emplace(time_min_ms, max_delay_ms,
-					block_timeout_ms,
-					retry_count_.value());
+					block_timeout_ms, retry_count_.value());
 }
