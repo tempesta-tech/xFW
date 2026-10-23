@@ -157,16 +157,6 @@ struct {
 	__type(value, XfwSynRetry);
 } MAP_SYN_STAGE2_IPV6_REF SEC(".maps");
 
-static __always_inline bool
-xfw_is_valid_initial_syn(const struct tcphdr *th)
-{
-	const uint8_t tcp_flags = (uint8_t)((tcp_flag_word(th) >> 8));
-	const uint8_t mask =
-		XFW_BIT_SYN | XFW_BIT_ACK | XFW_BIT_RST | XFW_BIT_FIN;
-
-	return (tcp_flags & mask) == XFW_BIT_SYN;
-}
-
 /*
  * Move a tuple from the large pending map to the smaller validated map.
  *
@@ -598,9 +588,6 @@ xfw_process_syn_drop_state(const XfwGlobalCtx *ctx,
 static __always_inline int
 tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
-	if (!xfw_is_valid_initial_syn(th))
-		return XFW_CTX_CONTINUE;
-
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		XfwIpv4SynKey key;
 		const XfwSynDropCtx drop_ctx = {
