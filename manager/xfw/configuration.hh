@@ -57,7 +57,7 @@ public:
 	};
 
 	struct TcpSynDropFilter {
-		uint64_t	time_min_ms_ = 0;
+		uint64_t	min_delay_ms_ = 0;
 		uint64_t	max_delay_ms_ = 0;
 		uint64_t	block_timeout_ms_ = 0;
 		uint32_t	retry_count_ = 0;
