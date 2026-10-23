@@ -105,7 +105,7 @@ async def complete_initial_syn_validation(
     await client.send_packet(packet)
     assert await server.receive_packet() is None
 
-    # Valid retransmission promotes pending -> retry and is passed.
+    # Valid retransmission promotes stage 1 -> stage 2 and is passed.
     await asyncio.sleep(time_min / 1000 + 0.2)
 
     await client.send_packet(packet)
@@ -145,11 +145,11 @@ async def test_first_syn_dropped_second_syn_passed(
     # Wait until the valid retransmission window.
     await asyncio.sleep(time_min / 1000 + 0.2)
 
-    # Same 5-tuple + same ISN => lookup in pending map succeeds.
+    # Same 5-tuple + same ISN => lookup in stage 1 map succeeds.
     await tcp_syn_drop_client.send_packet(packet)
     assert packet.seq == seq
 
-    # Valid retransmission is promoted into retry map and passed upstream.
+    # Valid retransmission is promoted into stage 2 map and passed upstream.
     await expect_synack(tcp_syn_drop_client)
 
 
@@ -175,7 +175,7 @@ async def test_second_syn_before_time_min_blocks_tuple(
 
     packet = syn_packet(seq)
 
-    # First SYN: pending + DROP.
+    # First SYN: stage 1 + DROP.
     await tcp_syn_drop_client.send_packet(packet)
     await expect_no_reply(tcp_syn_drop_client)
 
@@ -186,7 +186,7 @@ async def test_second_syn_before_time_min_blocks_tuple(
     await expect_no_reply(tcp_syn_drop_client)
 
     #
-    # The early retransmission permanently poisons the pending entry.
+    # The early retransmission permanently poisons the stage 1 entry.
     # Even after entering the otherwise valid window it must stay blocked.
     #
     await asyncio.sleep(time_min / 1000 + 0.2)
@@ -227,7 +227,7 @@ async def test_second_syn_after_max_delay_blocks_tuple(
     await expect_no_reply(tcp_syn_drop_client)
 
     #
-    # The later retransmission permanently poisons the pending entry.
+    # The later retransmission permanently poisons the stage 1 entry.
     # Even after entering the otherwise valid window it must stay blocked.
     #
     await asyncio.sleep(time_min / 1000 + 0.2)
@@ -263,8 +263,8 @@ async def test_retry_count_blocks_following_syns(
     #
     # retry_count valid retransmissions must be passed upstream.
     #
-    # The first retransmission promotes the tuple from the pending
-    # map to the retry map. The SYN which reaches retry_count is
+    # The first retransmission promotes the tuple from the stage 1
+    # map to the stage 2 map. The SYN which reaches retry_count is
     # still passed upstream.
     #
     for _ in range(retry_count - 1):
@@ -314,7 +314,7 @@ async def test_finite_block_timeout_restarts_validation(
 
     #
     # First valid retransmission reaches retry_count=1.
-    # This SYN is still passed upstream, but the retry entry is
+    # This SYN is still passed upstream, but the stage 2 entry is
     # simultaneously put into the blocked state.
     #
     await asyncio.sleep(time_min / 1000 + 0.2)
@@ -341,8 +341,8 @@ async def test_finite_block_timeout_restarts_validation(
     # Expiration does not immediately make the tuple trusted again.
     # This SYN starts a new validation cycle:
     #
-    #     retry entry -> delete
-    #     pending entry -> create
+    #     stage 2 entry -> delete
+    #     stage 1 entry -> create
     #     current SYN -> DROP
     #
     await tcp_syn_drop_client.send_packet(packet)
@@ -350,7 +350,7 @@ async def test_finite_block_timeout_restarts_validation(
 
     #
     # A retransmission inside the new validation window must now be
-    # promoted from pending to retry and passed upstream.
+    # promoted from stage 1 to stage 2 and passed upstream.
     #
     await asyncio.sleep(time_min / 1000 + 0.2)
 
@@ -485,7 +485,7 @@ async def test_syn_ratelimit_with_syn_drop(
 
     #
     # Consume the second SYN allowed by the rate limit using a different
-    # TCP tuple. This must not affect the pending tcp_syn_drop entry above.
+    # TCP tuple. This must not affect the stage 1 tcp_syn_drop entry above.
     # (ratelimit is not accuracy, so we need to send several SYNs to be sure
     #  that it will be exhausted).
     #
@@ -519,7 +519,7 @@ async def test_syn_ratelimit_with_syn_drop(
     # contributes to the rate estimate.
     #
     # Since the previous SYN was dropped before tcp_syn_drop, the original
-    # pending entry must still be present. The same retransmission can now pass
+    # stage 1 entry must still be present. The same retransmission can now pass
     # the rate limiter and be validated by tcp_syn_drop.
     #
     await asyncio.sleep(2.0)
