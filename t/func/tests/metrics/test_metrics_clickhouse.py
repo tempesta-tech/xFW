@@ -549,7 +549,7 @@ async def test_blocked_by_tcp_syncookies_rule_invalid_syn_cookie_34_bit(
     await clickhouse_client.connect()
     # Use zero passive timer to try to generate a cookie for each SYN.
     await xfw_with_forced_syncookie.rules_set(
-        "xfw { tcp_syncookies flood_timer=1 passive_timer=0; }"
+        "xfw { tcp_syncookies flood_timer=10 passive_timer=10; }"
     )
 
     # It's required to have a unique client because syncookie is issued at 4-tuple.
