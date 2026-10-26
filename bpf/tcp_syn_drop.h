@@ -16,9 +16,6 @@
 #include "filter.h"
 #include "tcp_flow.h"
 
-#define XFW_SYN_STAGE1_MAX_ENTRIES	10000000
-#define XFW_SYN_STAGE2_MAX_ENTRIES	1000000
-
 typedef struct XfwSynDropCtx {
 	void *stage1_map;
 	void *stage2_map;
@@ -35,7 +32,6 @@ typedef struct XfwSynDropCtx {
  */
 typedef enum XfwSynStage1State {
 	XFW_SYN_STAGE1_STATE_PENDING,
-	XFW_SYN_STAGE1_STATE_PROMOTING,
 	XFW_SYN_STAGE1_STATE_BLOCKED
 } XfwSynStage1State;
 
@@ -49,7 +45,6 @@ typedef enum XfwSynStage1State {
  */
 typedef enum XfwSynStage2State {
 	XFW_SYN_STAGE2_STATE_ACTIVE,
-	XFW_SYN_STAGE2_STATE_UPDATING,
 	XFW_SYN_STAGE2_STATE_BLOCKED
 } XfwSynStage2State;
 
@@ -62,11 +57,7 @@ typedef enum XfwSynStage2State {
  */
 typedef struct XfwSynStage1Entry {
 	uint64_t	jtxtstamp;
-	/*
-	 * Keep the state 64-bit because the BPF compiler backend used by
-	 * xFW does not support 32-bit atomic compare-and-swap.
-	 */
-	uint64_t	state;
+	uint32_t	state;
 } XfwSynStage1Entry;
 
 /*
@@ -95,14 +86,11 @@ typedef struct XfwSynStage2Entry {
 	uint64_t	jtxtstamp;
 	uint64_t	max_delay;
 	uint64_t	blocked_until;
-	/*
-	 * Keep the state 64-bit because the BPF compiler backend used by
-	 * xFW does not support 32-bit atomic compare-and-swap.
-	 */
-	uint64_t	state;
+	uint32_t	state;
 	uint32_t	retry_count;
 } XfwSynStage2Entry;
 
+/* CPU ownership is encoded by the outer map index, not the tuple key. */
 typedef struct XfwIpv4SynKey {
 	XfwIpv4TcpFlow flow;
 	uint32_t seq;
@@ -122,20 +110,23 @@ STATIC_ASSERT(sizeof(XfwIpv6SynKey) == 40, "Unexpected IPv6 SYN key size");
  *   first SYN              -> insert and drop
  *   valid retransmission   -> move to stage 2 map and pass
  *   invalid retransmission -> block until LRU eviction
+ *
+ * These one-entry templates only describe the inner maps. The loader sets
+ * the actual per-CPU capacities independently for both stages.
  */
-struct {
+struct XfwSynStage1Ipv4Map {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__uint(max_entries, XFW_SYN_STAGE1_MAX_ENTRIES);
+	__uint(max_entries, 1);
 	__type(key, XfwIpv4SynKey);
 	__type(value, XfwSynStage1Entry);
-} MAP_SYN_STAGE1_IPV4_REF SEC(".maps");
+};
 
-struct {
+struct XfwSynStage1Ipv6Map {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__uint(max_entries, XFW_SYN_STAGE1_MAX_ENTRIES);
+	__uint(max_entries, 1);
 	__type(key, XfwIpv6SynKey);
 	__type(value, XfwSynStage1Entry);
-} MAP_SYN_STAGE1_IPV6_REF SEC(".maps");
+};
 
 /*
  * Stage 2 map:
@@ -143,18 +134,51 @@ struct {
  * The smaller map is isolated from the large stage 1 map so that a flood
  * with random tuples cannot directly evict all validated connections.
  */
-struct {
+struct XfwSynStage2Ipv4Map {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__uint(max_entries, XFW_SYN_STAGE2_MAX_ENTRIES);
+	__uint(max_entries, 1);
 	__type(key, XfwIpv4SynKey);
 	__type(value, XfwSynStage2Entry);
+};
+
+struct XfwSynStage2Ipv6Map {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, 1);
+	__type(key, XfwIpv6SynKey);
+	__type(value, XfwSynStage2Entry);
+};
+
+/*
+ * The loader sizes these arrays for all possible CPUs, divides each stage's
+ * capacity among them and installs independent LRU hashes before attachment.
+ * Inner maps use a common LRU within their owning CPU's map.
+ */
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
+	__uint(max_entries, 1);
+	__type(key, uint32_t);
+	__array(values, struct XfwSynStage1Ipv4Map);
+} MAP_SYN_STAGE1_IPV4_REF SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
+	__uint(max_entries, 1);
+	__type(key, uint32_t);
+	__array(values, struct XfwSynStage1Ipv6Map);
+} MAP_SYN_STAGE1_IPV6_REF SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
+	__uint(max_entries, 1);
+	__type(key, uint32_t);
+	__array(values, struct XfwSynStage2Ipv4Map);
 } MAP_SYN_STAGE2_IPV4_REF SEC(".maps");
 
 struct {
-	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__uint(max_entries, XFW_SYN_STAGE2_MAX_ENTRIES);
-	__type(key, XfwIpv6SynKey);
-	__type(value, XfwSynStage2Entry);
+	__uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
+	__uint(max_entries, 1);
+	__type(key, uint32_t);
+	__array(values, struct XfwSynStage2Ipv6Map);
 } MAP_SYN_STAGE2_IPV6_REF SEC(".maps");
 
 /*
@@ -176,10 +200,6 @@ xfw_promote_syn(const XfwSynDropCtx *drop_ctx, uint64_t now,
 	};
 
 	/*
-	 * BPF_NOEXIST is not required for serialization of concurrent
-	 * promotions: ownership of the stage 1 entry is already protected by
-	 * the PENDING -> PROMOTING CAS transition.
-	 *
 	 * Keep BPF_NOEXIST to avoid overwriting an existing stage 2 entry in
 	 * case of stale state. In that case the current SYN is dropped
 	 * conservatively instead of destroying the existing protection state.
@@ -201,11 +221,7 @@ xfw_promote_syn(const XfwSynDropCtx *drop_ctx, uint64_t now,
  *
  * The first SYN for this key has already been recorded and dropped. The
  * key contains the complete IPv4 or IPv6 TCP flow and initial sequence
- * number.
- *
- * Atomically change PENDING to PROMOTING to acquire the entry. Drop the
- * current SYN if the entry is BLOCKED or another CPU is already processing
- * it in PROMOTING state.
+ * number. Drop the current SYN if jtxtstamp is XFW_SYN_BLOCKED.
  *
  * Validate the retransmission against the inclusive timing window:
  *
@@ -232,24 +248,12 @@ xfw_process_syn_stage1(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 		       XfwSynStage1Entry *entry)
 {
 	const uint64_t now = ctx->ts_jiff;
-	uint64_t state =
-		__sync_val_compare_and_swap(&entry->state,
-					    XFW_SYN_STAGE1_STATE_PENDING,
-					    XFW_SYN_STAGE1_STATE_PROMOTING);
 	/*
 	 * The entry is permanently blocked until LRU eviction.
 	 * Drop the current SYN.
 	 */
-	if (state == XFW_SYN_STAGE1_STATE_BLOCKED)
+	if (entry->state == XFW_SYN_STAGE1_STATE_BLOCKED)
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
-	/*
-	 * Another CPU is already processing this entry.
-	 * Drop the concurrent SYN.
-	 */
-	else if (state == XFW_SYN_STAGE1_STATE_PROMOTING)
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYN_BLOCKED,
-					     ": %s", "pending state update"
-					     " is in progress");
 
 	/*
 	 * The valid retransmission window is:
@@ -262,7 +266,7 @@ xfw_process_syn_stage1(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	if (entry->jtxtstamp + syn_cfg->min_delay_jiff > now
 	    || now > entry->jtxtstamp + syn_cfg->max_delay_jiff)
 	{
-		WRITE_ONCE(entry->state, XFW_SYN_STAGE1_STATE_BLOCKED);
+		entry->state = XFW_SYN_STAGE1_STATE_BLOCKED;
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
 
@@ -273,7 +277,6 @@ xfw_process_syn_stage1(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 		 * timestamp so a later SYN can retry validation against the
 		 * original window.
 		 */
-		WRITE_ONCE(entry->state, XFW_SYN_STAGE1_STATE_PENDING);
 		return XFW_MAKE_CTX_DROP(ctx,
 					 XFW_DROP_SYN_HASH_COLLISION_BLOCKED);
 	}
@@ -292,14 +295,6 @@ xfw_add_syn_stage1(const XfwSynDropCtx *drop_ctx, uint64_t now)
 	/*
 	 * The current SYN becomes the first SYN of a new validation cycle.
 	 * Remember it in the stage 1 map and deliberately drop it.
-	 *
-	 * Use BPF_NOEXIST so that concurrent SYNs for the same tuple cannot
-	 * overwrite an entry created by another CPU and move its validation
-	 * timestamp forward. If another CPU wins the race, the existing state
-	 * must be preserved.
-	 *
-	 * The current SYN is always dropped after this function is called, so
-	 * -EEXIST does not require any special handling.
 	 */
 	if (bpf_map_update_elem(drop_ctx->stage1_map, drop_ctx->key, &pending,
 				BPF_NOEXIST))
@@ -393,24 +388,12 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 		       XfwSynStage2Entry *entry)
 {
 	const uint64_t now = ctx->ts_jiff;
-	uint64_t state =
-		__sync_val_compare_and_swap(&entry->state,
-					    XFW_SYN_STAGE2_STATE_ACTIVE,
-					    XFW_SYN_STAGE2_STATE_UPDATING);
 	/*
 	 * The entry is permanently blocked until LRU eviction.
 	 * Drop the current SYN.
 	 */
-	if (state == XFW_SYN_STAGE2_STATE_BLOCKED)
+	if (entry->state == XFW_SYN_STAGE2_STATE_BLOCKED)
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
-	/*
-	 * Another CPU is already processing this entry.
-	 * Drop the concurrent SYN.
-	 */
-	else if (state == XFW_SYN_STAGE2_STATE_UPDATING)
-		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYN_BLOCKED,
-					     ": %s", "retry state update"
-					     " is in progress");
 
 	/*
 	 * `retry_count` may impose a finite block. Once it expires, restart
@@ -419,7 +402,6 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	 */
 	if (entry->blocked_until) {
 		if (now < entry->blocked_until) {
-			WRITE_ONCE(entry->state, XFW_SYN_STAGE2_STATE_ACTIVE);
 			return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYN_BLOCKED,
 						     ": %s", "blocking timeout"
 						     " has not expired");
@@ -448,11 +430,9 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 			return XDP_DROP;
 		}
 
-		WRITE_ONCE(entry->state, XFW_SYN_STAGE2_STATE_ACTIVE);
 		return XFW_MAKE_CTX_DROP_EXT(ctx, XFW_DROP_SYN_BLOCKED,
 					     ": %s", "pending entry"
-					     " already exists, possibly due"
-					     " to a concurrent SYN");
+					     " already exists");
 	}
 
 	const XfwRulesCfgTcpSynDrop *syn_cfg = &ctx->cfg->rules.tcp_syn_drop;
@@ -463,7 +443,7 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 		 * A SYN outside the retransmission window is permanently
 		 * blocked, as required by the design.
 		 */
-		WRITE_ONCE(entry->state, XFW_SYN_STAGE2_STATE_BLOCKED);
+		entry->state = XFW_SYN_STAGE2_STATE_BLOCKED;
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
 
@@ -479,13 +459,12 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
          */
 
 	if (entry->retry_count == syn_cfg->retry_count) {
-		if (syn_cfg->block_timeout_jiff) {
+		if (syn_cfg->block_timeout_jiff)
 			entry->blocked_until =
 				now + syn_cfg->block_timeout_jiff;
-			WRITE_ONCE(entry->state, XFW_SYN_STAGE2_STATE_ACTIVE);
-		} else {
-			WRITE_ONCE(entry->state, XFW_SYN_STAGE2_STATE_BLOCKED);
-		}
+		else
+			entry->state = XFW_SYN_STAGE2_STATE_BLOCKED;
+
 		return XFW_CTX_CONTINUE;
 	}
 
@@ -496,7 +475,6 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	 */
 	entry->max_delay = entry->max_delay * 2;
 	entry->jtxtstamp = now;
-	WRITE_ONCE(entry->state, XFW_SYN_STAGE2_STATE_ACTIVE);
 
 	return XFW_CTX_CONTINUE;
 }
@@ -505,6 +483,8 @@ static __always_inline int
 xfw_process_syn_drop_state(const XfwGlobalCtx *ctx,
 			   const XfwSynDropCtx *drop_ctx)
 {
+	XFW_ASSERT(drop_ctx->stage1_map && drop_ctx->stage2_map);
+
 	/*
 	 * Check the stage 2 map first.
 	 *
@@ -524,10 +504,8 @@ xfw_process_syn_drop_state(const XfwGlobalCtx *ctx,
 	 * or duplicated packets: a retransmitted SYN keeps the same addresses,
 	 * ports and initial sequence number.
 	 *
-	 * If such SYNs are processed concurrently on different CPUs, one CPU
-	 * may insert the tuple into the stage 2 map while another still observes
-	 * its stage 1 entry. The tuple may therefore be transiently visible in
-	 * both maps.
+	 * Each CPU has independent maps. Within a CPU's maps, promotion inserts
+	 * the stage 2 entry before removing the stage 1 entry.
 	 *
 	 * Prefer the stage 2 entry in this case, since it represents the more
 	 * advanced validation state and avoids processing a stale stage 1
@@ -572,11 +550,15 @@ xfw_process_syn_drop_state(const XfwGlobalCtx *ctx,
 static __always_inline int
 tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
+	const uint32_t cpu = bpf_get_smp_processor_id();
+
 	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
 		XfwIpv4SynKey key;
 		const XfwSynDropCtx drop_ctx = {
-			.stage1_map = &MAP_SYN_STAGE1_IPV4_REF,
-			.stage2_map = &MAP_SYN_STAGE2_IPV4_REF,
+			.stage1_map = bpf_map_lookup_elem(
+				&MAP_SYN_STAGE1_IPV4_REF, &cpu),
+			.stage2_map = bpf_map_lookup_elem(
+				&MAP_SYN_STAGE2_IPV4_REF, &cpu),
 			.key = &key,
 		};
 		struct iphdr *iph4 =
@@ -594,8 +576,10 @@ tcp_syn_drop_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	} else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
 		XfwIpv6SynKey key;
 		const XfwSynDropCtx drop_ctx = {
-			.stage1_map = &MAP_SYN_STAGE1_IPV6_REF,
-			.stage2_map = &MAP_SYN_STAGE2_IPV6_REF,
+			.stage1_map = bpf_map_lookup_elem(
+				&MAP_SYN_STAGE1_IPV6_REF, &cpu),
+			.stage2_map = bpf_map_lookup_elem(
+				&MAP_SYN_STAGE2_IPV6_REF, &cpu),
 			.key = &key,
 		};
 		struct ipv6hdr *iph6 =
