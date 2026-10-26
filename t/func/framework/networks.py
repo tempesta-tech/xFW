@@ -329,6 +329,39 @@ class LocalVeth(BaseNetwork):
             ),
         )
 
+    async def disable_background_ipv6_traffic(self) -> None:
+        """
+        Disables background IPv6 traffic (MLD and Router Solicitations).
+
+        This prevents unpredictable network traffic from breaking metric assertions
+        in flaky tests. Drops the following ICMPv6 types:
+        - 131: MLD Listener Query
+        - 133: Router Solicitation (RS)
+        - 143: Version 2 Multicast Listener Report
+        """
+        self.logger.info("disabling background IPv6 traffic (MLD/RS) to prevent network noise")
+
+        base_rules = [
+            "ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 131 -j DROP",
+            "ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 133 -j DROP",
+            "ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 143 -j DROP",
+        ]
+
+        iptables_cmds = []
+        iptables_cmds.extend(base_rules)
+
+        client_ns = self.config.client_namespace
+        if client_ns:
+            iptables_cmds.extend([f"ip netns exec {client_ns} {rule}" for rule in base_rules])
+
+        server_ns = self.config.backend_namespace
+        if server_ns:
+            iptables_cmds.extend([f"ip netns exec {server_ns} {rule}" for rule in base_rules])
+
+        await asyncio.gather(
+            *[run_cmd(cmd, self.logger, log_output=False) for cmd in iptables_cmds]
+        )
+
 
 class LocalGateVeth(LocalVeth):
 
