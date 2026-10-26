@@ -30,7 +30,7 @@ from tests.metrics.utils import (
         # (14 + 9) * 10
         pytest.param(
             PrometheusMetricsDiff(
-                xfw_l2_unknown_egress_packets=[10, 15], xfw_l2_unknown_egress_bytes=[230, 345]
+                xfw_l2_unknown_egress_packets=10, xfw_l2_unknown_egress_bytes=230
             ),
             "send_eth_eapol_packet",
             ETH_P_IP,
@@ -41,7 +41,7 @@ from tests.metrics.utils import (
         # (14 + 9) * 10
         pytest.param(
             PrometheusMetricsDiff(
-                xfw_l2_unknown_egress_packets=[10, 12], xfw_l2_unknown_egress_bytes=[230, 276]
+                xfw_l2_unknown_egress_packets=10, xfw_l2_unknown_egress_bytes=230
             ),
             "send_eth_custom_packet",
             ETH_P_IP,
@@ -142,8 +142,8 @@ from tests.metrics.utils import (
         # (14 + 20 + 12) * 10
         pytest.param(
             PrometheusMetricsDiff(
-                xfw_l4_unsupported_egress_packets=[10, 11],
-                xfw_l4_unsupported_egress_bytes=[460, 590],
+                xfw_l4_unsupported_egress_packets=10,
+                xfw_l4_unsupported_egress_bytes=460,
             ),
             "send_l4_unsupported_ip_proto",
             ETH_P_IP,
@@ -151,10 +151,10 @@ from tests.metrics.utils import (
         ),
         pytest.param(
             PrometheusMetricsDiff(
-                xfw_total_upstream_egress_packets=[10, 11],
-                xfw_total_upstream_egress_bytes=[490, 600],
-                xfw_passed_upstream_egress_packets=[10, 11],
-                xfw_passed_upstream_egress_bytes=[490, 600],
+                xfw_total_upstream_egress_packets=10,
+                xfw_total_upstream_egress_bytes=490,
+                xfw_passed_upstream_egress_packets=10,
+                xfw_passed_upstream_egress_bytes=490,
             ),
             "send_bad_tcp_headers",
             ETH_P_IP,
