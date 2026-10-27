@@ -34,10 +34,13 @@ class ClickhouseClient:
     password: str
     database: str
     table: str
-    logger: logging.Logger = None
-    client: AsyncClient = None
+    logger: logging.Logger
+    client: typing.Optional[AsyncClient] = None
 
-    async def connect(self):
+    async def connect(self) -> None:
+        if self.client is not None:
+            return None
+
         try:
             self.client = await get_async_client(
                 host=self.host,
@@ -46,7 +49,7 @@ class ClickhouseClient:
                 password=self.password,
                 database=self.database,
             )
-            self.logger.debug(f"connected to clickhouse db. Using table {self.table}")
+            self.logger.info(f"connected to clickhouse db. Using table {self.table}")
 
         except OperationalError as e:
             raise ConnectionError("Can not connect to Clickhouse") from e
@@ -153,13 +156,29 @@ class ClickhouseClient:
         """
         return await self.client.command(f"exists table {self.table}") == 1
 
+    async def drop_all_test_tables(self) -> None:
+        rows = await self.client.query(
+            "SELECT name FROM system.tables WHERE database = 'default' "
+            + "AND name LIKE 'escudo_test_%'"
+        )
+        tables_to_drop = [row[0] for row in rows.result_rows]
+
+        if not tables_to_drop:
+            self.logger.info("No tables found matching the 'escudo_test_*' pattern to drop.")
+            return
+
+        tables_str = ", ".join([f"default.`{table}`" for table in tables_to_drop])
+        self.logger.info(f"Dropping {len(tables_to_drop)} tables...")
+        await self.client.command(f"DROP TABLE IF EXISTS {tables_str}")
+        self.logger.info("All test tables have been  successfully dropped.")
+
     async def table_drop(self) -> None:
         """
         Drop the access log table if exists to clear the logs and
         prevent an errors while tests work with the different
         table schemas
         """
-        self.logger.debug(f"dropped the table {self.table}")
+        self.logger.info(f"dropped the table {self.table}")
         await self.client.command(f"drop table if exists {self.table}")
 
     async def table_truncate(self) -> None:

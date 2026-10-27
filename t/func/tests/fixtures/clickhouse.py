@@ -25,8 +25,11 @@ async def clickhouse_global(
         logger=get_logger("clickhouse", level=logging_level),
     )
     await new_client.connect()
+    await new_client.drop_all_test_tables()
 
     yield new_client
+
+    await new_client.table_drop()
 
 
 @pytest.fixture
