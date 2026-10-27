@@ -29,7 +29,7 @@ async def network(config: ConfigSettings, conf_logger) -> LocalVeth:
 
     conf_logger.info(f"Create network using {network_class.__name__} network")
     network = network_class(logger=conf_logger, config=config)
-    yield network
+    return network
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -67,4 +67,3 @@ async def flush_arp_cache(config: ConfigSettings, network: LocalVeth) -> None:
         network.flush_arp_cache(config.backend_namespace),
         network.flush_arp_cache(config.client_namespace),
     )
-    yield
