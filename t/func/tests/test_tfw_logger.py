@@ -16,7 +16,6 @@ from framework.xfw import XFW
 @pytest.mark.clickhouse
 async def test_table_created_after_xfw_startup(xfw: XFW, clickhouse_client: ClickhouseClient):
     await xfw.stop()
-    await clickhouse_client.connect()
 
     await clickhouse_client.table_drop()
     assert await clickhouse_client.table_exists() is False
@@ -60,7 +59,6 @@ async def test_log_data_time_correctness(
 ):
     await udp_server.start()
     await udp_client.start()
-    await clickhouse_client.connect()
 
     await xfw.rules_set(f"""
         xfw {{ 
@@ -100,7 +98,6 @@ async def test_log_data_counter_correctness(
 ):
     await udp_server.start()
     await udp_client.start()
-    await clickhouse_client.connect()
 
     await xfw.rules_set(f"""
         xfw {{ 
@@ -132,7 +129,6 @@ async def test_multiple_requests_logs(
     udp_ip4_server: UdpServer,
     client_cloner,
 ):
-    await clickhouse_client.connect()
     await udp_ip4_server.start()
 
     clients = client_cloner(cloner=udp_ip4_client, amount=10)

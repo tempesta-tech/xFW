@@ -47,8 +47,13 @@ class LocalVeth(BaseNetwork):
         assert code == 0, f"Could not update ipv6 neighbor: {stderr}"
 
     async def create_links(self, link_from: str, link_to: str):
+        # IDEMPOTENCY GUARD: When tests crash, we must force-delete these remnants
+        # to prevent the 'ip link add' command from failing with a "File exists" error.
+        await run_cmd(cmd=f"ip link del {link_from}", logger=self.logger)
+        await run_cmd(cmd=f"ip link del {link_to}", logger=self.logger)
+
         code, _, stderr = await run_cmd(
-            cmd=f"ip link add {link_from} type veth peer {link_to}",
+            cmd=f"ip link add {link_from} type veth peer name {link_to}",
             logger=self.logger,
         )
         assert code == 0 or "File exists" in stderr, f"Could not create veth peer: {stderr}"
@@ -232,9 +237,10 @@ class LocalVeth(BaseNetwork):
         retry += 1
 
         if retry >= times:
-            raise SystemError("Netns still exists")
+            raise SystemError(f"Netns {self.config.client_namespace} was not removed in time")
 
-        self.logger.debug("NETNS is still exists")
+        self.logger.debug(f"NETNS {self.config.client_namespace} still exists, sleeping...")
+        await asyncio.sleep(interval)
         return await self.wait_until_removed(retry=retry, interval=interval, times=times)
 
     async def _delete_namespace(self, name: str, strict: bool = True):

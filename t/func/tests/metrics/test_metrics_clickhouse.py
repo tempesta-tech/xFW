@@ -44,7 +44,6 @@ async def test_tcp_flags(
     clickhouse_client,
     metric_analyzer,
 ):
-    await clickhouse_client.connect()
     await tcp_raw_server.start()
     await tcp_raw_client.start()
 
@@ -92,7 +91,6 @@ async def test_icmp(
 ):
     await udp_server.start()
     await icmp_raw_client.start()
-    await clickhouse_client.connect()
 
     async with metric_analyzer.track_clickhouse_metric(
         clickhouse_client, ip_to_search=icmp_raw_client.ip_clickhouse, expected_bit=expected_metric
@@ -120,7 +118,6 @@ async def test_icmp(
 async def test_dst(
     xfw_setup, expected_metric: int, xfw, client, server, clickhouse_client, metric_analyzer
 ):
-    await clickhouse_client.connect()
 
     async with metric_analyzer.track_clickhouse_metric(
         clickhouse_client, ip_to_search=client.ip_clickhouse, expected_bit=expected_metric
@@ -178,7 +175,6 @@ async def test_dst(
 async def test_src(
     xfw_setup, expected_metric: int, xfw, client, server, clickhouse_client, metric_analyzer
 ):
-    await clickhouse_client.connect()
 
     async with metric_analyzer.track_clickhouse_metric(
         clickhouse_client, ip_to_search=client.ip_clickhouse, expected_bit=expected_metric
@@ -227,7 +223,6 @@ async def test_tcp_anomaly(
     clickhouse_client,
     metric_analyzer,
 ):
-    await clickhouse_client.connect()
     await tcp_raw_server.start()
     await tcp_raw_client.start()
 
@@ -250,7 +245,6 @@ async def test_blocked_by_tcp_anomaly_zero_port_20_bit(
     clickhouse_client,
     metric_analyzer,
 ):
-    await clickhouse_client.connect()
     await tcp_raw_server.start()
     await tcp_raw_client.start()
 
@@ -284,7 +278,6 @@ async def test_blocked_by_udp_anomaly_zero_port_21_bit(
     clickhouse_client,
     metric_analyzer,
 ):
-    await clickhouse_client.connect()
     await udp_server.start()
     await udp_raw_client.start()
 
@@ -365,7 +358,6 @@ async def test_invalid_l2_l3(
     xfw,
     expected_address,
 ):
-    await clickhouse_client.connect()
     await ether_raw_server.start()
     await invalid_l2_raw_client.start()
 
@@ -415,7 +407,6 @@ async def test_invalid_l4(
     clickhouse_client,
     metric_analyzer,
 ):
-    await clickhouse_client.connect()
     await ether_raw_server.start()
     await invalid_l2_ip4_raw_client.start()
 
@@ -465,7 +456,6 @@ async def test_invalid_src_ip(
     clickhouse_client,
     metric_analyzer,
 ):
-    await clickhouse_client.connect()
     await ether_raw_server.start()
     await invalid_l2_raw_client.start()
 
@@ -490,7 +480,6 @@ async def test_blocked_by_tcp_auth_filter_unknown_connection_32_bit(
 ):
     await xfw.rules_set("xfw { tcp_auth_filter; }")
 
-    await clickhouse_client.connect()
     await tcp_raw_server.start()
     await tcp_raw_client.start()
 
@@ -513,7 +502,6 @@ async def test_blocked_by_tcp_auth_filter_expired_connection_33_bit(
 ):
     await xfw.rules_set("xfw { tcp_auth_filter; }")
 
-    await clickhouse_client.connect()
     await tcp_raw_server.start()
     await tcp_raw_client.start()
 
@@ -546,7 +534,6 @@ async def test_blocked_by_tcp_syncookies_rule_invalid_syn_cookie_34_bit(
     clickhouse_client,
     metric_analyzer,
 ):
-    await clickhouse_client.connect()
     # Use zero passive timer to try to generate a cookie for each SYN.
     await xfw_with_forced_syncookie.rules_set(
         "xfw { tcp_syncookies flood_timer=1 passive_timer=0; }"
@@ -608,7 +595,6 @@ class TestBlockedByDNS:
     ):
         await xfw.rules_set("xfw { dns_filter; }")
 
-        await clickhouse_client.connect()
         await dns_udp_server.start()
         await dns_udp_client.start()
 
@@ -665,7 +651,6 @@ class TestBlockedByDNS:
 
         await dns_udp_server.start()
         await dns_udp_client.start()
-        await clickhouse_client.connect()
 
         async with metric_analyzer.track_clickhouse_metric(
             clickhouse_client,
@@ -717,7 +702,6 @@ async def test_blocked_by_dns_anomaly_server(
     clickhouse_client,
     metric_analyzer,
 ):
-    await clickhouse_client.connect()
     await xfw_setup.rules_set("xfw { dns_filter; }")
 
     async with metric_analyzer.track_clickhouse_metric(
@@ -747,7 +731,6 @@ async def test_blocked_by_dns_anomaly_udp_response_packet_is_too_large_43_bit(
     xfw,
     setup_mtu_10000,
 ):
-    await clickhouse_client.connect()
     await dns_udp_server.start()
     await dns_udp_client.start()
 
