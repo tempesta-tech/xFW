@@ -119,7 +119,7 @@ clean: FORCE
 install:
 	@echo "Installing executables to $(BINDIR)"
 	@install -d -m 755 ${BINDIR} ${SBINDIR} ${LIBDIR} ${INCLUDEDIR}
-	install -m 755 xfwctl $(BINDIR)
+	install -m 755 xfwctl set_irq_affinity.sh $(BINDIR)
 	@for dir in $(SUBDIRS); do \
 		echo "Installing $$dir..."; \
 		$(MAKE) -C $$dir install; \
