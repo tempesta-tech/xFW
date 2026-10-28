@@ -18,4 +18,5 @@ override_dh_auto_build:
 override_dh_auto_install:
 	$(MAKE) -C $(PROJECT_ROOT) install DESTDIR=$(PACKAGE_DIR)
 	cp $(PROJECT_ROOT)/xfwctl $(PACKAGE_BIN_DIR)/xfwctl
+	cp $(PROJECT_ROOT)/set_irq_affinity.sh $(PACKAGE_BIN_DIR)/set_irq_affinity.sh
 	cp -R $(PROJECT_ROOT)/examples $(PACKAGE_OPT_DIR)/
