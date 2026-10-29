@@ -165,6 +165,7 @@ def xfw_fabric(
         tfw_logger_config_file=config.xfw_logger_config_path,
         xfw_logger_log_file=config.xfw_logger_log_file,
         xfw_manager_log_file=config.xfw_manager_log_file,
+        tests_log_dir=config.tests_log_dir,
         tfw_logger_max_events=config.tfw_logger_clickhouse_max_events,
         tfw_logger_max_wait_ms=config.tfw_logger_clickhouse_max_wait_ms,
         clickhouse_client=clickhouse_client,

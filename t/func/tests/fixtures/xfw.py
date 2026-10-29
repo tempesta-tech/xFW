@@ -41,11 +41,8 @@ async def xfw_global(
         geo=True,
         clickhouse_client=clickhouse_global,
     )
-    try:
-        await xfw.start()
-        yield xfw
-    finally:
-        await xfw.stop()
+    yield xfw
+    await xfw.stop()
 
 
 @pytest.fixture(scope="session")
@@ -71,6 +68,8 @@ async def xfw(
     xfw_global.xfw_mode = xfw_mode
     if not xfw_global.is_running:
         await xfw_global.start()
+    else:
+        await xfw_global.start_xdpdump()
 
     if xfw_mode == XfwMode.evaluate:
         await xfw_global.rules_set("""xfw { evaluation_mode; }""")
@@ -129,3 +128,14 @@ async def xfw_with_forced_syncookie(
     await xfw_global.stop_or_reset(xfw_use_rule_reset)
     xfw_global.config = original_config
     await xfw_global.syncookies_value_set(original_mode)
+
+
+@pytest.fixture
+async def xfw_without_xdpdump(xfw_global, xfw_use_rule_reset):
+    xfw_global.disable_xdpdump = True
+    await xfw_global.restart()
+
+    yield xfw_global
+
+    xfw_global.disable_xdpdump = False
+    await xfw_global.stop_or_reset(xfw_use_rule_reset)

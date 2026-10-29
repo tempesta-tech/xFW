@@ -1,28 +1,22 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
-
+import asyncio
 import os.path
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
-from pluggy import Result
-from pytest import CallInfo, FixtureRequest, Item, TestReport
+from pytest import FixtureRequest, TestReport
 
 from config import ConfigSettings
 
 
-@pytest.hookimpl(tryfirst=True, hookwrapper=True)
-def pytest_runtest_makereport(item: Item, call: CallInfo) -> None:
-    """
-    Save test result to item.
-    After completing the test in other hooks or fixtures, you can ger report:
-    report_call: TestReport = getattr(request.node, "rep_call", None) # fixtures
-    report_call: TestReport = getattr(item, "rep_call", None) # hooks
-    """
-    outcome: Result = yield
-    report: TestReport = outcome.get_result()
-    setattr(item, f"rep_{report.when}", report)
+@pytest.fixture(autouse=True, scope="session")
+def _clean_log_dir(config):
+    if os.path.exists(config.tests_log_dir):
+        shutil.rmtree(config.tests_log_dir)
+    os.makedirs(config.tests_log_dir, exist_ok=True)
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -71,3 +65,37 @@ def __log_test_lifecycle(request: FixtureRequest, config: ConfigSettings):
         subprocess.run(
             f"mv {temporary_log_file} {config.tests_log_dir}{test_function_name}.log", shell=True
         )
+
+
+@pytest.fixture(autouse=True, scope="function")
+async def __xdpdump_test_lifecycle(request: FixtureRequest, config, conf_logger, xfw_global):
+    if xfw_global.disable_xdpdump:
+        yield
+        return
+
+    yield
+
+    if xfw_global.disable_xdpdump:
+        return
+
+    await xfw_global.stop_xdpdump()
+
+    report_call: TestReport = getattr(request.node, "rep_call", None)
+
+    if report_call is None or report_call.failed:
+        target_dir = Path(config.tests_log_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        loop = asyncio.get_running_loop()
+
+        for capture_path, interface in zip(xfw_global.pcap_files, xfw_global.xdp_interfaces):
+            if not capture_path.exists():
+                conf_logger.warning(f"{capture_path} does not exist")
+                continue
+
+            await loop.run_in_executor(
+                None,
+                lambda: shutil.move(
+                    str(capture_path), str(target_dir / f"{request.node.name}_{interface}.pcap")
+                ),
+            )
