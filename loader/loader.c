@@ -24,6 +24,7 @@
 #include <bpf/libbpf.h>
 
 #include "../bpf_uapi/map_names.h"
+#include "per_cpu_maps.h"
 
 #ifndef XFW_LIB_DIR
 #error "XFW_LIB_DIR is not defined; check the loader build configuration"
@@ -611,6 +612,10 @@ detach_tc(const XfwProg *desc, const char *pin_root, const char *dev)
 	return 0;
 }
 
+/* Total SYN capacity per IP family, divided across all possible CPUs. */
+#define XFW_SYN_STAGE1_MAX_ENTRIES	10000000
+#define XFW_SYN_STAGE2_MAX_ENTRIES	1000000
+
 /*
  * Load and pin a BPF program.
  *
@@ -625,8 +630,31 @@ load_program(const XfwProg *desc, const char *pin_root,
 	struct bpf_object *obj = NULL;
 	struct bpf_program *prog;
 	char prog_pin[PATH_MAX], map_pin[PATH_MAX];
+	/*
+	 * Hard-coded values for SYN drop tables.
+	 *
+	 * @TODO: Replace hard-coded values by passing them from xfw config.
+	 */
+	XfwPerCpuMap syn_maps[] = {
+		{
+			.name = MAP_SYN_STAGE1_IPV4_STR,
+			.total_entries = XFW_SYN_STAGE1_MAX_ENTRIES,
+		},
+		{
+			.name = MAP_SYN_STAGE1_IPV6_STR,
+			.total_entries = XFW_SYN_STAGE1_MAX_ENTRIES,
+		},
+		{
+			.name = MAP_SYN_STAGE2_IPV4_STR,
+			.total_entries = XFW_SYN_STAGE2_MAX_ENTRIES,
+		},
+		{
+			.name = MAP_SYN_STAGE2_IPV6_STR,
+			.total_entries = XFW_SYN_STAGE2_MAX_ENTRIES,
+		},
+	};
 	size_t i;
-	int r;
+	int r, ncpus = 0;
 
 	r = check_pin_root(pin_root);
 	if (r)
@@ -679,6 +707,13 @@ load_program(const XfwProg *desc, const char *pin_root,
 		if (r)
 			goto out;
 	}
+	if (desc == &main_xdp && mode->deployment_mode != XFW_MODE_SCRUBBER) {
+		for (i = 0; i < ARRAY_SIZE(syn_maps); i++) {
+			r = disable_map(obj, syn_maps[i].name);
+			if (r)
+				goto out;
+		}
+	}
 
 	/*
 	 * Replace module-local maps with already pinned instances created
@@ -714,11 +749,35 @@ load_program(const XfwProg *desc, const char *pin_root,
 		goto out;
 	}
 
+	if (desc == &main_xdp && mode->deployment_mode == XFW_MODE_SCRUBBER) {
+		ncpus = libbpf_num_possible_cpus();
+		if (ncpus <= 0) {
+			r = ncpus ? ncpus : -EINVAL;
+			fprintf(stderr, "Cannot determine possible CPUs: %s\n",
+				strerror(-r));
+			goto out;
+		}
+		r = prepare_per_cpu_maps(obj, syn_maps, ARRAY_SIZE(syn_maps),
+					 ncpus);
+		if (r) {
+			fprintf(stderr, "Cannot configure CPU SYN maps: %s\n",
+				strerror(-r));
+			goto out;
+		}
+	}
+
 	r = bpf_object__load(obj);
 	if (r) {
 		fprintf(stderr, "Failed to load '%s': %s\n",
 			desc->obj_path, strerror(-r));
 		goto out;
+	}
+
+	if (desc == &main_xdp && mode->deployment_mode == XFW_MODE_SCRUBBER) {
+		r = populate_per_cpu_maps(syn_maps, ARRAY_SIZE(syn_maps),
+					  ncpus);
+		if (r)
+			goto out;
 	}
 
 	/*

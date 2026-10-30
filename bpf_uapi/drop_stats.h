@@ -46,6 +46,8 @@ enum XfwDropStat {
 	XFW_DROP_TCP_AUTH_FAILED,
 	XFW_DROP_TCP_AUTH_TIMEOUT,
 	XFW_DROP_SYNCOOKIE_FAILED,
+	XFW_DROP_SYN_BLOCKED,
+	XFW_DROP_SYN_CPU_AFFINITY_ERROR,
 	XFW_DROP_DNS_BADHDR_INGRESS,
 	XFW_DROP_DNS_QRY_RCODE_NOT_OK,
 	XFW_DROP_DNS_BAD_QUESTION,
@@ -170,6 +172,14 @@ static const struct XfwStatInfo xfw_drop_stats[] = {
 	[XFW_DROP_SYNCOOKIE_FAILED]		= {"xfw_syncookie_failed",
 						   "Blocked by 'tcp_syncookies' "
 						   "rule: invalid syncookie"},
+	[XFW_DROP_SYN_BLOCKED]			= {"xfw_syn_blocked",
+						   "Blocked by 'tcp_syn_drop' "
+						   "rule: SYN tuple is blocked"},
+	[XFW_DROP_SYN_CPU_AFFINITY_ERROR]		= {"xfw_syn_cpu_affinity_error",
+						   "Blocked by 'tcp_syn_drop' "
+						   "rule: SYN state promotion "
+						   "failed; check IRQ/CPU affinity "
+						   "for correct SYN validation"},
 	[XFW_DROP_DNS_BADHDR_INGRESS]		= {"xfw_dns_badhdr_ingress",
 						   "Blocked on parsing: DNS bad "
 						   "header"},
