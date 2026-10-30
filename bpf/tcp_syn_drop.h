@@ -16,6 +16,8 @@
 #include "filter.h"
 #include "tcp_flow.h"
 
+#define XFW_SYN_BLOCKED                        UINT64_MAX
+
 typedef struct XfwSynDropCtx {
 	void *stage1_map;
 	void *stage2_map;
@@ -23,41 +25,14 @@ typedef struct XfwSynDropCtx {
 } XfwSynDropCtx;
 
 /*
- * Stage 1 entry states.
- *
- * PENDING is the normal validation state. PROMOTING gives one CPU exclusive
- * ownership of the stage 1 -> stage 2 transition; concurrent SYNs are dropped
- * while the transition is in progress. BLOCKED permanently rejects the tuple
- * until the LRU entry is evicted.
- */
-typedef enum XfwSynStage1State {
-	XFW_SYN_STAGE1_STATE_PENDING,
-	XFW_SYN_STAGE1_STATE_BLOCKED
-} XfwSynStage1State;
-
-/*
- * Stage 2 entry states.
- *
- * ACTIVE allows a SYN to acquire the entry for processing. UPDATING gives one
- * CPU exclusive ownership while retry timing, backoff and counters are being
- * updated; concurrent SYNs are dropped. BLOCKED permanently rejects the tuple
- * until the LRU entry is evicted.
- */
-typedef enum XfwSynStage2State {
-	XFW_SYN_STAGE2_STATE_ACTIVE,
-	XFW_SYN_STAGE2_STATE_BLOCKED
-} XfwSynStage2State;
-
-/*
  * The stage 1 map stores SYN tuples which have not yet passed the initial
  * retransmission timing check.
  *
- * A blocked entry, with XFW_SYN_STAGE1_STATE_BLOCKED state
- * remains blocked until the LRU map evicts it.
+ * jtxtstamp records the first SYN time, or XFW_SYN_BLOCKED to reject the
+ * tuple until LRU eviction. Check the sentinel before timestamp arithmetic.
  */
 typedef struct XfwSynStage1Entry {
 	uint64_t	jtxtstamp;
-	uint32_t	state;
 } XfwSynStage1Entry;
 
 /*
@@ -69,24 +44,15 @@ typedef struct XfwSynStage1Entry {
  * subsequent SYN for the same tuple from starting the authentication
  * sequence again and thus bypassing the retry limit.
  *
- * While blocked is set, all matching SYNs are dropped. For a finite block
- * timeout, blocked_until contains the timestamp at which the tuple may
- * start authentication again. Once that time is reached, the blocked entry
- * is removed and a following SYN can create a new authentication state.
- * With an unlimited block timeout, the entry remains blocked until it is
- * evicted from the LRU map.
- *
- * blocked and blocked_until deliberately represent state and expiration
- * separately. Encoding both in blocked_until would require sentinel values
- * (e.g. 0 for unblocked and UINT64_MAX for indefinitely blocked), making
- * the state less explicit and coupling timestamp semantics to special
- * values.
+ * blocked_until is 0 while active, XFW_SYN_BLOCKED for a permanent block,
+ * or a finite expiration timestamp. After a finite block expires, the next
+ * SYN starts a new stage 1 validation cycle and is dropped. Permanent blocks
+ * remain until LRU eviction.
  */
 typedef struct XfwSynStage2Entry {
 	uint64_t	jtxtstamp;
 	uint64_t	max_delay;
 	uint64_t	blocked_until;
-	uint32_t	state;
 	uint32_t	retry_count;
 } XfwSynStage2Entry;
 
@@ -195,7 +161,6 @@ xfw_promote_syn(const XfwSynDropCtx *drop_ctx, uint64_t now,
 		.jtxtstamp = now,
 		.max_delay = cfg->max_delay_jiff * 2,
 		.blocked_until = 0,
-		.state = XFW_SYN_STAGE2_STATE_ACTIVE,
 		.retry_count = 1,
 	};
 
@@ -227,13 +192,12 @@ xfw_promote_syn(const XfwSynDropCtx *drop_ctx, uint64_t now,
  *
  *     jtxtstamp + min_delay_jiff <= now <= jtxtstamp + max_delay_jiff.
  *
- * A SYN outside this window marks the entry BLOCKED until LRU eviction.
+ * A SYN outside this window sets jtxtstamp to XFW_SYN_BLOCKED until eviction.
  *
  * For a valid retransmission, insert stage 2 state before removing the
  * stage 1 entry. Promotion counts this SYN as the first valid retry and
  * starts a new timing window at now with twice the configured max_delay.
- * If insertion fails, restore PENDING without changing the original
- * timestamp and drop the current SYN.
+ * If insertion fails, keep the original timestamp and drop the current SYN.
  *
  * @ctx:      packet context and TCP SYN drop configuration.
  * @drop_ctx: family-specific maps and complete TCP SYN key.
@@ -252,7 +216,7 @@ xfw_process_syn_stage1(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	 * The entry is permanently blocked until LRU eviction.
 	 * Drop the current SYN.
 	 */
-	if (entry->state == XFW_SYN_STAGE1_STATE_BLOCKED)
+	if (entry->jtxtstamp == XFW_SYN_BLOCKED)
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 
 	/*
@@ -266,16 +230,15 @@ xfw_process_syn_stage1(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	if (entry->jtxtstamp + syn_cfg->min_delay_jiff > now
 	    || now > entry->jtxtstamp + syn_cfg->max_delay_jiff)
 	{
-		entry->state = XFW_SYN_STAGE1_STATE_BLOCKED;
+		entry->jtxtstamp = XFW_SYN_BLOCKED;
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
 
 	if (!xfw_promote_syn(drop_ctx, now, syn_cfg)) {
 		/*
 		 * Stage 2 insertion failed, for example because this key
-		 * already exists. Restore PENDING without changing the
-		 * timestamp so a later SYN can retry validation against the
-		 * original window.
+		 * already exists. Keep the original timestamp so a later SYN
+		 * can retry validation against the original window.
 		 */
 		return XFW_MAKE_CTX_DROP(ctx,
 					 XFW_DROP_SYN_HASH_COLLISION_BLOCKED);
@@ -289,7 +252,6 @@ xfw_add_syn_stage1(const XfwSynDropCtx *drop_ctx, uint64_t now)
 {
 	XfwSynStage1Entry pending = {
 		.jtxtstamp = now,
-		.state = XFW_SYN_STAGE1_STATE_PENDING,
 	};
 
 	/*
@@ -392,7 +354,7 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	 * The entry is permanently blocked until LRU eviction.
 	 * Drop the current SYN.
 	 */
-	if (entry->state == XFW_SYN_STAGE2_STATE_BLOCKED)
+	if (entry->blocked_until == XFW_SYN_BLOCKED)
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 
 	/*
@@ -443,7 +405,7 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 		 * A SYN outside the retransmission window is permanently
 		 * blocked, as required by the design.
 		 */
-		entry->state = XFW_SYN_STAGE2_STATE_BLOCKED;
+		entry->blocked_until = XFW_SYN_BLOCKED;
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
 
@@ -459,11 +421,13 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
          */
 
 	if (entry->retry_count == syn_cfg->retry_count) {
-		if (syn_cfg->block_timeout_jiff)
-			entry->blocked_until =
-				now + syn_cfg->block_timeout_jiff;
+		/* Treat unlimited or overflowing deadlines as permanent blocks. */
+		if (!syn_cfg->block_timeout_jiff
+		    || XFW_SYN_BLOCKED - syn_cfg->block_timeout_jiff < now)
+			entry->blocked_until = XFW_SYN_BLOCKED;
 		else
-			entry->state = XFW_SYN_STAGE2_STATE_BLOCKED;
+			entry->blocked_until = now +
+				syn_cfg->block_timeout_jiff;
 
 		return XFW_CTX_CONTINUE;
 	}
