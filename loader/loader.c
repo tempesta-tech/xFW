@@ -707,6 +707,13 @@ load_program(const XfwProg *desc, const char *pin_root,
 		if (r)
 			goto out;
 	}
+	if (desc == &main_xdp && mode->deployment_mode != XFW_MODE_SCRUBBER) {
+		for (i = 0; i < ARRAY_SIZE(syn_maps); i++) {
+			r = disable_map(obj, syn_maps[i].name);
+			if (r)
+				goto out;
+		}
+	}
 
 	/*
 	 * Replace module-local maps with already pinned instances created
@@ -742,7 +749,7 @@ load_program(const XfwProg *desc, const char *pin_root,
 		goto out;
 	}
 
-	if (desc == &main_xdp) {
+	if (desc == &main_xdp && mode->deployment_mode == XFW_MODE_SCRUBBER) {
 		ncpus = libbpf_num_possible_cpus();
 		if (ncpus <= 0) {
 			r = ncpus ? ncpus : -EINVAL;
@@ -766,7 +773,7 @@ load_program(const XfwProg *desc, const char *pin_root,
 		goto out;
 	}
 
-	if (desc == &main_xdp) {
+	if (desc == &main_xdp && mode->deployment_mode == XFW_MODE_SCRUBBER) {
 		r = populate_per_cpu_maps(syn_maps, ARRAY_SIZE(syn_maps),
 					  ncpus);
 		if (r)
