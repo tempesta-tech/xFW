@@ -241,7 +241,7 @@ xfw_process_syn_stage1(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 		 * can retry validation against the original window.
 		 */
 		return XFW_MAKE_CTX_DROP(ctx,
-					 XFW_DROP_SYN_HASH_COLLISION_BLOCKED);
+					 XFW_DROP_SYN_CPU_AFFINITY_ERROR);
 	}
 
 	return XFW_CTX_CONTINUE;
