@@ -358,6 +358,7 @@ async def test_xfw_push_config_multiple_same(
     assert await connection_check(client, server), f"IP {server} is blocked"
 
 
+@pytest.mark.disable_tcpdump
 async def test_delete_iface_while_xfw_is_running(
     network,
     config: ConfigSettings,

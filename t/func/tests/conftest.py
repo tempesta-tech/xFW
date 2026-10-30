@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: (c) 2026 Tempesta Technologies, Inc.
 # SPDX-License-Identifier: GPL-2.0-or-later
 import pytest
+from pluggy import Result
+from pytest import CallInfo, Item, TestReport
 
 from framework.xfw import XfwMode
 
@@ -9,24 +11,24 @@ pytest_plugins = [
     "tests.fixtures.common",
     "tests.fixtures.network",
     # other utils and hooks
+    "tests.fixtures.clickhouse",
+    "tests.fixtures.clonners",
+    "tests.fixtures.logs",
     "tests.fixtures.metrics",
     "tests.fixtures.parameters",
-    "tests.fixtures.clickhouse",
-    "tests.fixtures.xfw",
-    "tests.fixtures.clonners",
     "tests.fixtures.rpc",
     "tests.fixtures.rules",
-    "tests.fixtures.hooks",
+    "tests.fixtures.xfw",
     # client and servers
     "tests.fixtures.proto.base",
+    "tests.fixtures.proto.dns",
     "tests.fixtures.proto.eth",
     "tests.fixtures.proto.gre",
-    "tests.fixtures.proto.udp",
-    "tests.fixtures.proto.tcp",
     "tests.fixtures.proto.icmp",
-    "tests.fixtures.proto.dns",
-    "tests.fixtures.proto.traffic_replay",
     "tests.fixtures.proto.shared",
+    "tests.fixtures.proto.tcp",
+    "tests.fixtures.proto.traffic_replay",
+    "tests.fixtures.proto.udp",
 ]
 
 
@@ -43,6 +45,7 @@ def pytest_configure(config):
         "ddos_simulating: In the test DDoS simulating and it can take more time and more machine resources",
         "not_in_fast_mode: dont run the test in fast mode",
         "xfw_mode(mode): set up mode for XFW",
+        "disable_tcpdump: not run tcpdump fixture for a test",
     ]
 
     for marker in markers:
@@ -96,3 +99,16 @@ def pytest_collection_modifyitems(config, items):
     if deselected:
         items[:] = selected
         config.hook.pytest_deselected(items=deselected)
+
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item: Item, call: CallInfo) -> None:
+    """
+    Save test result to item.
+    After completing the test in other hooks or fixtures, you can ger report:
+    report_call: TestReport = getattr(request.node, "rep_call", None) # fixtures
+    report_call: TestReport = getattr(item, "rep_call", None) # hooks
+    """
+    outcome: Result = yield
+    report: TestReport = outcome.get_result()
+    setattr(item, f"rep_{report.when}", report)
