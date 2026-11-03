@@ -38,8 +38,11 @@ class TcpRawSynDropIpv6Client(TcpRawSynDropClient, TcpIpV6RawClient):
 
 
 @pytest.fixture
-async def tcp_ip4_raw_syn_drop_client(config: ConfigSettings, logging_level: int) -> TcpServer:
+async def tcp_ip4_raw_syn_drop_client(
+    xfw_mode, config: ConfigSettings, logging_level: int
+) -> TcpServer:
     client = client_fabric(
+        xfw_mode=xfw_mode,
         logging_level=logging_level,
         config=config,
         local_class=TcpRawSynDropIpv4Client,
@@ -53,8 +56,9 @@ async def tcp_ip4_raw_syn_drop_client(config: ConfigSettings, logging_level: int
 
 
 @pytest.fixture
-async def tcp_ip6_raw_syn_drop_client(config: ConfigSettings, logging_level) -> TcpServer:
+async def tcp_ip6_raw_syn_drop_client(xfw_mode, config: ConfigSettings, logging_level) -> TcpServer:
     client = client_fabric(
+        xfw_mode=xfw_mode,
         logging_level=logging_level,
         config=config,
         local_class=TcpRawSynDropIpv6Client,
