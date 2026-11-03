@@ -15,11 +15,13 @@
 
 #include <boost/asio/ip/address.hpp>
 
+#include "config_defaults.hh"
 #include "defaults_section.hh"
 #include "ip_proto_section.hh"
 #include "tempesta_client.hh" // for extern "C" API
 #include "tcl_private.hh"
 #include "tcp_anomaly_section.hh"
+#include "tcp_syn_drop_section.hh"
 #include "line_consumer.hh"
 #include "log.hh"
 #include "section.hh"
@@ -278,8 +280,8 @@ protected:
 
 	private:
 		XfwConf				&xfw_conf_;
-		std::optional<uint32_t>		f_timer_;
-		std::optional<uint32_t>		p_timer_;
+		std::optional<uint32_t>		f_timer_sec_;
+		std::optional<uint32_t>		p_timer_sec_;
 	};
 
 	class RatelimitSection final: public Section
@@ -460,6 +462,8 @@ XfwSection::process_body()
 		return {true, std::make_shared<TcpAuthSection>(xfw_conf_)};
 	else if (name == "tcp_syncookies"sv)
 		return {true, std::make_shared<TcpSyncookieSection>(xfw_conf_)};
+	else if (name == "tcp_syn_drop"sv)
+		return {true, std::make_shared<TcpSynDropSection>(xfw_conf_)};
 	else if (name == "net"sv)
 		return {true, std::make_shared<ProtectedNetSection>(xfw_conf_)};
 	else if (name == "icmp"sv)
@@ -1163,11 +1167,11 @@ XfwSection::TcpSyncookieSection::process_attributes()
 
 	auto name = peek_until_delimeters();
 	if (name == "passive_timer") {
-		p_timer_ = consume_typed_assignment<uint32_t>(name);
+		p_timer_sec_ = consume_typed_assignment<uint32_t>(name);
 		return true;
 	}
 	else if (name == "flood_timer") {
-		f_timer_ = consume_typed_assignment<uint32_t>(name);
+		f_timer_sec_ = consume_typed_assignment<uint32_t>(name);
 		return true;
 	}
 
@@ -1187,12 +1191,12 @@ XfwSection::TcpSyncookieSection::commit()
 		return;
 	}
 
-	if (!f_timer_.has_value() && !p_timer_.has_value()) {
+	if (!f_timer_sec_.has_value() && !p_timer_sec_.has_value()) {
 		throw Except("Section must contain at least one "
 			     "of 'passive_timer' or 'flood_timer'.");
 	}
-	xfw_conf_.syncookie_.emplace(p_timer_.value_or(1),
-		f_timer_.value_or(1));
+	xfw_conf_.syncookie_.emplace(p_timer_sec_.value_or(DEFAULT_PASSIVE_TIMER_SEC),
+				     f_timer_sec_.value_or(DEFAULT_FLOOD_TIMER_SEC));
 }
 
 /*
