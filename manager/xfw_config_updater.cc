@@ -5,9 +5,11 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+#include <algorithm>
 #include <numeric>
 
 #include "../bpf_uapi/tcp_anomaly_features.h"
+#include "../bpf_uapi/synproxy.h"
 #include "../lib/proto/bitset_helper.hh"
 #include "../lib/bitset.hh"
 
@@ -74,8 +76,11 @@ private:
 		       "Unexpected bytes count at XFWCfg::flags");
 
 		const auto &config = xfw.get_config();
-		if (!config.has_value())
+		if (!config.has_value()) {
+			if (msg_flags_.test(TempestaRPC::XFWOpt_XFW_CONFIG_PATCH))
+				config_.synproxy_filter_ = xfw.get_synproxy_config();
 			return;
+		}
 
 		if (msg_flags_.test(TempestaRPC::XFWOpt_XFW_CONFIG_PATCH)) {
 			// We are going to patch the old config if possible.
@@ -119,6 +124,7 @@ protected:
 
 	void prepare_tcp_auth_filter();
 	void prepare_syncookie_filter();
+	void prepare_synproxy_filter();
 
 	void prepare_tcp_flags_filter();
 
@@ -171,6 +177,7 @@ private:
 void
 update_xfw_config(const TempestaRPC::XFWCfg &cfg, Xfw &xfw)
 {
+	std::lock_guard lock(xfw.update_mutex());
 	XfwConfigUpdater r(xfw, cfg);
 	r.prepare_update();
 	r.commit_update(xfw);
@@ -196,6 +203,7 @@ XfwConfigUpdater::prepare_update()
 
 	prepare_evaluation_mode();
 	prepare_syncookie_filter();
+	prepare_synproxy_filter();
 
 	// Syncookies modify the workflow by creating a cookie in response and
 	// sending data back to the user (see syn_filter).
@@ -203,6 +211,8 @@ XfwConfigUpdater::prepare_update()
 	verify(!config_.evaluation_mode_.enabled_ ||
 	       !config_.syncookie_filter_.has_value(), "Syncookies are not allowed"
 	       " in evaluation mode");
+	verify(!config_.evaluation_mode_.enabled_ || config_.synproxy_filter_.empty(),
+	       "SYN proxy is not allowed in evaluation mode");
 
 	prepare_tcp_flags_filter();
 	prepare_icmp_rules();
@@ -492,6 +502,68 @@ XfwConfigUpdater::prepare_syncookie_filter()
 
 	config_.syncookie_filter_.emplace(msg_.syncookie()->passive_timer(),
 		msg_.syncookie()->flood_timer());
+}
+
+void
+XfwConfigUpdater::prepare_synproxy_filter()
+{
+	const auto *rule = msg_.synproxy();
+	if (!rule)
+		return;
+
+	XfwConfig::SynproxyFilter selectors;
+	auto read_selectors = [&](const auto *nets, bool ipv6) {
+		if (!nets)
+			return;
+		for (const auto *net : *nets) {
+			verify(net && net->addr() && net->addr()->size() == (ipv6 ? 16 : 4),
+			       "Invalid SYN-proxy destination address");
+			verify(net->prefix() <= (ipv6 ? 128 : 32),
+			       "Invalid SYN-proxy destination prefix");
+			XfwConfig::SynproxySelector selector;
+			selector.ipv6_ = ipv6;
+			selector.prefix_ = net->prefix();
+			selector.port_ = net->port();
+			std::copy(net->addr()->begin(), net->addr()->end(), selector.addr_.begin());
+			for (size_t i = 0; i < selector.addr_.size(); ++i) {
+				int bits = int(selector.prefix_) - int(i * 8);
+				if (bits <= 0)
+					selector.addr_[i] = 0;
+				else if (bits < 8)
+					selector.addr_[i] &= uint8_t(0xffU << (8 - bits));
+			}
+			selectors.insert(selector);
+			verify(selectors.size() <= XFW_SYNPROXY_MAX_TARGETS,
+			       "SYN-proxy selector limit exceeded");
+		}
+	};
+	read_selectors(rule->net4s(), false);
+	read_selectors(rule->net6s(), true);
+
+	using namespace TempestaRPC;
+	switch (rule->operation()) {
+	case SynproxyOperation_REPLACE:
+		verify(!selectors.empty(), "tcp_synproxy requires a nonempty scope");
+		config_.synproxy_filter_ = std::move(selectors);
+		break;
+	case SynproxyOperation_ADD:
+		verify(!selectors.empty() && !config_.synproxy_filter_.empty(),
+		       "tcp_synproxy/add requires an existing scope and destinations");
+		for (const auto &selector : selectors)
+			verify(config_.synproxy_filter_.insert(selector).second,
+			       "SYN-proxy destination already exists");
+		break;
+	case SynproxyOperation_DELETE:
+		if (selectors.empty())
+			config_.synproxy_filter_.clear();
+		else
+			for (const auto &selector : selectors)
+				verify(config_.synproxy_filter_.erase(selector) != 0,
+				       "SYN-proxy destination does not exist");
+		break;
+	default:
+		throw UpdateError("Unsupported SYN-proxy operation");
+	}
 }
 
 void

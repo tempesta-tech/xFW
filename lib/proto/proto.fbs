@@ -56,6 +56,14 @@ table Syncookie {
 	flood_timer: uint32;
 }
 
+enum SynproxyOperation : byte { REPLACE, ADD, DELETE }
+
+table Synproxy {
+	operation: SynproxyOperation = REPLACE;
+	net4s: [Net4];
+	net6s: [Net6];
+}
+
 table TcpAnomaly {
 	features: [ubyte];  // Array to represent the bitset as bytes
 	bad_tcp_flags: [ubyte];  // Array to represent the bitset as bytes
@@ -161,6 +169,7 @@ table XFWCfg {
 	ratelimits: [Ratelimit];
 	defaults: [DefaultAction];
 	tcp_anomaly: TcpAnomaly;
+	synproxy: Synproxy;
 }
 
 // Tempesta FW configuration
@@ -186,14 +195,14 @@ table ReqRecord {
 }
 
 table Request {
-	proto_ver:	uint32 = 0;  // Current protocol version is 0
+	proto_ver:	uint32 = 0;  // Keep wire default 0; version 1 must be explicit.
 	records:	[ReqRecord];
 }
 
 root_type Request;
 
 table Response {
-	proto_ver:	uint32 = 0;	// Current protocol version is 0
+	proto_ver:	uint32 = 0;	// Keep wire default 0; version 1 must be explicit.
 	code:		uint32;		// Regular http code
 	message:	string;		// Text description of the success/error message
 }

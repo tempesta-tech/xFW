@@ -48,6 +48,7 @@ enum {
 typedef struct {
 	uint8_t			deployment_mode;
 	bool			dns;
+	bool			synproxy;
 } XfwLoadMode;
 
 /*
@@ -118,6 +119,19 @@ static const XfwProg *programs[] = {
 	&main_tc,
 };
 
+static const char *const synproxy_maps[] = {
+	MAP_SYNPROXY_GEN_STR,
+	MAP_SYNPROXY_META_STR,
+	SHADOW_MAP_STR(MAP_SYNPROXY_4_BASENAME, MAP_PRIMARY_IDX),
+	SHADOW_MAP_STR(MAP_SYNPROXY_4_BASENAME, MAP_SECONDARY_IDX),
+	SHADOW_MAP_STR(MAP_SYNPROXY_6_BASENAME, MAP_PRIMARY_IDX),
+	SHADOW_MAP_STR(MAP_SYNPROXY_6_BASENAME, MAP_SECONDARY_IDX),
+	SHADOW_MAP_STR(MAP_SYNPROXY_RET_4_BASENAME, MAP_PRIMARY_IDX),
+	SHADOW_MAP_STR(MAP_SYNPROXY_RET_4_BASENAME, MAP_SECONDARY_IDX),
+	SHADOW_MAP_STR(MAP_SYNPROXY_RET_6_BASENAME, MAP_PRIMARY_IDX),
+	SHADOW_MAP_STR(MAP_SYNPROXY_RET_6_BASENAME, MAP_SECONDARY_IDX),
+};
+
 static const struct {
 	const char	*name;
 	uint8_t		mode;
@@ -143,6 +157,7 @@ usage(const char *prog)
 		"\n"
 		"Load modes (default: host without DNS):\n"
 		"  host, gw, or scrubbing; combine with dns in either order\n"
+		"  gw also accepts synproxy; all tokens may appear in any order\n"
 		"  dns alone is shorthand for host,dns\n"
 		"\n"
 		"Examples:\n"
@@ -159,12 +174,7 @@ usage(const char *prog)
 static int
 parse_load_mode(const char *name, XfwLoadMode *mode)
 {
-	enum {
-		MODE_START,
-		MODE_HAVE_DEPLOYMENT,
-		MODE_HAVE_DNS,
-		MODE_COMPLETE,
-	} state = MODE_START;
+	bool have_deployment = false;
 	const char *token, *end;
 	size_t len, i;
 
@@ -179,17 +189,15 @@ parse_load_mode(const char *name, XfwLoadMode *mode)
 			goto invalid;
 
 		if (len == sizeof("dns") - 1 && !memcmp(token, "dns", len)) {
-			switch (state) {
-			case MODE_START:
-				state = MODE_HAVE_DNS;
-				break;
-			case MODE_HAVE_DEPLOYMENT:
-				state = MODE_COMPLETE;
-				break;
-			default:
+			if (mode->dns)
 				goto invalid;
-			}
 			mode->dns = true;
+		}
+		else if (len == sizeof("synproxy") - 1
+			 && !memcmp(token, "synproxy", len)) {
+			if (mode->synproxy)
+				goto invalid;
+			mode->synproxy = true;
 		}
 		else {
 			for (i = 0; i < ARRAY_SIZE(deployment_modes); i++) {
@@ -198,29 +206,87 @@ parse_load_mode(const char *name, XfwLoadMode *mode)
 					       len))
 					break;
 			}
-			if (i == ARRAY_SIZE(deployment_modes))
+			if (i == ARRAY_SIZE(deployment_modes) || have_deployment)
 				goto invalid;
 
-			switch (state) {
-			case MODE_START:
-				state = MODE_HAVE_DEPLOYMENT;
-				break;
-			case MODE_HAVE_DNS:
-				state = MODE_COMPLETE;
-				break;
-			default:
-				goto invalid;
-			}
+			have_deployment = true;
 			mode->deployment_mode = deployment_modes[i].mode;
 		}
 
 		if (!end)
-			return 0;
+			break;
 	}
+	if (mode->synproxy && mode->deployment_mode != XFW_MODE_GW) {
+		fprintf(stderr, "SYN proxy requires gateway ('gw') mode\n");
+		goto invalid;
+	}
+	return 0;
 
 invalid:
 	fprintf(stderr, "Invalid load mode: '%s'\n", name);
 	return -EINVAL;
+}
+
+static bool
+synproxy_conntrack_btf(const struct btf *btf)
+{
+	return btf__find_by_name_kind(btf, "bpf_xdp_ct_lookup", BTF_KIND_FUNC) > 0
+		&& btf__find_by_name_kind(btf, "bpf_ct_release", BTF_KIND_FUNC) > 0
+		&& btf__find_by_name_kind(btf, "nf_conn", BTF_KIND_STRUCT) > 0;
+}
+
+/* Check real kernel symbols without loading BPF feature-probe programs. */
+static int
+check_synproxy_support(void)
+{
+	static const char *const functions[] = {
+		"bpf_tcp_raw_gen_syncookie_ipv4",
+		"bpf_tcp_raw_check_syncookie_ipv4",
+		"bpf_tcp_raw_gen_syncookie_ipv6",
+		"bpf_tcp_raw_check_syncookie_ipv6",
+		/* IPv6 raw helpers are stubs when IPv6 is not built in. */
+		"__cookie_v6_init_sequence",
+		"__cookie_v6_check",
+	};
+	struct btf *vmlinux, *module = NULL;
+	size_t i;
+	int r;
+
+	vmlinux = btf__load_vmlinux_btf();
+	r = libbpf_get_error(vmlinux);
+	if (r) {
+		fprintf(stderr, "SYN proxy requires vmlinux BTF: %s\n", strerror(-r));
+		return r;
+	}
+	for (i = 0; i < ARRAY_SIZE(functions); i++) {
+		if (btf__find_by_name_kind(vmlinux, functions[i], BTF_KIND_FUNC) > 0)
+			continue;
+		fprintf(stderr, "SYN proxy requires kernel BTF function '%s' "
+			"(built-in IPv6 and SYN cookies)\n", functions[i]);
+		r = -EOPNOTSUPP;
+		goto out;
+	}
+	if (synproxy_conntrack_btf(vmlinux)) {
+		r = 0;
+		goto out;
+	}
+	module = btf__load_module_btf("nf_conntrack", vmlinux);
+	r = libbpf_get_error(module);
+	if (r) {
+		module = NULL;
+		fprintf(stderr, "SYN proxy requires loaded nf_conntrack with BTF "
+			"and XDP conntrack kfuncs: %s\n", strerror(-r));
+		goto out;
+	}
+	if (!synproxy_conntrack_btf(module)) {
+		fprintf(stderr, "SYN proxy requires bpf_xdp_ct_lookup, "
+			"bpf_ct_release and nf_conn in kernel/module BTF\n");
+		r = -EOPNOTSUPP;
+	}
+out:
+	btf__free(module);
+	btf__free(vmlinux);
+	return r;
 }
 
 static const XfwProg *
@@ -465,6 +531,7 @@ set_load_mode(struct bpf_object *obj, const XfwProg *desc,
 	const struct btf_type *datasec;
 	uint8_t deployment = mode->deployment_mode;
 	uint8_t dns = mode->dns;
+	uint8_t synproxy = mode->synproxy;
 	void *data;
 	size_t data_size;
 	int id, r;
@@ -491,9 +558,12 @@ set_load_mode(struct bpf_object *obj, const XfwProg *desc,
 	if (r)
 		return r;
 
+	r = set_rodata_variable(btf, datasec, data, data_size,
+				"deployment_mode", &deployment, sizeof(deployment));
+	if (r || desc != &main_xdp)
+		return r;
 	return set_rodata_variable(btf, datasec, data, data_size,
-				   "deployment_mode", &deployment,
-				   sizeof(deployment));
+				   "synproxy_mode", &synproxy, sizeof(synproxy));
 }
 
 static int
@@ -628,6 +698,12 @@ load_program(const XfwProg *desc, const char *pin_root,
 	size_t i;
 	int r;
 
+	if (desc == &main_xdp && mode->synproxy) {
+		r = check_synproxy_support();
+		if (r)
+			return r;
+	}
+
 	r = check_pin_root(pin_root);
 	if (r)
 		return r;
@@ -678,6 +754,13 @@ load_program(const XfwProg *desc, const char *pin_root,
 		r = disable_map(obj, MAP_SYNCOOKIES_STR);
 		if (r)
 			goto out;
+	}
+	if (desc == &main_xdp && !mode->synproxy) {
+		for (i = 0; i < ARRAY_SIZE(synproxy_maps); i++) {
+			r = disable_map(obj, synproxy_maps[i]);
+			if (r)
+				goto out;
+		}
 	}
 
 	/*

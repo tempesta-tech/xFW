@@ -124,6 +124,14 @@ public:
 
 public:
 	void turn_filtration_on();
+	uint64_t synproxy_generation();
+	void stage_synproxy(uint64_t generation,
+			   const XfwConfig::SynproxyFilter &active,
+			   const XfwConfig::SynproxyFilter &retired,
+			   uint64_t retired_until_ns);
+	void publish_synproxy(uint64_t generation);
+	void finish_synproxy(uint64_t generation, uint64_t retired_until_ns,
+			    uint32_t active_count, uint32_t retired_count);
 	
 private:
 	struct SrcRules
