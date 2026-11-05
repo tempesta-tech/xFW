@@ -4,14 +4,12 @@ import asyncio
 import os.path
 import shutil
 import subprocess
-from contextlib import AsyncExitStack
 from pathlib import Path
 
 import pytest
 from pytest import FixtureRequest, TestReport
 
 from config import ConfigSettings
-from framework.sniffer import XdpdumpSniffer
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -70,27 +68,17 @@ def __log_test_lifecycle(request: FixtureRequest, config: ConfigSettings):
 
 
 @pytest.fixture(autouse=True, scope="function")
-async def __xdpdump_test_lifecycle(request: FixtureRequest, tmp_path: Path, config, conf_logger):
-    if "disable_xdpdump" in request.keywords:
+async def __xdpdump_test_lifecycle(request: FixtureRequest, config, conf_logger, xfw_global):
+    if xfw_global.disable_xdpdump:
         yield
         return
 
-    xfw_interfaces = list(interface for interface in config.xfw_interface.split(" "))
-    if not xfw_interfaces:
-        raise AssertionError("Incorrect XFW interfaces")
+    yield
 
-    sniffers = []
-    pcap_files = []
+    if xfw_global.disable_xdpdump:
+        return
 
-    for interface in xfw_interfaces:
-        capture_path = tmp_path / f"tmp_capture_{interface}.pcap"
-        pcap_files.append(capture_path)
-        sniffers.append(XdpdumpSniffer(path=capture_path, interface=interface, logger=conf_logger))
-
-    async with AsyncExitStack() as stack:
-        for sniffer in sniffers:
-            await stack.enter_async_context(sniffer)
-        yield
+    await xfw_global.stop_xdpdump()
 
     report_call: TestReport = getattr(request.node, "rep_call", None)
 
@@ -100,7 +88,7 @@ async def __xdpdump_test_lifecycle(request: FixtureRequest, tmp_path: Path, conf
 
         loop = asyncio.get_running_loop()
 
-        for capture_path, interface in zip(pcap_files, xfw_interfaces):
+        for capture_path, interface in zip(xfw_global.pcap_files, xfw_global.xdp_interfaces):
             if not capture_path.exists():
                 conf_logger.warning(f"{capture_path} does not exist")
                 continue
