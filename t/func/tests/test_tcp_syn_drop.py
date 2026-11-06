@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import asyncio
+import json
 import random
 from typing import AsyncGenerator
 
@@ -169,6 +170,27 @@ async def test_first_syn_dropped_second_syn_passed(
     assert packet.seq == seq
 
     # Valid retransmission is promoted into stage 2 map and passed upstream.
+    await expect_synack(tcp_syn_drop_client)
+
+
+@pytest.mark.skip_on_veth
+async def test_syn_drop_deleted_by_patch(
+    xfw: XFW,
+    tcp_server: TcpServer,
+    tcp_syn_drop_client: TcpRawClient,
+    start_tcp_server_and_raw_clients,
+):
+    # await xfw.restart()
+    await xfw.rules_set("xfw { tcp_syn_drop retry_count=3; }")
+
+    seq = random.randrange(1, 2**31)
+    await tcp_syn_drop_client.send_packet(syn_packet(seq))
+    await expect_no_reply(tcp_syn_drop_client)
+
+    await xfw.rules_patch("xfw { tcp_syn_drop/del; }")
+
+    # A new sequence number must pass without retransmission validation.
+    await tcp_syn_drop_client.send_packet(syn_packet(seq + 1))
     await expect_synack(tcp_syn_drop_client)
 
 
