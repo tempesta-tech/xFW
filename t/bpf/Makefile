@@ -26,7 +26,7 @@ CPPFLAGS += -I../..
 build: $(TARGET)
 
 $(TARGET): $(OBJECTS) $(GTEST_OBJ)
-	$(CXX) -o $@ $^ $(LDFLAGS) $(LDLIBS) -lxxhash
+	$(CXX) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(OBJ_DIR)/%.o: %.cc
 	@mkdir -p $(dir $@)

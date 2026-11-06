@@ -178,7 +178,7 @@ sudo apt install -y git curl cmake make g++ pkgconf jq xdp-tools \
     libboost-all-dev flatbuffers-compiler libflatbuffers-dev \
     libprotobuf-dev libgrpc++-dev libfmt-dev libspdlog-dev \
     libmaxminddb-dev libbpf-dev libbpf-tools libgtest-dev \
-    libxxhash-dev libbenchmark-dev linux-tools-common \
+    libbenchmark-dev linux-tools-common \
     linux-tools-generic linux-cloud-tools-generic
 ```
 
