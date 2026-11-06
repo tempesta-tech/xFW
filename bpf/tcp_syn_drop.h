@@ -123,6 +123,7 @@ struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
 	__uint(max_entries, 1);
 	__type(key, uint32_t);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__array(values, struct XfwSynStage1Ipv4Map);
 } MAP_SYN_STAGE1_IPV4_REF SEC(".maps");
 
@@ -130,6 +131,7 @@ struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
 	__uint(max_entries, 1);
 	__type(key, uint32_t);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__array(values, struct XfwSynStage1Ipv6Map);
 } MAP_SYN_STAGE1_IPV6_REF SEC(".maps");
 
@@ -137,6 +139,7 @@ struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
 	__uint(max_entries, 1);
 	__type(key, uint32_t);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__array(values, struct XfwSynStage2Ipv4Map);
 } MAP_SYN_STAGE2_IPV4_REF SEC(".maps");
 
@@ -144,6 +147,7 @@ struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
 	__uint(max_entries, 1);
 	__type(key, uint32_t);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__array(values, struct XfwSynStage2Ipv6Map);
 } MAP_SYN_STAGE2_IPV6_REF SEC(".maps");
 
