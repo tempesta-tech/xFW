@@ -10,7 +10,13 @@ from io import BytesIO
 import httpx
 import pytest
 
-from config import ConfigSettings
+from config import (
+    ConfigSettings,
+    GateVethConfigSettings,
+    NetworkType,
+    NicConfigSettings,
+    VethConfigSettings,
+)
 from framework.logger import get_logger
 
 
@@ -21,7 +27,22 @@ def event_loop(event_loop_policy: asyncio.AbstractEventLoopPolicy) -> asyncio.Ab
 
 @pytest.fixture(scope="session")
 def config() -> ConfigSettings:
-    yield ConfigSettings()
+    interim_settings = ConfigSettings.model_validate_json("{}")
+    net_type = interim_settings.network_type
+
+    config_mapping = {
+        NetworkType.veth: VethConfigSettings,
+        NetworkType.veth_gate: GateVethConfigSettings,
+        NetworkType.veth_nat: GateVethConfigSettings,
+        NetworkType.nic: NicConfigSettings,
+    }
+
+    target_config_class = config_mapping.get(net_type)
+    if not target_config_class:
+        raise ValueError(f"Incorrect network_type: {net_type}")
+    print(target_config_class)
+
+    return target_config_class()
 
 
 @pytest.fixture(scope="session")

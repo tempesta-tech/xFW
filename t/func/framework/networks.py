@@ -368,6 +368,9 @@ class LocalVeth(BaseNetwork):
             *[run_cmd(cmd, self.logger, log_output=False) for cmd in iptables_cmds]
         )
 
+    # async def enable_background_ipv6_traffic(self) -> None:
+    #
+
 
 class LocalGateVeth(LocalVeth):
 
