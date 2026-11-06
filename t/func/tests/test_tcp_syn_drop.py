@@ -300,8 +300,8 @@ async def test_retry_count_blocks_following_syns(
         assert not tcp_raw_server.has_flag(received, "A")
 
     #
-    # retry_count has been reached. The previous SYN was still passed,
-    # but the tuple is now blocked indefinitely because block_timeout=0.
+    # retry_count has been reached. The next timing-valid SYN is dropped
+    # and blocks the tuple indefinitely because block_timeout=0.
     #
     await asyncio.sleep(min_delay / 1000 + 0.2)
 
@@ -336,9 +336,8 @@ async def test_finite_block_timeout_restarts_validation(
     await complete_initial_syn_validation(tcp_syn_drop_client, tcp_raw_server, packet, min_delay)
 
     #
-    # First valid retransmission reaches retry_count=1.
-    # This SYN is still passed upstream, but the stage 2 entry is
-    # simultaneously put into the blocked state.
+    # The second valid retransmission reaches retry_count=2 and still
+    # passes upstream. The block starts on the next timing-valid SYN.
     #
     await asyncio.sleep(min_delay / 1000 + 0.2)
     await tcp_syn_drop_client.send_packet(packet)
@@ -347,13 +346,18 @@ async def test_finite_block_timeout_restarts_validation(
     assert tcp_raw_server.has_flag(received, "S")
 
     #
-    # While block_timeout has not expired, all following SYNs for
-    # this tuple must be dropped.
+    # The next timing-valid SYN starts the finite block. Sending it before
+    # min_delay would permanently block the tuple instead.
     #
-    await asyncio.sleep(0.2)
+    await asyncio.sleep(min_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
     assert await tcp_raw_server.receive_block()
+
+    # While the finite block is active, following SYNs must be dropped.
+    await asyncio.sleep(0.2)
+    await tcp_syn_drop_client.send_packet(packet)
+    assert await tcp_raw_server.receive_packet() is None
 
     #
     # Wait until the finite block expires.
