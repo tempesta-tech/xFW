@@ -144,6 +144,11 @@ Xfw::set_config(XfwConfig &&config)
 					  "using the SYN-cookie filter");
 	}
 
+	if (config.tcp_syn_drop_filter_.has_value()
+	    && !has_pinned_map(MAP_SYN_STAGE1_IPV4_STR))
+		throw UpdateError("tcp_syn_drop requires scrubbing deployment "
+				  "mode in the loaded BPF programs");
+
 	// TODO #4:
 	// Save successfully applied ratelimits into config_ immediately after
 	// not throwing set_ratelimits.
