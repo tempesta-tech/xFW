@@ -19,9 +19,9 @@
 #define XFW_SYN_BLOCKED                        UINT64_MAX
 
 typedef struct XfwSynDropCtx {
-	void *stage1_map;
-	void *stage2_map;
-	const void *key;
+	void		*stage1_map;
+	void		*stage2_map;
+	const void	*key;
 } XfwSynDropCtx;
 
 /*
@@ -58,13 +58,13 @@ typedef struct XfwSynStage2Entry {
 
 /* CPU ownership is encoded by the outer map index, not the tuple key. */
 typedef struct XfwIpv4SynKey {
-	XfwIpv4TcpFlow flow;
-	uint32_t seq;
+	XfwIpv4TcpFlow	flow;
+	uint32_t	seq;
 } XfwIpv4SynKey;
 
 typedef struct XfwIpv6SynKey {
-	XfwIpv6TcpFlow flow;
-	uint32_t seq;
+	XfwIpv6TcpFlow	flow;
+	uint32_t	seq;
 } XfwIpv6SynKey;
 
 STATIC_ASSERT(sizeof(XfwIpv4SynKey) == 16, "Unexpected IPv4 SYN key size");
