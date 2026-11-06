@@ -39,8 +39,8 @@ typedef struct XfwSynStage1Entry {
  * The stage 2 map stores tuples which have already passed the first timing
  * check and whose following SYN retransmissions are being tracked.
  *
- * Once retry_count is exhausted, the entry is kept in the map and marked
- * as blocked instead of being removed. Keeping the entry prevents a
+ * Once retry_count is exhausted, the next timing-valid SYN marks the entry
+ * as blocked instead of removing it. Keeping the entry prevents a
  * subsequent SYN for the same tuple from starting the authentication
  * sequence again and thus bypassing the retry limit.
  *
@@ -293,9 +293,9 @@ xfw_add_syn_stage1(const XfwSynDropCtx *drop_ctx, uint64_t now)
  *     timing violation blocks the tuple indefinitely, until the LRU map
  *     evicts the entry;
  *
- *   - `retry_count` was reached. In this case all following SYNs are
- *     blocked for `block_timeout`. A zero `block_timeout` means indefinite
- *     blocking until LRU eviction.
+ *   - a timing-valid SYN arrived after `retry_count` was reached. This SYN
+ *     is dropped and starts `block_timeout`. A zero `block_timeout` means
+ *     indefinite blocking until LRU eviction.
  *
  * A finite `block_timeout` requires the time when the block expires to be
  * stored in the stage 2 entry. Once the timeout expires, the tuple must not
@@ -311,17 +311,17 @@ xfw_add_syn_stage1(const XfwSynDropCtx *drop_ctx, uint64_t now)
  * If the SYN arrives earlier than min_delay or later than max_delay, the
  * tuple is blocked indefinitely and the packet is dropped.
  *
- * If the timing is valid, count the SYN as a successful retransmission.
- * The SYN which reaches `retry_count` is still passed upstream because
- * the configuration says to block all following SYNs once `retry_count`
- * is reached. The entry is left in a state which causes the next SYN to
- * be blocked for `block_timeout`.
+ * If the timing is valid and `retry_count` has already been reached, drop
+ * the SYN and start `block_timeout` from now. Timing validation takes
+ * precedence: an out-of-window SYN permanently blocks an active tuple,
+ * even when `retry_count` has been reached and `block_timeout` is finite.
  *
- * If `retry_count` has not yet been reached, pass the SYN upstream and
- * prepare the entry for another possible retransmission. The protected
- * server may fail to send a SYN-ACK, therefore the next retransmission
- * must also be allowed. Use the current jiffies value as the new reference
- * time and increase `max_delay` using exponential backoff:
+ * Otherwise, count the SYN as a successful retransmission and pass it
+ * upstream, including the SYN which reaches `retry_count`. Prepare the
+ * entry for another possible retransmission. The protected server may fail
+ * to send a SYN-ACK, therefore the next retransmission must also be allowed.
+ * Use the current jiffies value as the new reference time and increase
+ * `max_delay` using exponential backoff:
  *
  *          stored_jiffies = now;
  *          max_delay *= 2;
@@ -409,18 +409,14 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
 
-	entry->retry_count++;
 	/*
-	 * The SYN that reaches `retry_count` is still passed upstream. At the
-	 * same time, put the entry into the blocked state so that every
-	 * following SYN is handled by the checks above and never reaches
-	 * retry_count++ again.
-	 *
-	 * Therefore, for a valid stage 2 map entry `retry_count` cannot grow
-	 * past syn_cfg->retry_count.
-         */
-
-	if (entry->retry_count == syn_cfg->retry_count) {
+	 * The SYN that reaches `retry_count` is passed upstream. The next
+	 * timing-valid SYN is dropped and starts the block timeout. An
+	 * out-of-window SYN is permanently blocked by the timing check above.
+	 * Use >= because a configuration update may lower the retry limit
+	 * below the stored count.
+	 */
+	if (entry->retry_count >= syn_cfg->retry_count) {
 		/* Treat unlimited or overflowing deadlines as permanent blocks. */
 		if (!syn_cfg->block_timeout_jiff
 		    || XFW_SYN_BLOCKED - syn_cfg->block_timeout_jiff < now)
@@ -429,8 +425,10 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 			entry->blocked_until = now +
 				syn_cfg->block_timeout_jiff;
 
-		return XFW_CTX_CONTINUE;
+		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_BLOCKED);
 	}
+
+	entry->retry_count++;
 
 	/*
 	 * The protected server may not answer with SYN-ACK, so allow another
