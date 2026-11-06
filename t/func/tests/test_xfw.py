@@ -362,21 +362,21 @@ async def test_delete_iface_while_xfw_is_running(
     network,
     config: ConfigSettings,
     conf_logger: logging.Logger,
-    xfw: XFW,
+    xfw_without_xdpdump: XFW,
 ):
     """
     Prevent BPF duplicates
     """
 
-    await xfw.rules_push_config(" xfw { defaults { dst: allow; } } ")
+    await xfw_without_xdpdump.rules_push_config(" xfw { defaults { dst: allow; } } ")
     await network.destroy()
 
-    await xfw.wait_for_daemon_stop()
-    xfw.state = State.stopped
+    await xfw_without_xdpdump.wait_for_daemon_stop()
+    xfw_without_xdpdump.state = State.stopped
 
     await network.prepare()
-    await xfw.start()
-    await xfw.rules_push_config(" xfw { defaults { dst: allow; } } ")
+    await xfw_without_xdpdump.start()
+    await xfw_without_xdpdump.rules_push_config(" xfw { defaults { dst: allow; } } ")
 
 
 @pytest.mark.skip("ISSUE XX")
@@ -421,7 +421,7 @@ async def test_restart_under_traffic(
     restart_type: str,
     rule: str,
     function: str,
-    xfw: XFW,
+    xfw_without_xdpdump: XFW,
     tcp_server: TcpServer,
     tcp_client: TcpClient,
     client_cloner,
@@ -456,13 +456,13 @@ async def test_restart_under_traffic(
         )
 
     await asyncio.sleep(load_duration_middle)
-    await xfw.rules_push_config(f"xfw {{ {rule} }}")
+    await xfw_without_xdpdump.rules_push_config(f"xfw {{ {rule} }}")
     if restart_type == "stop-start":
-        await xfw.stop()
-        await xfw.start()
+        await xfw_without_xdpdump.stop()
+        await xfw_without_xdpdump.start()
 
     elif restart_type == "restart":
-        await xfw.restart_daemon()
+        await xfw_without_xdpdump.restart_daemon()
 
     await asyncio.gather(*tasks)
     client_responses = sum(cl.resp_n for cl in clients)
@@ -473,9 +473,9 @@ async def test_restart_under_traffic(
 
 
 @pytest.mark.xfw_mode(XfwMode.normal)
-async def test_restart(xfw: XFW):
-    await xfw.rules_push_config(" xfw { defaults { dst: allow; } } ")
-    await xfw.restart_daemon()
-    await xfw.rules_push_config(" xfw { defaults { dst: allow; } } ")
-    await xfw.restart_daemon()
-    await xfw.rules_push_config(" xfw { defaults { dst: allow; } } ")
+async def test_restart(xfw_without_xdpdump: XFW):
+    await xfw_without_xdpdump.rules_push_config(" xfw { defaults { dst: allow; } } ")
+    await xfw_without_xdpdump.restart_daemon()
+    await xfw_without_xdpdump.rules_push_config(" xfw { defaults { dst: allow; } } ")
+    await xfw_without_xdpdump.restart_daemon()
+    await xfw_without_xdpdump.rules_push_config(" xfw { defaults { dst: allow; } } ")

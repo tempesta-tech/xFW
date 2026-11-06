@@ -8,12 +8,14 @@ import os.path
 import typing
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, fields
+from pathlib import Path
 from typing import AsyncGenerator, Iterator, Optional
 
 import httpx
 
 from framework.clickhouse import ClickhouseClient
 from framework.remote import RemoteServer
+from framework.sniffer import XdpdumpSniffer
 from framework.stateful import NetworkStateful, State
 from framework.utils import (
     RetryException,
@@ -57,6 +59,7 @@ class XFW(NetworkStateful):
         tfw_logger_config_file: str = None,
         xfw_logger_log_file: str = None,
         xfw_manager_log_file: str = None,
+        tests_log_dir: str = "/tmp",
         tfw_logger_max_events: int = 1000,
         tfw_logger_max_wait_ms: int = 100,
         clickhouse_client: ClickhouseClient = None,
@@ -78,11 +81,20 @@ class XFW(NetworkStateful):
         self.tfw_logger_config_file = tfw_logger_config_file
         self.tfw_logger_log_file = xfw_logger_log_file
         self.xfw_manager_log_file = xfw_manager_log_file
+        self.tests_log_dir = tests_log_dir
         self.clickhouse_client = clickhouse_client
         self.devices_mode = devices_mode
         self.deployment_mode = deployment_mode
         self.retry_daemon_start = retry_daemon_start
         self.second_config = False
+
+        # xdpdump
+        self.disable_xdpdump: bool = False
+        self.xdp_interfaces: list[str] = list(
+            interface for interface in self.network_interface.split(" ")
+        )
+        self._sniffers: list[XdpdumpSniffer] = []
+        self.pcap_files: list[Path] = []
 
         self.__config: Optional[str] = None
 
@@ -245,6 +257,7 @@ class XFW(NetworkStateful):
 
     async def run_stop(self):
         await self._stop_daemon()
+        await self.stop_xdpdump()
         self._state = State.stopped
 
     @staticmethod
@@ -268,6 +281,7 @@ class XFW(NetworkStateful):
         self.write_config(file_path=self.path_to_config, content=self.config)
         self.write_config(file_path=self.tfw_logger_config_file, content=self.xfw_logger_config)
         await self._start_daemon()
+        await self.start_xdpdump()
 
         self._state = State.started
 
@@ -418,7 +432,7 @@ class XFW(NetworkStateful):
 
         return int(stdout.strip())
 
-    async def syncookies_value_set(self, value: int) -> int:
+    async def syncookies_value_set(self, value: int) -> None:
         # also works for ipv6
         code, _, stderr = await run_cmd(
             cmd=f"sysctl -w net.ipv4.tcp_syncookies={value}",
@@ -441,6 +455,59 @@ class XFW(NetworkStateful):
             assert code == 0, f"Can not set MTU: {stderr}"
 
             self.logger.info(f"MTU changed to {size}")
+
+    async def start_xdpdump(self) -> None:
+        if self.disable_xdpdump:
+            self.logger.debug("xdpdump capture is explicitly disabled via config/markers")
+            return None
+
+        if self._sniffers:
+            self.logger.warning(
+                f"start_xdpdump called, but {len(self._sniffers)} sniffers are already active"
+            )
+            return None
+
+        self.pcap_files.clear()
+        self.logger.info(f"Initializing xdpdump on interfaces: {', '.join(self.xdp_interfaces)}")
+
+        for interface in self.xdp_interfaces:
+            capture_path = Path(self.tests_log_dir) / f"tmp_capture_{interface}.pcap"
+            self.pcap_files.append(capture_path)
+            self._sniffers.append(
+                XdpdumpSniffer(path=capture_path, interface=interface, logger=self.logger)
+            )
+
+        try:
+            tasks = list(sniffer.start() for sniffer in self._sniffers)
+            await asyncio.gather(*tasks)
+            self.logger.info("All xdpdump instances started successfully and are listening")
+        except Exception as e:
+            self.logger.error(f"Failed to start xdpdump processes: {e}", exc_info=True)
+            raise
+
+        return None
+
+    async def stop_xdpdump(self) -> None:
+        if not self._sniffers:
+            self.logger.debug("stop_xdpdump called, but no sniffers are active")
+            return None
+
+        if self.disable_xdpdump:
+            raise RuntimeError(
+                "Inconsistent state: stop_xdpdump invoked while "
+                "disable_xdpdump flag is set, but active sniffers exist"
+            )
+
+        self.logger.info(f"Stopping {len(self._sniffers)} active xdpdump sniffers...")
+        tasks = list(sniffer.stop() for sniffer in self._sniffers)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        self._sniffers.clear()
+
+        if any(isinstance(res, Exception) for res in results):
+            self.logger.warning("Some sniffers failed to stop cleanly, force killing via pkill...")
+            await run_cmd(cmd="pkill xdpdump || true", logger=self.logger)
+
+        return None
 
 
 class XFWRemote(RemoteServer, XFW):
