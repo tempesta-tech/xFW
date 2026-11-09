@@ -71,3 +71,4 @@ async def flush_arp_cache(config, network) -> None:
         network.flush_arp_cache(config.backend_namespace),
         network.flush_arp_cache(config.client_namespace),
     )
+    return

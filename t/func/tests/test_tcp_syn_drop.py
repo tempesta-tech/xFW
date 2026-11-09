@@ -3,11 +3,11 @@
 
 import asyncio
 import random
+from typing import AsyncGenerator
 
 import pytest
 from scapy.layers.inet import TCP
 
-from config import ConfigSettings
 from framework.asyn import (
     TcpIpV4RawClient,
     TcpIpV6RawClient,
@@ -16,7 +16,24 @@ from framework.asyn import (
     TcpServer,
 )
 from framework.fabrics import client_fabric
+from framework.metrics import PrometheusMetricsDiff
 from framework.xfw import XFW
+
+
+@pytest.fixture(scope="module", autouse=True)
+async def xfw_scrubbing(xfw_global, xfw_use_rule_reset) -> AsyncGenerator[None, None]:
+    if xfw_global.deployment_mode == "scrubbing":
+        yield
+        return
+
+    original_mode = xfw_global.deployment_mode
+    xfw_global.deployment_mode = "scrubbing"
+    await xfw_global.restart()
+
+    yield
+
+    xfw_global.deployment_mode = original_mode
+    await xfw_global.stop_or_reset(xfw_use_rule_reset)
 
 
 class TcpRawSynDropClient(TcpRawClient):
@@ -39,8 +56,8 @@ class TcpRawSynDropIpv6Client(TcpRawSynDropClient, TcpIpV6RawClient):
 
 @pytest.fixture
 async def tcp_ip4_raw_syn_drop_client(
-    xfw_mode, config: ConfigSettings, logging_level: int
-) -> TcpServer:
+    xfw_mode, config, logging_level: int
+) -> AsyncGenerator[TcpRawSynDropIpv4Client, None]:
     client = client_fabric(
         xfw_mode=xfw_mode,
         logging_level=logging_level,
@@ -56,7 +73,9 @@ async def tcp_ip4_raw_syn_drop_client(
 
 
 @pytest.fixture
-async def tcp_ip6_raw_syn_drop_client(xfw_mode, config: ConfigSettings, logging_level) -> TcpServer:
+async def tcp_ip6_raw_syn_drop_client(
+    xfw_mode, config, logging_level
+) -> AsyncGenerator[TcpRawSynDropIpv6Client, None]:
     client = client_fabric(
         xfw_mode=xfw_mode,
         logging_level=logging_level,
@@ -72,13 +91,8 @@ async def tcp_ip6_raw_syn_drop_client(xfw_mode, config: ConfigSettings, logging_
 
 
 @pytest.fixture
-def tcp_syn_drop_client(request, ip_version):
+def tcp_syn_drop_client(request, ip_version) -> TcpRawSynDropClient:
     return request.getfixturevalue(f"tcp_{ip_version}_raw_syn_drop_client")
-
-
-async def expect_no_reply(client: TcpRawClient):
-    response = await client.receive_packet()
-    assert response is None, f"Unexpected packet received: flags={response.flags}"
 
 
 async def expect_synack(client: TcpRawClient):
@@ -107,7 +121,7 @@ async def complete_initial_syn_validation(
 ):
     # First SYN starts validation and must be dropped.
     await client.send_packet(packet)
-    assert await server.receive_packet() is None
+    assert await server.receive_block()
 
     # Valid retransmission promotes stage 1 -> stage 2 and is passed.
     await asyncio.sleep(min_delay / 1000 + 0.2)
@@ -119,6 +133,7 @@ async def complete_initial_syn_validation(
     assert server.has_flag(received, "S")
 
 
+@pytest.mark.skip_on_veth
 async def test_first_syn_dropped_second_syn_passed(
     xfw: XFW,
     tcp_server: TcpServer,
@@ -144,7 +159,7 @@ async def test_first_syn_dropped_second_syn_passed(
     # First SYN starts validation and must always be dropped.
     await tcp_syn_drop_client.send_packet(packet)
     assert packet.seq == seq
-    await expect_no_reply(tcp_syn_drop_client)
+    assert await tcp_syn_drop_client.receive_block()
 
     # Wait until the valid retransmission window.
     await asyncio.sleep(min_delay / 1000 + 0.2)
@@ -157,6 +172,7 @@ async def test_first_syn_dropped_second_syn_passed(
     await expect_synack(tcp_syn_drop_client)
 
 
+@pytest.mark.skip_on_veth
 async def test_second_syn_before_min_delay_blocks_tuple(
     xfw: XFW,
     tcp_server: TcpServer,
@@ -181,13 +197,13 @@ async def test_second_syn_before_min_delay_blocks_tuple(
 
     # First SYN: stage 1 + DROP.
     await tcp_syn_drop_client.send_packet(packet)
-    await expect_no_reply(tcp_syn_drop_client)
+    assert await tcp_syn_drop_client.receive_block()
 
     # Too early.
     await asyncio.sleep(min_delay / 1000 - 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
-    await expect_no_reply(tcp_syn_drop_client)
+    assert await tcp_syn_drop_client.receive_block()
 
     #
     # The early retransmission permanently poisons the stage 1 entry.
@@ -196,9 +212,10 @@ async def test_second_syn_before_min_delay_blocks_tuple(
     await asyncio.sleep(min_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
-    await expect_no_reply(tcp_syn_drop_client)
+    assert await tcp_syn_drop_client.receive_block()
 
 
+@pytest.mark.skip_on_veth
 async def test_second_syn_after_max_delay_blocks_tuple(
     xfw: XFW,
     tcp_server: TcpServer,
@@ -222,13 +239,13 @@ async def test_second_syn_after_max_delay_blocks_tuple(
     packet = syn_packet(seq)
 
     await tcp_syn_drop_client.send_packet(packet)
-    await expect_no_reply(tcp_syn_drop_client)
+    assert await tcp_syn_drop_client.receive_block()
 
     # Intentionally miss the initial retransmission window.
     await asyncio.sleep(max_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
-    await expect_no_reply(tcp_syn_drop_client)
+    assert await tcp_syn_drop_client.receive_block()
 
     #
     # The later retransmission permanently poisons the stage 1 entry.
@@ -237,9 +254,10 @@ async def test_second_syn_after_max_delay_blocks_tuple(
     await asyncio.sleep(min_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
-    await expect_no_reply(tcp_syn_drop_client)
+    assert await tcp_syn_drop_client.receive_block()
 
 
+@pytest.mark.skip_on_veth
 async def test_retry_count_blocks_following_syns(
     xfw: XFW,
     tcp_syn_drop_client: TcpRawClient,
@@ -288,9 +306,10 @@ async def test_retry_count_blocks_following_syns(
     await asyncio.sleep(min_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_raw_server.receive_packet() is None
+    assert await tcp_raw_server.receive_block()
 
 
+@pytest.mark.skip_on_veth
 async def test_finite_block_timeout_restarts_validation(
     xfw: XFW,
     tcp_syn_drop_client: TcpRawClient,
@@ -334,7 +353,7 @@ async def test_finite_block_timeout_restarts_validation(
     await asyncio.sleep(0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_raw_server.receive_packet() is None
+    assert await tcp_raw_server.receive_block()
 
     #
     # Wait until the finite block expires.
@@ -350,7 +369,7 @@ async def test_finite_block_timeout_restarts_validation(
     #     current SYN -> DROP
     #
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_raw_server.receive_packet() is None
+    assert await tcp_raw_server.receive_block()
 
     #
     # A retransmission inside the new validation window must now be
@@ -365,6 +384,7 @@ async def test_finite_block_timeout_restarts_validation(
     assert tcp_raw_server.has_flag(received, "S")
 
 
+@pytest.mark.skip_on_veth
 async def test_retry_max_delay_exponential_backoff(
     xfw: XFW,
     tcp_syn_drop_client: TcpRawClient,
@@ -408,6 +428,7 @@ async def test_retry_max_delay_exponential_backoff(
     assert tcp_raw_server.has_flag(received, "S")
 
 
+@pytest.mark.skip_on_veth
 async def test_dst_rules_with_tcp_syn_drop_enabled(
     xfw: XFW,
     ip_version: str,
@@ -439,16 +460,17 @@ async def test_dst_rules_with_tcp_syn_drop_enabled(
 
     # First SYN is dropped by tcp_syn_drop.
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_raw_server.receive_packet() is None
+    assert await tcp_raw_server.receive_block()
 
     await asyncio.sleep(min_delay / 1000 + 0.2)
 
     # tcp_syn_drop accepts the retransmission, but dst_filter must
     # still process and block it.
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_raw_server.receive_packet() is None
+    assert await tcp_raw_server.receive_block()
 
 
+@pytest.mark.skip_on_veth
 async def test_syn_ratelimit_with_syn_drop(
     xfw: XFW,
     tcp_syn_drop_client: TcpRawClient,
@@ -485,7 +507,7 @@ async def test_syn_ratelimit_with_syn_drop(
     # tcp_syn_drop records the tuple and deliberately drops this SYN.
     #
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_raw_server.receive_packet() is None
+    assert await tcp_raw_server.receive_block()
 
     #
     # Consume the second SYN allowed by the rate limit using a different
@@ -512,7 +534,7 @@ async def test_syn_ratelimit_with_syn_drop(
     await asyncio.sleep(0.005)
 
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_raw_server.receive_packet() is None
+    assert await tcp_raw_server.receive_block()
 
     #
     # Wait for the rate limiter to fully recover. The rate limiter uses two
@@ -532,3 +554,61 @@ async def test_syn_ratelimit_with_syn_drop(
     received = await tcp_raw_server.receive_packet()
     assert received is not None
     assert tcp_raw_server.has_flag(received, "S")
+
+
+@pytest.mark.skip_on_veth
+async def test_syn_drop_flood_concurrency(
+    xfw: XFW,
+    tcp_syn_drop_client: TcpRawClient,
+    tcp_raw_server: TcpRawServer,
+    start_tcp_raw_server_and_raw_clients,
+    metric_analyzer,
+):
+    """
+    The test checks the stability of the tcp_syn_drop under SYN flood
+    """
+    await xfw.rules_set(f"""
+        xfw {{
+            tcp_syn_drop
+                min_delay=1
+                max_delay=1000
+                retry_count=3
+                block_timeout=10;
+        }}
+    """)
+
+    async def send_single_spoofed_syn():
+        await tcp_syn_drop_client.send_packet(syn_packet(random.getrandbits(32)))
+
+    legit_packets_n = 3
+    flood_pps = 100
+    flood_duration = 5
+    legit_packets = [syn_packet(seq=random.getrandbits(32)) for _ in range(legit_packets_n)]
+    legit_tasks = []
+
+    async with metric_analyzer.expected_metrics_diff(
+        xfw=xfw,
+        expected_metrics=PrometheusMetricsDiff(
+            xfw_syn_packets=[flood_pps, flood_duration * flood_pps],
+            xfw_passed_downstream_ingress_packets=[legit_packets_n, legit_packets_n * 2],
+        ),
+    ):
+        flood_task = tcp_syn_drop_client.generate_traffic(
+            messages_pps=flood_pps,
+            duration=flood_duration,
+            function=send_single_spoofed_syn,
+        )
+
+        await asyncio.sleep(0.1)
+
+        for packet in legit_packets:
+            legit_tasks.append(
+                complete_initial_syn_validation(
+                    tcp_syn_drop_client, tcp_raw_server, packet, min_delay=100
+                )
+            )
+
+        result = await asyncio.gather(*legit_tasks, return_exceptions=True)
+        await flood_task
+
+    assert all(res is None for res in result), f"Errors for legitim clients: {result}."
