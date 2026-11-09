@@ -67,8 +67,8 @@ push_swap_event_and_update_drop_cnt()
 /*
  * Account a dropped incident event.
  *
- * This function is used when an event cannot be recorded due to
- * resource exhaustion or temporary unavailability of the target map.
+ * This function is used when an event is not recorded due to rate limiting,
+ * sampling, resource exhaustion or temporary unavailability of the target map.
  */
 static __always_inline void
 update_drop_cnt()
@@ -161,5 +161,52 @@ register_incident(const XfwIp* ilog_addr, uint32_t pkt_sz, enum XfwDropStat reas
 		update_drop_cnt();
 }
 
+static __always_inline XfwLogRateLimit *
+get_incident_bucket()
+{
+	const uint32_t zero = 0;
+
+	return bpf_map_lookup_elem(&MAP_LOG_RATELIMIT_REF, &zero);
+}
+
+static __always_inline bool
+allow_incident_sample(XfwLogRateLimit *bucket)
+{
+	if (bucket && xfw_log_sample_allow(bucket))
+		return true;
+
+	update_drop_cnt();
+
+	return false;
+}
+
+static __always_inline bool
+allow_incident_rlim(XfwLogRateLimit *bucket, uint64_t now, uint32_t shift,
+		    uint32_t limit)
+{
+	return bucket && xfw_log_rate_allow(bucket, now, shift, limit);
+}
+
 #define REGISTER_INCIDENT(ctx, reason)					\
 	register_incident(&(ctx)->ilog_addr, (ctx)->pkt_sz, reason)
+
+/* Log every XFW_LOG_SAMPLE_INTERVALth candidate per CPU without a rate budget. */
+#define REGISTER_INCIDENT_SAMPLE(ctx, reason)				\
+do {									\
+	if (allow_incident_sample(get_incident_bucket()))		\
+		REGISTER_INCIDENT(ctx, reason);				\
+} while (0)
+
+/*
+ * Log incidents with per-cpu budget and rollback to sampling when limit is
+ * reached.
+ */
+#define REGISTER_INCIDENT_RLIM_SA(ctx, reason)				\
+do {									\
+	XfwLogRateLimit *ilog_bucket = get_incident_bucket();		\
+	if (allow_incident_rlim(ilog_bucket, (ctx)->ts_jiff,		\
+				(ctx)->cfg->rl_window.shift,		\
+				(ctx)->cfg->log_limit)			\
+	    || allow_incident_sample(ilog_bucket))			\
+		REGISTER_INCIDENT(ctx, reason);				\
+} while (0)

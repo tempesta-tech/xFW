@@ -310,6 +310,7 @@ BpfMapsManager::set_simple_rules(const XfwConfig &config)
 	cfg.rl_window.jiffies = rl_window_jiffies_;
 	cfg.rl_window.shift = rl_window_shift_;
 	cfg.rl_window.mask = rl_window_mask_;
+	cfg.log_limit = scale_rl_to_window(XFW_MAX_LOG_EVENTS_PER_SEC);
 
 	using BitsetT = std::decay_t<decltype(config.ip_proto_filter_->protocols_)>;
 	static_assert(

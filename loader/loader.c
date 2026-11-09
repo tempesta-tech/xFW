@@ -92,6 +92,7 @@ static const XfwLMapDesc tc_maps[] = {
 	{ .name = MAP_LOG_ACTIVE_FD_STR },
 	{ .name = MAP_LOG_EVENTS_STR },
 	{ .name = MAP_LOG_EV_CNT_STR },
+	{ .name = MAP_LOG_RATELIMIT_STR },
 	{ .name = MAP_RATELIMIT_STR },
 	{ .name = MAP_DNS_EGR_FD_STR, .dns_only = true },
 	{ .name = MAP_TCP_CONN_STR },
