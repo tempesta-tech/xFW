@@ -19,6 +19,12 @@
 #define XFW_MAX_TCP_FLAG_RULES			2
 #define XFW_MAX_DEFAULT_RULES			14
 
+/* Per-CPU rate budget. Excess incident registrations are sampled separately. */
+#define XFW_MAX_LOG_EVENTS_PER_SEC		1000
+
+/* Register every Nth sampling candidate on each CPU. */
+#define XFW_LOG_SAMPLE_INTERVAL			1024
+
 /*
  * x2 for IPv4 and IPv6 maps separately.
  *

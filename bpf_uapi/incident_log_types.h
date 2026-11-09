@@ -56,6 +56,7 @@ typedef struct IncidentLogStat {
 /*
  * @swap_ts	- Time is measured with bpf_ktime_get_ns().
  *		  Strictly increasing only on local CPU without NMIs.
+ * @drop_cnt	- Incidents not recorded due to rate limiting, sampling or errors.
  */
 typedef struct IncidentPerCpuNotifyInfo {
 	uint64_t		swap_ts;

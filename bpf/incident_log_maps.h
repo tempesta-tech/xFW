@@ -65,6 +65,16 @@
 #pragma once
 
 #include "../bpf_uapi/incident_log_types.h"
+#include "incident_log_rate.h"
+
+/* Shared XDP/TC logging budget and sampling state per CPU. */
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, uint32_t);
+	__type(value, XfwLogRateLimit);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+} MAP_LOG_RATELIMIT_REF SEC(".maps");
 
 /**
  * These BPF_MAP_TYPE_HASH maps hold per-CPU decision statistics.

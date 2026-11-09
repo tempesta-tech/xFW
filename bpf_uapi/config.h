@@ -108,6 +108,7 @@ typedef struct XfwRlWindow {
  *
  * @amap_*	- active map id, MAP_PRIMARY_IDX or MAP_SECONDARY_IDX
  * @named_rates	- named rate limits configuration
+ * @log_limit	- log events per time window
  */
 typedef struct XfwFilterCfg {
 	XfwRulesCfg		rules;
@@ -119,5 +120,6 @@ typedef struct XfwFilterCfg {
 	uint8_t			amap_prot_net;
 
 	XfwRlWindow		rl_window;
+	uint32_t		log_limit;
 	XfwPacketRate		named_rates[XFW_MAX_NAMED_RATELIMITS];
 } XfwFilterCfg;

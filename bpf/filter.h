@@ -114,6 +114,30 @@ count_tx_stat(const XfwGlobalCtx *ctx, enum XfwTxStat reason)
 #define XFW_MAKE_CTX_DROP(ctx, reason_idx, args...)			\
 	XFW_MAKE_CTX_DROP_EXT(ctx, reason_idx, "", ##args)
 
+/* Rate-limit incident registration. The packet is always dropped. */
+#define XFW_MAKE_CTX_DROP_RLIM_SA_EXT(ctx, reason_idx, postfix, args...) \
+({									\
+	REGISTER_INCIDENT_RLIM_SA(ctx, reason_idx);			\
+	XFW_CTX_DBG("[DROP] %s" postfix,				\
+		    xfw_drop_stats[reason_idx].desc, ##args);		\
+	XFW_CTX_DROP;							\
+})
+
+#define XFW_MAKE_CTX_DROP_RLIM_SA(ctx, reason_idx, args...)		\
+	XFW_MAKE_CTX_DROP_RLIM_SA_EXT(ctx, reason_idx, "", ##args)
+
+/* Sample incident logging. The packet is always dropped. */
+#define XFW_MAKE_CTX_DROP_SAMPLE_EXT(ctx, reason_idx, postfix, args...)	\
+({									\
+	REGISTER_INCIDENT_SAMPLE(ctx, reason_idx);			\
+	XFW_CTX_DBG("[DROP] %s" postfix,				\
+		    xfw_drop_stats[reason_idx].desc, ##args);		\
+	XFW_CTX_DROP;							\
+})
+
+#define XFW_MAKE_CTX_DROP_SAMPLE(ctx, reason_idx, args...)		\
+	XFW_MAKE_CTX_DROP_SAMPLE_EXT(ctx, reason_idx, "", ##args)
+
 /**
  * Avoid returning PASS codes directly without using these 2 functions, as it is
  * easy to forget updating the passed packet statistics.
