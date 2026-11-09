@@ -18,6 +18,34 @@
 
 #define XFW_SYN_BLOCKED                        UINT64_MAX
 
+/* Count every blocked SYN independently of incident logging. */
+#define XFW_SYN_DROP_SAMPLE_EXT(ctx, postfix, args...)			\
+({									\
+	count_traffic_stat(ctx, XFW_SYN_DROP_BLOCKED);			\
+	XFW_MAKE_CTX_DROP_SAMPLE_EXT(ctx, XFW_DROP_SYN_BLOCKED,		\
+				     postfix, ##args);			\
+})
+
+#define XFW_SYN_DROP_SAMPLE(ctx)					\
+	XFW_SYN_DROP_SAMPLE_EXT(ctx, "")
+
+#define XFW_SYN_DROP_RLIM_SA_EXT(ctx, postfix, args...)			\
+({									\
+	count_traffic_stat(ctx, XFW_SYN_DROP_BLOCKED);			\
+	XFW_MAKE_CTX_DROP_RLIM_SA_EXT(ctx, XFW_DROP_SYN_BLOCKED,	\
+				      postfix, ##args);			\
+})
+
+#define XFW_SYN_DROP_RLIM_SA(ctx)					\
+	XFW_SYN_DROP_RLIM_SA_EXT(ctx, "")
+
+/* Count every passed SYN. */
+#define XFW_SYN_DROP_PASS(ctx)						\
+({									\
+	count_traffic_stat(ctx, XFW_SYN_DROP_PASSED);			\
+	XFW_CTX_CONTINUE;						\
+})
+
 typedef struct XfwSynDropCtx {
 	void		*stage1_map;
 	void		*stage2_map;
@@ -221,7 +249,7 @@ xfw_process_syn_stage1(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	 * Drop the current SYN.
 	 */
 	if (entry->jtxtstamp == XFW_SYN_BLOCKED)
-		return XFW_MAKE_CTX_DROP_SAMPLE(ctx, XFW_DROP_SYN_BLOCKED);
+		return XFW_SYN_DROP_SAMPLE(ctx);
 
 	/*
 	 * The valid retransmission window is:
@@ -235,7 +263,7 @@ xfw_process_syn_stage1(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	    || now > entry->jtxtstamp + syn_cfg->max_delay_jiff)
 	{
 		entry->jtxtstamp = XFW_SYN_BLOCKED;
-		return XFW_MAKE_CTX_DROP_RLIM_SA(ctx, XFW_DROP_SYN_BLOCKED);
+		return XFW_SYN_DROP_RLIM_SA(ctx);
 	}
 
 	if (!xfw_promote_syn(drop_ctx, now, syn_cfg))
@@ -247,7 +275,7 @@ xfw_process_syn_stage1(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 		return XFW_MAKE_CTX_DROP(ctx,
 					 XFW_DROP_SYN_CPU_AFFINITY_ERROR);
 
-	return XFW_CTX_CONTINUE;
+	return XFW_SYN_DROP_PASS(ctx);
 }
 
 static __always_inline bool
@@ -359,7 +387,7 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	 * Drop the current SYN.
 	 */
 	if (entry->blocked_until == XFW_SYN_BLOCKED)
-		return XFW_MAKE_CTX_DROP_SAMPLE(ctx, XFW_DROP_SYN_BLOCKED);
+		return XFW_SYN_DROP_SAMPLE(ctx);
 
 	/*
 	 * `retry_count` may impose a finite block. Once it expires, restart
@@ -368,9 +396,9 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	 */
 	if (entry->blocked_until) {
 		if (now < entry->blocked_until)
-			return XFW_MAKE_CTX_DROP_SAMPLE_EXT(
-				ctx, XFW_DROP_SYN_BLOCKED, ": %s",
-				"blocking timeout has not expired");
+			return XFW_SYN_DROP_SAMPLE_EXT(ctx, ": %s",
+						       "blocking timeout has"
+						       " not expired");
 
 		/*
 		 * The finite block has expired. Treat this SYN as the first SYN
@@ -395,9 +423,9 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 			return XDP_DROP;
 		}
 
-		return XFW_MAKE_CTX_DROP_RLIM_SA_EXT(
-			ctx, XFW_DROP_SYN_BLOCKED, ": %s",
-			"Failed to insert SYN tuple into the stage 1 map");
+		return XFW_SYN_DROP_RLIM_SA_EXT(ctx, ": %s", "Failed to insert"
+						" SYN tuple into the stage 1"
+						" map");
 	}
 
 	const XfwRulesCfgTcpSynDrop *syn_cfg = &ctx->cfg->rules.tcp_syn_drop;
@@ -409,7 +437,7 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 		 * blocked, as required by the design.
 		 */
 		entry->blocked_until = XFW_SYN_BLOCKED;
-		return XFW_MAKE_CTX_DROP_RLIM_SA(ctx, XFW_DROP_SYN_BLOCKED);
+		return XFW_SYN_DROP_RLIM_SA(ctx);
 	}
 
 	/*
@@ -428,7 +456,7 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 			entry->blocked_until = now +
 				syn_cfg->block_timeout_jiff;
 
-		return XFW_MAKE_CTX_DROP_RLIM_SA(ctx, XFW_DROP_SYN_BLOCKED);
+		return XFW_SYN_DROP_RLIM_SA(ctx);
 	}
 
 	entry->retry_count++;
@@ -441,7 +469,7 @@ xfw_process_syn_stage2(const XfwGlobalCtx *ctx, const XfwSynDropCtx *drop_ctx,
 	entry->max_delay = entry->max_delay * 2;
 	entry->jtxtstamp = now;
 
-	return XFW_CTX_CONTINUE;
+	return XFW_SYN_DROP_PASS(ctx);
 }
 
 static __always_inline int
@@ -497,10 +525,7 @@ xfw_process_syn_drop_state(const XfwGlobalCtx *ctx,
 		return xfw_process_syn_stage1(ctx, drop_ctx, pending);
 
 	if (!xfw_add_syn_stage1(drop_ctx, ctx->ts_jiff))
-		return XFW_MAKE_CTX_DROP_RLIM_SA_EXT(ctx, XFW_DROP_SYN_BLOCKED,
-						     ": %s", "Failed to insert"
-						     " SYN tuple into the stage"
-						     " 1 map.");
+		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYN_CPU_AFFINITY_ERROR);
 
 	/*
 	 * Drop the initial SYN silently.
