@@ -17,6 +17,7 @@ class BaseNetwork(metaclass=abc.ABCMeta):
         self.logger = logger
         self.config = config
         self._rto_min_suffix = "rto_min 5000"  # ms
+        self._iptables_cmds: list[str] = []
 
     @abc.abstractmethod
     async def prepare(self):
@@ -353,20 +354,37 @@ class LocalVeth(BaseNetwork):
             "ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 143 -j DROP",
         ]
 
-        iptables_cmds = []
-        iptables_cmds.extend(base_rules)
+        self._iptables_cmds.extend(base_rules)
 
         client_ns = self.config.client_namespace
         if client_ns:
-            iptables_cmds.extend([f"ip netns exec {client_ns} {rule}" for rule in base_rules])
+            self._iptables_cmds.extend([f"ip netns exec {client_ns} {rule}" for rule in base_rules])
 
         server_ns = self.config.backend_namespace
         if server_ns:
-            iptables_cmds.extend([f"ip netns exec {server_ns} {rule}" for rule in base_rules])
+            self._iptables_cmds.extend([f"ip netns exec {server_ns} {rule}" for rule in base_rules])
 
         await asyncio.gather(
-            *[run_cmd(cmd, self.logger, log_output=False) for cmd in iptables_cmds]
+            *[run_cmd(cmd, self.logger, log_output=False) for cmd in self._iptables_cmds]
         )
+
+    async def enable_background_ipv6_traffic(self) -> None:
+        """
+        Enables background IPv6 traffic back by replacing '-A' with '-D'
+        in the saved iptables_cmds list.
+        """
+        if not self._iptables_cmds:
+            self.logger.warning("No applied iptables rules found to rollback.")
+            return
+
+        self.logger.info("re-enabling background IPv6 traffic (cleaning ip6tables)")
+        rollback_cmds = [cmd.replace("-A ", "-D ") for cmd in self._iptables_cmds]
+
+        await asyncio.gather(
+            *[run_cmd(cmd, self.logger, log_output=False) for cmd in rollback_cmds],
+            return_exceptions=True,
+        )
+        self._iptables_cmds = []
 
 
 class LocalGateVeth(LocalVeth):

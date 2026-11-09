@@ -23,14 +23,7 @@ class TestingModel(enum.IntEnum):
     machine_local = 1
 
 
-class ConfigSettings(BaseSettings):
-    log_level: Optional[int] = None
-    server_workdir: str = "/tmp/server"
-    tests_log_dir: str = "/tmp/xfw_tests_log/"
-
-    network_type: NetworkType = NetworkType.veth
-    testing_model: TestingModel = TestingModel.same_host
-
+class _RpcSettings(BaseSettings):
     rpc_host: str = ""
     rpc_port: int = 6666
     rpc_log_file: str = "/tmp/server.log"
@@ -38,6 +31,8 @@ class ConfigSettings(BaseSettings):
     rpc_cmd_timeout: float = 1
     rpc_stop_if_not_connections_sec: int = 10
 
+
+class _ClickhouseSettings(BaseSettings):
     tfw_logger_clickhouse_host: str = "localhost"
     tfw_logger_clickhouse_binary_port: int = 9000
     tfw_logger_clickhouse_http_port: int = 8123
@@ -48,10 +43,22 @@ class ConfigSettings(BaseSettings):
     tfw_logger_clickhouse_max_events: int = 1000
     tfw_logger_clickhouse_max_wait_ms: int = 100
 
-    xfw_interface: str = "xfwb1"
+
+class _GateSettings(BaseSettings):
+    """Specific routing and nftables settings for gateway topologies (Gate/NAT)"""
+
+    gateway_nft_table_name: Optional[str] = None
+    gateway_nft_table_name_path: Optional[str] = None
+    gateway_ip4_backend: Optional[str] = None
+    gateway_ip6_backend: Optional[str] = None
+    gateway_ip4_xfw: Optional[str] = None
+    gateway_ip6_xfw: Optional[str] = None
+
+
+class _XfwCommonSettings(BaseSettings):
+    """General system parameters for building, paths, and integrations for XFW."""
+
     xfw_devices_mode: str = "skb"
-    xfw_deployment_mode: Literal["host", "gw", "scrubbing"] = "host"
-    xfw_server_iface: str = "xfwb1"
     xfw_build_dir: str = "/opt/tempesta"
     xfw_grpc_ip: str = "20.0.0.1"
     xfw_grpc_port: int = 4444
@@ -72,16 +79,101 @@ class ConfigSettings(BaseSettings):
     xfw_ddos_examples_temp_dir: str = "/tmp/ddos_examples"
     xfw_geolite2_country_db_path: str = "/tmp/geolite2-country.mmdb"
 
-    backend_interface_host: str = "xfwb0"
+
+class _BackendCommonSettings(BaseSettings):
+    """Basic network settings (IP, ports) for the backend side."""
+
     backend_ipv4_host: str = "20.0.0.1"
     backend_ipv6_host: str = "fd00:20::1"
-    backend_interface: str = "xfwb1"
-    backend_namespace: str = "xfw-nb"
     backend_ipv4: str = "20.0.0.2"
     backend_ipv6: str = "fd00:20::2"
     backend_ipv4_mask: int = 24
     backend_ipv6_mask: int = 64
     backend_port: int = 10000
+
+
+class _ClientCommonSettings(BaseSettings):
+    """Basic network settings (IP, ports) for the client side."""
+
+    client_ipv4_host: str = "109.245.0.1"
+    client_ipv6_host: str = "2001:8c8::1"
+    client_ipv4: str = "109.245.0.2"
+    client_ipv6: str = "2001:8c8::2"
+    client_ipv4_mask: int = 24
+    client_ipv6_mask: int = 64
+    client_port: int = 50000
+
+
+class ConfigSettings(
+    _RpcSettings,
+    _ClickhouseSettings,
+    _GateSettings,
+    _XfwCommonSettings,
+    _BackendCommonSettings,
+    _ClientCommonSettings,
+):
+    # Dynamic parameters for xfw. Depend on the network topology.
+    xfw_interface: str = ""
+    xfw_server_iface: str = ""
+    xfw_deployment_mode: Literal["host", "gw", "scrubbing"] = "host"
+
+    # Dynamic parameters for backend. Depend on the network topology.
+    backend_namespace: str | None = None
+    backend_interface: str = ""
+    backend_interface_host: str | None = None
+
+    # Dynamic parameters for client. Depend on the network topology.
+    client_namespace: str = ""
+    client_interface: str = ""
+    client_interface_host: str | None = None
+
+    log_level: Optional[int] = None
+    server_workdir: str = "/tmp/server"
+    tests_log_dir: str = "/tmp/xfw_tests_log/"
+
+    network_type: NetworkType = NetworkType.veth
+    testing_model: TestingModel = TestingModel.same_host
+
+    timeout_sec: float = 0.1
+    load_duration: float = 5.0  # seconds
+    ratelimit_tolerance_factor: float = 1.2  # 20%
+    tcpreplay_exec_file: str = "tcpreplay"
+    tcprewrite_exec_file: str = "tcprewrite"
+    fast_mode_xfw_paused_timeout_sec: float = 0.5
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+
+class VethConfigSettings(ConfigSettings):
+    network_type: NetworkType = NetworkType.veth
+
+    xfw_interface: str = "xfwb1"
+    xfw_server_iface: str = "xfwb1"
+    xfw_deployment_mode: str = "host"
+
+    client_namespace: str = "xfw-nc"
+    client_interface: str = "xfwc1"
+    client_interface_host: None = None
+
+    backend_namespace: None = None
+    backend_interface: str = "xfwb1"
+    backend_interface_host: None = None
+
+
+class GateVethConfigSettings(ConfigSettings):
+    network_type: NetworkType = NetworkType.veth_gate
+
+    xfw_interface: str = "xfwc0 xfwb0"
+    xfw_server_iface: str = "xfwc0"
+    xfw_deployment_mode: str = "gw"
+
+    client_namespace: str = "xfw-nc"
+    client_interface: str = "xfwc1"
+    client_interface_host: str = "xfwc0"
+
+    backend_namespace: str = "xfw-nb"
+    backend_interface: str = "xfwb1"
+    backend_interface_host: str = "xfwb0"
 
     gateway_nft_table_name: str = "xfw"
     gateway_nft_table_name_path: str = "/tmp/xfw.nft"
@@ -90,24 +182,18 @@ class ConfigSettings(BaseSettings):
     gateway_ip4_xfw: str = "30.0.0.3"
     gateway_ip6_xfw: str = "fe00:20::3"
 
-    client_interface_host: str = "xfwc0"
-    client_ipv4_host: str = "109.245.0.1"
-    client_ipv6_host: str = "2001:8c8::1"
-    client_interface: str = "xfwc1"
+
+class NicConfigSettings(ConfigSettings):
+    network_type: NetworkType = NetworkType.nic
+
+    xfw_interface: str = "virtio"
+    xfw_server_iface: str = "virtio"
+    xfw_deployment_mode: str = "gw"
+
     client_namespace: str = "xfw-nc"
-    client_ipv4: str = "109.245.0.2"
-    client_ipv6: str = "2001:8c8::2"
-    client_ipv4_mask: int = 24
-    client_ipv6_mask: int = 64
-    client_port: int = 50000
+    client_interface: str = "virtio-2"
+    client_interface_host: None = None
 
-    timeout_sec: float = 0.1
-    load_duration: float = 5.0  # seconds
-    ratelimit_tolerance_factor: float = 1.2  # 20%
-
-    tcpreplay_exec_file: str = "tcpreplay"
-    tcprewrite_exec_file: str = "tcprewrite"
-
-    fast_mode_xfw_paused_timeout_sec: float = 0.5
-
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    backend_namespace: None = None
+    backend_interface: str = "virtio"
+    backend_interface_host: None = None

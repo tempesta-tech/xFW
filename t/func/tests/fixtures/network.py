@@ -47,6 +47,7 @@ async def prepare_network(config, network, conf_logger) -> AsyncGenerator[None, 
 
     yield
 
+    await network.enable_background_ipv6_traffic()
     await network.destroy()
     conf_logger.info("network destroyed")
 
