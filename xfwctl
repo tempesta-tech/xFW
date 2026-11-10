@@ -424,7 +424,6 @@ attach_tc()
 load_bpf()
 {
 	local rc
-	local -a irq_devices
 
 	mkdir -p "$xfw_bpf_path"
 	rc=$?
@@ -466,8 +465,8 @@ load_bpf()
 		fi
 	done
 
-	read -r -a irq_devices <<< "$devs"
-	"$project_path/bin/set_irq_affinity.sh" "${irq_devices[@]}" ||
+	# Configure queue IRQs without enabling RPS.
+	"$project_path/lib/set_irq_affinity.sh" --no-rps "$devs" ||
 		echo "WARNING: IRQ affinity is not properly configured for devices: $devs. Continuing startup, but at least tcp_syn_drop and syn_cookies will not work correctly." >&2
 
 	load_xdp

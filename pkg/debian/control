@@ -7,6 +7,8 @@ Build-Depends: debhelper-compat (= 13)
 Package: tempesta-xfw
 Architecture: amd64
 Depends:
+    bc,
+    ethtool,
     linux-image-generic (>= 6.8~),
     libboost-program-options-dev,
     flatbuffers-compiler,

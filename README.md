@@ -173,7 +173,7 @@ Install the build and runtime dependencies on Ubuntu 24.04:
 
 ```bash
 sudo apt update
-sudo apt install -y git curl cmake make g++ pkgconf jq xdp-tools \
+sudo apt install -y git curl cmake make g++ pkgconf jq bc ethtool xdp-tools \
     clang-19 clang-tools-19 clang-tidy-19 clang-format-19 \
     libboost-all-dev flatbuffers-compiler libflatbuffers-dev \
     libprotobuf-dev libgrpc++-dev libfmt-dev libspdlog-dev \
