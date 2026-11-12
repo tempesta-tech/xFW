@@ -95,7 +95,8 @@ static const XfwLMapDesc tc_maps[] = {
 	{ .name = MAP_LOG_RATELIMIT_STR },
 	{ .name = MAP_RATELIMIT_STR },
 	{ .name = MAP_DNS_EGR_FD_STR, .dns_only = true },
-	{ .name = MAP_TCP_CONN_STR },
+	{ .name = MAP_TCP_CONN_IPV4_STR },
+	{ .name = MAP_TCP_CONN_IPV6_STR },
 	{ .name = MAP_DST_STR(MAP_PRIMARY_IDX) },
 	{ .name = MAP_DST_STR(MAP_SECONDARY_IDX) },
 };

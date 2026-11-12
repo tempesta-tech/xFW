@@ -47,13 +47,15 @@
 #include "log.h"
 
 #include "filter.h"
+#include "tcp_flow.h"
 
-typedef struct XfwSockAddr {
-	XfwIp		addr; /* IPv4 uses the low 32 bits; the rest stays zero. */
-	XfwPort		port;
-	uint8_t		__reserved[2];
-} XfwSockAddr;
-STATIC_ASSERT(sizeof(XfwSockAddr) == 20, "Invalid XfwSockAddr size");
+struct XfwTcpAuthContext {
+	void		*map;
+	union {
+		XfwIpv4TcpFlow	ipv4;
+		XfwIpv6TcpFlow	ipv6;
+	} key;
+};
 
 /*
  * For TCP Authentication Filter there are only 2 states for a connection:
@@ -68,12 +70,21 @@ typedef struct XfwTcpConnState {
 
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__type(key, XfwSockAddr);
+	__type(key, XfwIpv4TcpFlow);
 	__type(value, XfwTcpConnState);
 	/* Pinned so ingress and egress programs share authenticated sockets. */
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__uint(max_entries, XFW_MAX_CONCURRENT_TCP_CONNECTIONS);
-} MAP_TCP_CONN_REF SEC(".maps");
+} MAP_TCP_CONN_IPV4_REF SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__type(key, XfwIpv6TcpFlow);
+	__type(value, XfwTcpConnState);
+	/* Pinned so ingress and egress programs share authenticated sockets. */
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+	__uint(max_entries, XFW_MAX_CONCURRENT_TCP_CONNECTIONS);
+} MAP_TCP_CONN_IPV6_REF SEC(".maps");
 
 /*
  * Keep a closing connection for one minute after the latest FIN observed from
@@ -86,28 +97,99 @@ struct {
 #define TCP_AUTH_CONN_MAX_FIN_TIME_JIFF \
 	(UINT64_MAX - TCP_AUTH_CONN_CLOSE_TIMEOUT_JIFF) /* Keep timeout math bounded. */
 
-static __always_inline XfwTcpConnState *
-tcp_auth_conn_lookup(const XfwSockAddr *addr)
+static __always_inline int
+tcp_auth_init_ctx(const XfwGlobalCtx *ctx,
+		  struct XfwTcpAuthContext *tcp_auth_ctx,
+		  const bool is_upstream_direction)
 {
-	return bpf_map_lookup_elem(&MAP_TCP_CONN_REF, addr);
+	VERIFY_TRUE_OR_RETURN(ctx->l4_off <= L4_OFF_MAX, -EINVAL);
+	struct tcphdr *th = XFW_PKT_PTR(ctx, ctx->l4_off, struct tcphdr);
+	VERIFY_TRUE_OR_RETURN((void *)(th + 1) <= ctx->hdr_cur.end, -EINVAL);
+
+	if (ctx->ipver == bpf_ntohs(ETH_P_IP)) {
+		struct iphdr *iph4 = XFW_PKT_PTR(ctx, ctx->ip_off,
+						 struct iphdr);
+		VERIFY_TRUE_OR_RETURN((void *)(iph4 + 1) <= ctx->hdr_cur.end,
+				      -EINVAL);
+
+		if (is_upstream_direction) {
+			tcp_auth_ctx->key.ipv4.clnt_ip = iph4->saddr;
+			tcp_auth_ctx->key.ipv4.srv_ip = iph4->daddr;
+			tcp_auth_ctx->key.ipv4.clnt_port = th->source;
+			tcp_auth_ctx->key.ipv4.srv_port = th->dest;
+		} else {
+			tcp_auth_ctx->key.ipv4.clnt_ip = iph4->daddr;
+			tcp_auth_ctx->key.ipv4.srv_ip = iph4->saddr;
+			tcp_auth_ctx->key.ipv4.clnt_port = th->dest;
+			tcp_auth_ctx->key.ipv4.srv_port = th->source;
+		}
+
+		tcp_auth_ctx->map = &MAP_TCP_CONN_IPV4_REF;
+
+		return 0;
+	} else if (ctx->ipver == bpf_ntohs(ETH_P_IPV6)) {
+		struct ipv6hdr *iph6 = XFW_PKT_PTR(ctx, ctx->ip_off,
+						   struct ipv6hdr);
+		VERIFY_TRUE_OR_RETURN((void *)(iph6 + 1) <= ctx->hdr_cur.end,
+				      -EINVAL);
+
+		if (is_upstream_direction) {
+			memcpy(tcp_auth_ctx->key.ipv6.clnt_ip, &iph6->saddr,
+			       sizeof(tcp_auth_ctx->key.ipv6.clnt_ip));
+			memcpy(tcp_auth_ctx->key.ipv6.srv_ip, &iph6->daddr,
+			       sizeof(tcp_auth_ctx->key.ipv6.srv_ip));
+			tcp_auth_ctx->key.ipv6.clnt_port = th->source;
+			tcp_auth_ctx->key.ipv6.srv_port = th->dest;
+		} else {
+			memcpy(tcp_auth_ctx->key.ipv6.clnt_ip, &iph6->daddr,
+			       sizeof(tcp_auth_ctx->key.ipv6.clnt_ip));
+			memcpy(tcp_auth_ctx->key.ipv6.srv_ip, &iph6->saddr,
+			       sizeof(tcp_auth_ctx->key.ipv6.srv_ip));
+			tcp_auth_ctx->key.ipv6.clnt_port = th->dest;
+			tcp_auth_ctx->key.ipv6.srv_port = th->source;
+		}
+
+		tcp_auth_ctx->map = &MAP_TCP_CONN_IPV6_REF;
+
+		return 0;
+	}
+
+	return -EPROTO;
+}
+
+static __always_inline XfwTcpConnState *
+tcp_auth_conn_lookup(void *map, const void *key)
+{
+	return bpf_map_lookup_elem(map, key);
 }
 
 static __always_inline void
-tcp_auth_conn_delete(const XfwSockAddr *addr)
+tcp_auth_conn_delete(void *map, const void *key)
 {
-	bpf_map_delete_elem(&MAP_TCP_CONN_REF, addr);
+	bpf_map_delete_elem(map, key);
 	XFW_CTX_DBG("Delete TCP AUTH connection");
 }
 
 static __always_inline void
-tcp_auth_conn_add(const XfwSockAddr *addr)
+__tcp_auth_conn_add(void *map, const void *key)
 {
 	XfwTcpConnState new_conn = {
 		.last_fin_time_jiff = TCP_AUTH_CONN_MAX_FIN_TIME_JIFF
 	};
 
-	bpf_map_update_elem(&MAP_TCP_CONN_REF, addr, &new_conn, BPF_ANY);
+	bpf_map_update_elem(map, key, &new_conn, BPF_ANY);
 	XFW_CTX_DBG("Add TCP AUTH connection");
+}
+
+static __always_inline void
+tcp_auth_conn_add(const XfwGlobalCtx *ctx)
+{
+	struct XfwTcpAuthContext auth_ctx;
+
+	if (unlikely(tcp_auth_init_ctx(ctx, &auth_ctx, true)))
+		return;
+
+	__tcp_auth_conn_add(auth_ctx.map, &auth_ctx.key);
 }
 
 static __always_inline void
@@ -125,9 +207,15 @@ tcp_auth_is_conn_outdated(const XfwGlobalCtx *ctx, const XfwTcpConnState *conn)
 }
 
 static __always_inline bool
-tcp_auth_has_conn_trusted(const XfwGlobalCtx *ctx, const XfwSockAddr *addr)
+tcp_auth_has_conn_trusted(const XfwGlobalCtx *ctx)
 {
-	XfwTcpConnState *conn = tcp_auth_conn_lookup(addr);
+	struct XfwTcpAuthContext auth_ctx;
+
+	if (unlikely(tcp_auth_init_ctx(ctx, &auth_ctx, true)))
+		return true;
+
+	XfwTcpConnState *conn = tcp_auth_conn_lookup(auth_ctx.map,
+						     &auth_ctx.key);
 
 	if (!conn || tcp_auth_is_conn_outdated(ctx, conn))
 		return false;
@@ -160,18 +248,23 @@ enum XfwTcpAuthEvent {
  * keeping the per-packet cost minimal.
  */
 static __always_inline int
-tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr,
-			     enum XfwTcpAuthEvent ev)
+tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, enum XfwTcpAuthEvent ev)
 {
+	struct XfwTcpAuthContext auth_ctx;
+
 	if (unlikely(!ctx->cfg->rules.tcp_auth.enabled))
 		return XFW_CTX_CONTINUE;
 
-	XfwTcpConnState *conn = tcp_auth_conn_lookup(addr);
+	if (unlikely(tcp_auth_init_ctx(ctx, &auth_ctx, true)))
+		return XFW_CTX_CONTINUE;
+
+	XfwTcpConnState *conn = tcp_auth_conn_lookup(auth_ctx.map,
+						     &auth_ctx.key);
 	if (likely(!(conn))) /* Fast path for unauthenticated flood traffic. */
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_AUTH_FAILED);
 
 	if (unlikely(tcp_auth_is_conn_outdated(ctx, (conn)))) {
-		tcp_auth_conn_delete(addr);
+		tcp_auth_conn_delete(auth_ctx.map, &auth_ctx.key);
 		return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_TCP_AUTH_TIMEOUT);
 	}
 
@@ -181,7 +274,7 @@ tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr,
 		 * Out-of-order traffic: early RST clears the connection,
 		 * mirroring TCP stack behavior.
 		 */
-		tcp_auth_conn_delete(addr);
+		tcp_auth_conn_delete(auth_ctx.map, &auth_ctx.key);
 		return XFW_CTX_CONTINUE;
 
 	case TCP_AUTH_EVENT_FIN:
@@ -195,23 +288,25 @@ tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, const XfwSockAddr *addr,
 }
 
 static __always_inline void
-tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx)
+tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx,
+			      bool is_upstream_direction)
 {
+	struct XfwTcpAuthContext auth_ctx;
 	VERIFY_TRUE_OR_RETURN(ctx->l4_off <= L4_OFF_MAX, (void)0);
 	struct tcphdr *th = XFW_PKT_PTR(ctx, ctx->l4_off, struct tcphdr);
 	VERIFY_TRUE_OR_RETURN((void *)(th + 1) <= ctx->hdr_cur.end, (void)0);
-	const XfwSockAddr addr = {
-		.addr = ctx->ilog_addr,
-		.port = th->dest
-	};
-	
+
+	if (unlikely(tcp_auth_init_ctx(ctx, &auth_ctx, is_upstream_direction)))
+		return;
+
 	if (unlikely(th->rst)) {
 		/* An early RST can safely remove a learned tuple. */
-		tcp_auth_conn_delete(&addr);
+		tcp_auth_conn_delete(auth_ctx.map, &auth_ctx.key);
 		return;
 	}
 
-	XfwTcpConnState *conn = tcp_auth_conn_lookup(&addr);
+	XfwTcpConnState *conn = tcp_auth_conn_lookup(auth_ctx.map,
+						     &auth_ctx.key);
 
 	/*
 	 * Trusted connection tracking in tc.c has two modes:
@@ -223,7 +318,7 @@ tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx)
 	 *
 	 * 2. Learning mode when TCP AUTH filter is inactive (or rules are not
 	 *    loaded):
-	 *    - Adds all observed connections to the trusted set regardless of 
+	 *    - Adds all observed connections to the trusted set regardless of
 	 *      SYN/ACK flags.
 	 *    - This ensures that traffic from pre-existing connections is not
 	 *      disrupted while the filter is inactive.
@@ -237,7 +332,7 @@ tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx)
 	 */
 	if (!conn) {
 		if (unlikely(!ctx->cfg->rules.tcp_auth.enabled || th->syn))
-			tcp_auth_conn_add(&addr);
+			__tcp_auth_conn_add(auth_ctx.map, &auth_ctx.key);
 		return;
 	}
 
