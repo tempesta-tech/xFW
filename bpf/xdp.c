@@ -474,24 +474,22 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
  * 4. If valid, trust the connection on ingress side.
  */
 static __always_inline int
-tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th,
-		   const XfwSockAddr *addr)
+tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th)
 {
 	/* Fast path - no SYN cookies. */
 	if (deployment_mode != XFW_MODE_HOST
 	    || !ctx->cfg->rules.syncookie.enabled)
-		return tcp_auth_conn_ingress_filter(ctx, addr,
-						    TCP_AUTH_EVENT_NORMAL);
+		return tcp_auth_conn_ingress_filter(ctx, TCP_AUTH_EVENT_NORMAL);
 
 	XfwTcpSynCookieTs *ts = __tcp_get_tcp_syncookie_ts();
 	XFW_ASSERT(ts);
 
 	/* Fast path - syncookies flood mode is inactive. */
 	if (!tcp_syncookies_flood_mode(ctx, ts))
-		return tcp_auth_conn_ingress_filter(ctx, addr, TCP_AUTH_EVENT_NORMAL);
+		return tcp_auth_conn_ingress_filter(ctx, TCP_AUTH_EVENT_NORMAL);
 
 	/* Can rely only on connections that are up-to-date */
-	if (ctx->cfg->rules.tcp_auth.enabled && tcp_auth_has_conn_trusted(ctx, addr))
+	if (ctx->cfg->rules.tcp_auth.enabled && tcp_auth_has_conn_trusted(ctx))
 		return XFW_CTX_CONTINUE;
 
 	/* Perform SYN-cookie-specific ACK validation */
@@ -507,7 +505,7 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th,
 	 * generated and sent directly by xdp.c, bypassing tc.c. This ensures
 	 * the connection is correctly tracked without relying on tc.c.
 	 */
-	tcp_auth_conn_add(addr);
+	tcp_auth_conn_add(ctx);
 
 	return XFW_CTX_CONTINUE;
 }
@@ -546,21 +544,18 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th,
  * xdp.c for upstream connections.
  */
 static __always_inline int
-tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
-		 const XfwSockAddr *addr)
+tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
 	/* FIN: track connection for closing. */
 	if (th->fin) {
 		count_traffic_stat(ctx, XFW_FIN);
-		return tcp_auth_conn_ingress_filter(ctx, addr,
-						    TCP_AUTH_EVENT_FIN);
+		return tcp_auth_conn_ingress_filter(ctx, TCP_AUTH_EVENT_FIN);
 	}
 
 	/* RST: clear connection state and apply rate-limiting. */
 	if (th->rst) {
 		count_traffic_stat(ctx, XFW_RST);
-		CHAIN(tcp_auth_conn_ingress_filter, ctx, addr,
-		      TCP_AUTH_EVENT_RST);
+		CHAIN(tcp_auth_conn_ingress_filter, ctx, TCP_AUTH_EVENT_RST);
 		return rst_rlimit(ctx);
 	}
 
@@ -572,8 +567,7 @@ tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
 	 */
 	if (th->syn && th->ack) {
 		count_traffic_stat(ctx, XFW_SYNACK);
-		return tcp_auth_conn_ingress_filter(ctx, addr,
-						    TCP_AUTH_EVENT_NORMAL);
+		return tcp_auth_conn_ingress_filter(ctx, TCP_AUTH_EVENT_NORMAL);
 	}
 
 	/* SYN-only. Authenticate the connection if all checks pass. */
@@ -585,11 +579,11 @@ tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
 	/* ACK-only: validate SYN-ACK cookies or authenticate normally.*/
 	if (th->ack) {
 		count_traffic_stat(ctx, XFW_ACK);
-		return tcp_rcv_ack_filter(ctx, th, addr);
+		return tcp_rcv_ack_filter(ctx, th);
 	}
 
 	/* Default: authenticate any remaining TCP packets. */
-	return tcp_auth_conn_ingress_filter(ctx, addr, TCP_AUTH_EVENT_NORMAL);
+	return tcp_auth_conn_ingress_filter(ctx, TCP_AUTH_EVENT_NORMAL);
 }
 
 static __always_inline int
@@ -619,11 +613,7 @@ in_process_l4(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 
 		CHAIN(src_filter, ctx, th->source, src_ip_key);
 
-		const XfwSockAddr addr = {
-			.addr = ctx->ilog_addr,
-			.port = th->source
-		};
-		return tcp_flags_filter(ctx, th, &addr);
+		return tcp_flags_filter(ctx, th);
 	}
 	case XFW_L4_PROTO_UDP: {
 		struct udphdr *uh;

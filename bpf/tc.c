@@ -199,7 +199,7 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 	 * atomatically inactive at that time.
 	 */
 	if (ctx->l4_proto == XFW_L4_PROTO_TCP)
-		tcp_auth_conn_egress_learning(ctx);
+		tcp_auth_conn_egress_learning(ctx, !*is_upstream_egress);
 
 	return XFW_CTX_PASS;
 }
