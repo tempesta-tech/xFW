@@ -117,7 +117,7 @@ protected:
 	void prepare_net_rules();
 	void prepare_ratelimits();
 
-	void prepare_tcp_auth_filter();
+	void prepare_tcp_flow_filter();
 	void prepare_syncookie_filter();
 	void prepare_tcp_syn_drop_filter();
 
@@ -192,7 +192,7 @@ XfwConfigUpdater::prepare_update()
 	prepare_defaults();
 	prepare_net_rules();
 	prepare_tcp_anomaly_filter();
-	prepare_tcp_auth_filter();
+	prepare_tcp_flow_filter();
 	prepare_dns_filter();
 
 	prepare_evaluation_mode();
@@ -467,14 +467,14 @@ XfwConfigUpdater::prepare_ratelimits()
 }
 
 void
-XfwConfigUpdater::prepare_tcp_auth_filter()
+XfwConfigUpdater::prepare_tcp_flow_filter()
 {
 	using namespace TempestaRPC;
 
-	if (msg_flags_.test(XFWOpt::XFWOpt_TCP_AUTH_FILTER_OFF))
-		config_.auth_filter_.enabled_= false;
-	else if (msg_flags_.test(XFWOpt::XFWOpt_TCP_AUTH_FILTER_ON))
-		config_.auth_filter_.enabled_ = true;
+	if (msg_flags_.test(XFWOpt::XFWOpt_TCP_FLOW_FILTER_OFF))
+		config_.tcp_flow_filter_.enabled_ = false;
+	else if (msg_flags_.test(XFWOpt::XFWOpt_TCP_FLOW_FILTER_ON))
+		config_.tcp_flow_filter_.enabled_ = true;
 
 	// Otherwise there is no information about this filter in config.
 }

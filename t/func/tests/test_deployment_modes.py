@@ -59,14 +59,14 @@ async def test_syncookies_require_host_mode(xfw_deployment_mode):
 
 @pytest.mark.xfw_mode(XfwMode.normal)
 @pytest.mark.parametrize("xfw_deployment_mode", ["host", "gw"], indirect=True)
-async def test_tcp_auth_allowed_in_host_and_gateway_modes(xfw_deployment_mode):
-    await xfw_deployment_mode.rules_set("xfw { tcp_auth_filter; }")
+async def test_tcp_flow_allowed_in_host_and_gateway_modes(xfw_deployment_mode):
+    await xfw_deployment_mode.rules_set("xfw { tcp_flow_filter; }")
 
 
 @pytest.mark.xfw_mode(XfwMode.normal)
 @pytest.mark.parametrize("xfw_deployment_mode", ["scrubbing"], indirect=True)
-async def test_tcp_auth_rejected_in_scrubbing_mode(xfw_deployment_mode):
+async def test_tcp_flow_rejected_in_scrubbing_mode(xfw_deployment_mode):
     with pytest.raises(
-        ValueError, match="tcp_auth_filter requires host or gateway deployment mode"
+        ValueError, match="tcp_flow_filter requires host or gateway deployment mode"
     ):
-        await xfw_deployment_mode.rules_set("xfw { tcp_auth_filter; }")
+        await xfw_deployment_mode.rules_set("xfw { tcp_flow_filter; }")

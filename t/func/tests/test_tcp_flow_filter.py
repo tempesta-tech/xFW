@@ -26,7 +26,7 @@ async def test_normal_connection(
     It's possible to establish a new connection if
     the filter is turned on
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
 
     assert await tcp_raw_client.handshake() is True
     assert await tcp_raw_client.close_connection() is True
@@ -41,7 +41,7 @@ async def test_send_data_after_filter_turned_on(
     """
     assert await check_connection(tcp_client, tcp_server)
 
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     assert await check_connection(tcp_client, tcp_server)
 
 
@@ -57,7 +57,7 @@ async def test_block_tcp_flood_from_non_existing_session(
     Any NON-SYN packets should be blocked if the
     connection was not established with the turned on filter
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     await tcp_raw_client.send_packet(TCP(flags=tcp_flag))
 
     assert (
@@ -77,7 +77,7 @@ async def test_block_closed_session(
     If we close the connection with turned on filter,
     the NON-SYN packets should be blocked
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
 
     assert await asyncio.gather(
         tcp_raw_client.handshake(),
@@ -124,7 +124,7 @@ async def test_block_reset_session(
     If we reset the connection with turned on filter,
     the NON-SYN packets should be blocked
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
 
     assert await asyncio.gather(
         tcp_raw_client.handshake(),
@@ -161,8 +161,8 @@ async def test_unblock_non_existing_session(
     Turning off the filter have to release the flood
     packets
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
-    await xfw.rules_patch("xfw { tcp_auth_filter/del; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
+    await xfw.rules_patch("xfw { tcp_flow_filter/del; }")
 
     await tcp_raw_client.send_packet(TCP(flags="A"))
 
@@ -180,13 +180,13 @@ async def test_connection_under_filter_resetting(
     """
     assert await check_connection(tcp_client, tcp_server)
 
-    await xfw.rules_patch("xfw { tcp_auth_filter; }")
+    await xfw.rules_patch("xfw { tcp_flow_filter; }")
     assert await check_connection(tcp_client, tcp_server)
 
-    await xfw.rules_patch("xfw { tcp_auth_filter/del; }")
+    await xfw.rules_patch("xfw { tcp_flow_filter/del; }")
     assert await check_connection(tcp_client, tcp_server)
 
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     assert await check_connection(tcp_client, tcp_server)
 
 
@@ -201,11 +201,11 @@ async def test_clean_stored_session_after_xfw_restart(
     Restarting the XFW with turned on filter should reset all
     sessions
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     assert await check_connection(tcp_client, tcp_server)
 
     await xfw.restart()
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     assert await check_block_connection(tcp_client, tcp_server)
 
 
@@ -220,7 +220,7 @@ async def test_allow_tcp_flood_after_connection(
     Test active filtering for connected users
     """
 
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     assert await asyncio.gather(
         tcp_raw_client.handshake(),
         tcp_raw_server.handshake(),
@@ -240,10 +240,10 @@ async def test_reset_one_connection_does_not_break_another(
     client_cloner,
 ):
     """
-    Resetting one authenticated TCP connection must not remove the
-    authentication state of another connection to the same server endpoint.
+    Resetting one tracked TCP connection must not remove the
+    tracking state of another connection to the same server endpoint.
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
 
     tcp_server.echo_mode = True
     await tcp_server.start()
@@ -278,7 +278,7 @@ async def test_reset_one_connection_does_not_break_another(
 
     #
     # In gate mode TC egress sees the original client-to-server
-    # packets. With the old endpoint-only TCP AUTH key, both
+    # packets. With the old endpoint-only flow key, both
     # connections were therefore represented by the same destination:
     #
     #   server_ip:port
@@ -300,11 +300,11 @@ async def test_reset_one_connection_does_not_break_another_reuse_addr(
     xfw: XFW, tcp_server: TcpServer, tcp_client: TcpClient, client_cloner, server_cloner
 ):
     """
-    Resetting one authenticated TCP connection must not remove the
-    authentication state of another connection with the same client
+    Resetting one tracked TCP connection must not remove the
+    tracking state of another connection with the same client
     endpoint but a different server address.
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
 
     servers = server_cloner(cloner=tcp_server, amount=2)
     for server in servers:
@@ -337,13 +337,13 @@ async def test_reset_one_connection_does_not_break_another_reuse_addr(
     #
     # Reset only the first connection.
     #
-    # With the old endpoint-only TCP AUTH key, both connections had
-    # the same authentication key on the server-to-client path:
+    # With the old endpoint-only flow key, both connections had
+    # the same flow key on the server-to-client path:
     #
     #   client_ip:port
     #
     # Therefore, resetting the first connection could remove the
-    # authentication state used by the second one.
+    # tracking state used by the second one.
     #
     first_client.use_rst_for_connection_closing()
     first_client.transport.abort()

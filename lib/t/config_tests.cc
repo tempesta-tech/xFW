@@ -21,7 +21,7 @@ const std::string max_tl = "tl {\nsome\nprogram\nhere\n}";
 const std::string max_xfw = "xfw {"
 	"tcp_syncookies passive_timer=1 flood_timer=5;"
 	"tcp_syn_drop min_delay=500 max_delay=3000 retry_count=3 block_timeout=0;"
-	"tcp_anomaly_filter; tcp_auth_filter/del;"
+	"tcp_anomaly_filter; tcp_flow_filter/del;"
 	"ratelimit=my_ratelimit pps=300 bps=1024;"
 	"icmp ip6 : ratelimit=my_ratelimit { 13, 30 }"
 	"dst=dst_name ip4.tcp: ratelimit=my_ratelimit {\n255.255.255.255:64,\n127.0.0.1/2\n}"
@@ -100,8 +100,8 @@ TEST(ParsesFullConfig, HandlesMaximumData)
 	ASSERT_EQ(tcp_syn_drop->block_timeout_ms_, 0);
 
 	auto &cflags = conf->prvt->xfw_conf.value().flags_;
-	ASSERT_FALSE(cflags.test(XfwConf::Opt::TCP_AUTH_FILTER_ON));
-	ASSERT_TRUE(cflags.test(XfwConf::Opt::TCP_AUTH_FILTER_OFF));
+	ASSERT_FALSE(cflags.test(XfwConf::Opt::TCP_FLOW_FILTER_ON));
+	ASSERT_TRUE(cflags.test(XfwConf::Opt::TCP_FLOW_FILTER_OFF));
 	ASSERT_FALSE(cflags.test(XfwConf::Opt::TCP_ANOMALY_FILTER_OFF));
 
 	ASSERT_EQ(conf->prvt->xfw_conf.value().net_rules_.size(), 7);
@@ -159,7 +159,7 @@ TEST(ParsesXfwConfig, HandlesIpAsIsoCodeInSrc)
 	ASSERT_FALSE(conf->prvt->xfw_conf.value().syncookie_.has_value());
 
 	auto &cflags = conf->prvt->xfw_conf.value().flags_;
-	ASSERT_FALSE(cflags.test(XfwConf::Opt::TCP_AUTH_FILTER_ON));
+	ASSERT_FALSE(cflags.test(XfwConf::Opt::TCP_FLOW_FILTER_ON));
 
 	ASSERT_EQ(conf->prvt->xfw_conf.value().net_rules_.size(), 1);
 	auto &rule = conf->prvt->xfw_conf.value().net_rules_[0];
@@ -560,8 +560,8 @@ TEST(SerializesConfig, WithMaximumData)
 	BitSet<XFWOpt, XFWOpt::XFWOpt_MAX> cflags;
 	ASSERT_TRUE(bitset_deserialize(*xfw_cfg->flags(), cflags));
 
-	ASSERT_FALSE(cflags.test(XFWOpt::XFWOpt_TCP_AUTH_FILTER_ON));
-	ASSERT_TRUE(cflags.test(XFWOpt::XFWOpt_TCP_AUTH_FILTER_OFF));
+	ASSERT_FALSE(cflags.test(XFWOpt::XFWOpt_TCP_FLOW_FILTER_ON));
+	ASSERT_TRUE(cflags.test(XFWOpt::XFWOpt_TCP_FLOW_FILTER_OFF));
 	ASSERT_FALSE(cflags.test(XFWOpt::XFWOpt_TCP_SYNCOOKIE_FILTER_OFF));
 	ASSERT_FALSE(cflags.test(XFWOpt::XFWOpt_TCP_SYN_DROP_FILTER_OFF));
 	ASSERT_FALSE(cflags.test(XFWOpt::XFWOpt_TCP_ANOMALY_FILTER_OFF));

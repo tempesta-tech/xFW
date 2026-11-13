@@ -43,8 +43,8 @@ enum XfwDropStat {
 	XFW_DROP_UDP_BADHDR_INGRESS,
 	XFW_DROP_ICMP_BADHDR_INGRESS,
 	XFW_DROP_L4_UNSUPPORTED_INGRESS,
-	XFW_DROP_TCP_AUTH_FAILED,
-	XFW_DROP_TCP_AUTH_TIMEOUT,
+	XFW_DROP_TCP_FLOW_FAILED,
+	XFW_DROP_TCP_FLOW_TIMEOUT,
 	XFW_DROP_SYNCOOKIE_FAILED,
 	XFW_DROP_DNS_BADHDR_INGRESS,
 	XFW_DROP_DNS_QRY_RCODE_NOT_OK,
@@ -163,11 +163,11 @@ static const struct XfwStatInfo xfw_drop_stats[] = {
 	[XFW_DROP_L4_UNSUPPORTED_INGRESS]	= {"xfw_l4_unsupported_ingress",
 						   "Blocked on parsing: unsupported"
 						   " IP proto"},
-	[XFW_DROP_TCP_AUTH_FAILED]		= {"xfw_tcp_auth_failed",
-						   "Blocked by 'tcp_auth_filter': "
+	[XFW_DROP_TCP_FLOW_FAILED]		= {"xfw_tcp_flow_failed",
+						   "Blocked by 'tcp_flow_filter': "
 						   "unknown connection"},
-	[XFW_DROP_TCP_AUTH_TIMEOUT]		= {"xfw_tcp_auth_timeout",
-						   "Blocked by 'tcp_auth_filter': "
+	[XFW_DROP_TCP_FLOW_TIMEOUT]		= {"xfw_tcp_flow_timeout",
+						   "Blocked by 'tcp_flow_filter': "
 						   "outdated connection"},
 	[XFW_DROP_SYNCOOKIE_FAILED]		= {"xfw_syncookie_failed",
 						   "Blocked by 'tcp_syncookies' "

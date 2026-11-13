@@ -26,7 +26,7 @@
 #include "filter.h"
 #include "log.h"
 #include "parsing_helpers.h"
-#include "tcp_auth.h"
+#include "tcp_flow_filter.h"
 
 /* Protected-network tries classify egress packets as internal or upstream. */
 SHADOW_MAP(MAP_NET_IP4_BASENAME, BPF_MAP_TYPE_LPM_TRIE, XFW_MAX_PROTECTED_NET_RULES,
@@ -195,11 +195,11 @@ xfw_tc_egress_filter(struct XfwGlobalCtx *ctx, bool *is_upstream_egress)
 		CHAIN(process_downstream_egress, ctx);
 
 	/*
-	 * Still needs to be called when rules are not loaded. TCP AUTH filter is
-	 * atomatically inactive at that time.
+	 * Keep learning flows when rules are not loaded. The flow filter is
+	 * automatically inactive at that time.
 	 */
 	if (ctx->l4_proto == XFW_L4_PROTO_TCP)
-		tcp_auth_conn_egress_learning(ctx, !*is_upstream_egress);
+		tcp_flow_conn_egress_learning(ctx, !*is_upstream_egress);
 
 	return XFW_CTX_PASS;
 }

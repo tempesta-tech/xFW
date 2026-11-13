@@ -17,7 +17,7 @@
 #include "filter.h"
 #include "parsing_helpers.h"
 #include "tcp_anomaly_filter.h"
-#include "tcp_auth.h"
+#include "tcp_flow_filter.h"
 #include "tcp_syncookies.h"
 #include "tcp_syn_drop.h"
 
@@ -468,10 +468,10 @@ tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
  * Filter incoming ACK packets.
  *
  * 1. If SYN cookies are disabled or flood mode is inactive → fall back to
- *    the normal TCP auth filter.
- * 2. If a trusted connection already exists → continue.
+ *    the normal TCP flow filter.
+ * 2. If a trusted flow entry already exists → continue.
  * 3. Otherwise, call SYN-cookie-specific check.
- * 4. If valid, trust the connection on ingress side.
+ * 4. If valid, trust the flow on ingress.
  */
 static __always_inline int
 tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th)
@@ -479,17 +479,17 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th)
 	/* Fast path - no SYN cookies. */
 	if (deployment_mode != XFW_MODE_HOST
 	    || !ctx->cfg->rules.syncookie.enabled)
-		return tcp_auth_conn_ingress_filter(ctx, TCP_AUTH_EVENT_NORMAL);
+		return tcp_flow_conn_ingress_filter(ctx, TCP_FLOW_EVENT_NORMAL);
 
 	XfwTcpSynCookieTs *ts = __tcp_get_tcp_syncookie_ts();
 	XFW_ASSERT(ts);
 
 	/* Fast path - syncookies flood mode is inactive. */
 	if (!tcp_syncookies_flood_mode(ctx, ts))
-		return tcp_auth_conn_ingress_filter(ctx, TCP_AUTH_EVENT_NORMAL);
+		return tcp_flow_conn_ingress_filter(ctx, TCP_FLOW_EVENT_NORMAL);
 
 	/* Can rely only on connections that are up-to-date */
-	if (ctx->cfg->rules.tcp_auth.enabled && tcp_auth_has_conn_trusted(ctx))
+	if (ctx->cfg->rules.tcp_flow.enabled && tcp_flow_has_conn(ctx))
 		return XFW_CTX_CONTINUE;
 
 	/* Perform SYN-cookie-specific ACK validation */
@@ -505,14 +505,14 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th)
 	 * generated and sent directly by xdp.c, bypassing tc.c. This ensures
 	 * the connection is correctly tracked without relying on tc.c.
 	 */
-	tcp_auth_conn_add(ctx);
+	tcp_flow_conn_add(ctx);
 
 	return XFW_CTX_CONTINUE;
 }
 
 /**
  * Combined TCP filter for SYN handling (SYN cookies or rate limiting),
- * authentication, and RST/FIN processing. These mechanisms are tightly
+ * flow tracking, and RST/FIN processing. These mechanisms are tightly
  * coupled, so they are processed together to avoid redundant lookups and
  * state checks.
  *
@@ -521,26 +521,25 @@ tcp_rcv_ack_filter(const XfwGlobalCtx *ctx, struct tcphdr *th)
  *   to be dropped, which mirrors the behavior of the TCP stack.
  * - FIN packets are tracked to support proper connection teardown.
  *
- * Authentication model:
+ * Flow tracking model:
  * - All SYN packets are added to the trusted set in tc.c. This covers connections
  * initiated by the host/gateway or connections we respond to with SYN-ACK.
- * This shifts most trusted connection tracking to tc.c, which is less loaded
+ * This shifts most flow tracking to tc.c, which is less loaded
  * than XDP.
- * - XDP handles authentication only when the TCP AUTH filter is active. It also
- * validates SYN cookies when required. A SYN cookie connection is the only case
- * where XDP adds a connection to the trusted set, after successful validation on
- * the ACK.
+ * - XDP checks tracked flows only when the flow filter is active. It also
+ * validates SYN cookies when required. A SYN cookie connection is the only
+ * case where XDP records a flow, after successful validation of the ACK.
  *
  * This approach ensures that:
  * - all new connections are tracked via SYN handling in tc.c, so here we can
- * rely on all existing connections,
- * - XDP performs filtering based on the trusted set when the TCP AUTH filter
- * is active,
+ *   rely on all existing connections,
+ * - XDP performs filtering based on the trusted set flows when the flow filter
+ *   is active.
  * - SYN flood protection is enforced when required (xdp.c),
  * - connections using SYN cookies are correctly validated and added to the
- * trusted set in XDP.
+ *   trusted set in XDP.
  *
- * TODO #19: It may be necessary to move some authentication logic to a separate
+ * TODO #19: It may be necessary to move some flow tracking logic to a separate
  * xdp.c for upstream connections.
  */
 static __always_inline int
@@ -549,13 +548,13 @@ tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	/* FIN: track connection for closing. */
 	if (th->fin) {
 		count_traffic_stat(ctx, XFW_FIN);
-		return tcp_auth_conn_ingress_filter(ctx, TCP_AUTH_EVENT_FIN);
+		return tcp_flow_conn_ingress_filter(ctx, TCP_FLOW_EVENT_FIN);
 	}
 
 	/* RST: clear connection state and apply rate-limiting. */
 	if (th->rst) {
 		count_traffic_stat(ctx, XFW_RST);
-		CHAIN(tcp_auth_conn_ingress_filter, ctx, TCP_AUTH_EVENT_RST);
+		CHAIN(tcp_flow_conn_ingress_filter, ctx, TCP_FLOW_EVENT_RST);
 		return rst_rlimit(ctx);
 	}
 
@@ -567,23 +566,23 @@ tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 	 */
 	if (th->syn && th->ack) {
 		count_traffic_stat(ctx, XFW_SYNACK);
-		return tcp_auth_conn_ingress_filter(ctx, TCP_AUTH_EVENT_NORMAL);
+		return tcp_flow_conn_ingress_filter(ctx, TCP_FLOW_EVENT_NORMAL);
 	}
 
-	/* SYN-only. Authenticate the connection if all checks pass. */
+	/* SYN-only: Authenticate the connection if all checks pass. */
 	if (th->syn) {
 		count_traffic_stat(ctx, XFW_SYN);
 		return tcp_rcv_syn_filter(ctx, th);
 	}
 
-	/* ACK-only: validate SYN-ACK cookies or authenticate normally.*/
+	/* ACK-only: validate SYN-ACK cookies or check the tracked flow. */
 	if (th->ack) {
 		count_traffic_stat(ctx, XFW_ACK);
 		return tcp_rcv_ack_filter(ctx, th);
 	}
 
-	/* Default: authenticate any remaining TCP packets. */
-	return tcp_auth_conn_ingress_filter(ctx, TCP_AUTH_EVENT_NORMAL);
+	/* Default: check the tracked flow for any remaining TCP packets. */
+	return tcp_flow_conn_ingress_filter(ctx, TCP_FLOW_EVENT_NORMAL);
 }
 
 static __always_inline int
