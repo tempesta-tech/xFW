@@ -293,8 +293,8 @@ public:
 	enum class Opt : uint8_t {
 		XFW_CONFIG_PATCH		= 0, // Replace otherwise.
 		TCP_ANOMALY_FILTER_OFF		= 1,
-		TCP_AUTH_FILTER_ON		= 2,
-		TCP_AUTH_FILTER_OFF		= 3,
+		TCP_FLOW_FILTER_ON		= 2,
+		TCP_FLOW_FILTER_OFF		= 3,
 		EVALUATION_MODE_ON		= 4,
 		EVALUATION_MODE_OFF		= 5,
 		TCP_SYNCOOKIE_FILTER_OFF	= 6,

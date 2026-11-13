@@ -471,14 +471,14 @@ async def test_invalid_src_ip(
         assert await ether_raw_server.receive_block(src_mac, dst_mac)
 
 
-async def test_blocked_by_tcp_auth_filter_unknown_connection_32_bit(
+async def test_blocked_by_tcp_flow_filter_unknown_connection_32_bit(
     xfw,
     tcp_raw_client,
     tcp_raw_server,
     clickhouse_client,
     metric_analyzer,
 ):
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
 
     await tcp_raw_server.start()
     await tcp_raw_client.start()
@@ -486,21 +486,21 @@ async def test_blocked_by_tcp_auth_filter_unknown_connection_32_bit(
     async with metric_analyzer.track_clickhouse_metric(
         clickhouse_client,
         ip_to_search=tcp_raw_client.ip_clickhouse,
-        expected_bit=ClickhouseSingleMetric.blocked_by_tcp_auth_filter_unknown_connection,
+        expected_bit=ClickhouseSingleMetric.blocked_by_tcp_flow_filter_unknown_connection,
     ):
         await tcp_raw_client.send_packet(TCP(flags="A"))
         assert await tcp_raw_server.receive_block()
 
 
 @pytest.mark.long
-async def test_blocked_by_tcp_auth_filter_expired_connection_33_bit(
+async def test_blocked_by_tcp_flow_filter_expired_connection_33_bit(
     xfw,
     tcp_raw_client,
     tcp_raw_server,
     clickhouse_client,
     metric_analyzer,
 ):
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
 
     await tcp_raw_server.start()
     await tcp_raw_client.start()
@@ -520,7 +520,7 @@ async def test_blocked_by_tcp_auth_filter_expired_connection_33_bit(
     async with metric_analyzer.track_clickhouse_metric(
         clickhouse_client,
         ip_to_search=tcp_raw_client.ip_clickhouse,
-        expected_bit=ClickhouseSingleMetric.blocked_by_tcp_auth_filter_expired_connection,
+        expected_bit=ClickhouseSingleMetric.blocked_by_tcp_flow_filter_expired_connection,
     ):
         await tcp_raw_client.send_packet(TCP(flags="P") / b"111")
         assert await tcp_raw_server.receive_packet()
