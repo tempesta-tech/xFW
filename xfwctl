@@ -149,9 +149,12 @@ read_config()
 			.["deployment-mode"] == "gw" or
 			.["deployment-mode"] == "scrubbing"
 		else true end) and
-		(if has("dns") then (.dns | type) == "boolean" else true end)
+		(if has("dns") then (.dns | type) == "boolean" else true end) and
+		(if has("auto-irq-affinity") then
+			(.["auto-irq-affinity"] | type) == "boolean"
+		else true end)
 	' "$cfg_file" >/dev/null; then
-		error "Invalid JSON or deployment-mode/dns setting in $cfg_file"
+		error "Invalid JSON or deployment-mode/dns/auto-irq-affinity setting in $cfg_file"
 	fi
 
 	echo "Loading configuration from $cfg_file..."
@@ -205,6 +208,7 @@ read_config()
 	[ $v -eq 1 ] && echo -e "Using project directory: $project_path"
 	echo "Configuration: -devices $devs"
 	echo "               -devices-mode $devmode"
+	echo "               -auto-irq-affinity ${cfg[auto-irq-affinity]:-true}"
 	echo "               -deployment-mode $deployment_mode"
 	echo "               -dns $dns"
 	echo "               -mgr-args $mgr_args (log path $mgr_log, pidfile $pid_file)"
@@ -464,6 +468,14 @@ load_bpf()
 			error "Some eBPF programs are still loaded(TC on $dev). Please run 'xfwctl --stop'. If the problem persists, reboot the system or reload the network interface."
 		fi
 	done
+
+	# Configure queue IRQs without enabling RPS.
+	if [[ ${cfg[auto-irq-affinity]:-true} == true ]]; then
+		"$project_path/lib/set_irq_affinity.sh" --no-rps "$devs" ||
+			echo "WARNING: IRQ affinity is not properly configured for devices: $devs. Continuing startup, but at least tcp_syn_drop and syn_cookies will not work correctly." >&2
+	else
+		echo "Automatic IRQ affinity configuration is disabled."
+	fi
 
 	load_xdp
 	load_tc

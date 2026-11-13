@@ -240,6 +240,10 @@ class PrometheusMetrics(BaseMetrics, Generic[T_Packets, T_Bytes]):
     xfw_passed_upstream_egress_bytes: T_Bytes = None
     xfw_syn_packets: T_Packets = None
     xfw_syn_bytes: T_Bytes = None
+    xfw_syn_drop_blocked_packets: T_Packets = None
+    xfw_syn_drop_blocked_bytes: T_Bytes = None
+    xfw_syn_drop_passed_packets: T_Packets = None
+    xfw_syn_drop_passed_bytes: T_Bytes = None
     xfw_ack_packets: T_Packets = None
     xfw_ack_bytes: T_Bytes = None
     xfw_synack_packets: T_Packets = None

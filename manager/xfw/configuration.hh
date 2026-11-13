@@ -52,8 +52,15 @@ public:
 	using AliasToIndexMap = std::map<std::string, RatelimitIndex, std::less<>>;
 	struct SynCookieFilter
 	{
-		uint64_t	passive_timer_ = 1;
-		uint64_t	flood_timer_ = 1;
+		uint64_t	passive_timer_sec_ = 1;
+		uint64_t	flood_timer_sec_ = 1;
+	};
+
+	struct TcpSynDropFilter {
+		uint64_t	min_delay_ms_ = 0;
+		uint64_t	max_delay_ms_ = 0;
+		uint64_t	block_timeout_ms_ = 0;
+		uint32_t	retry_count_ = 0;
 	};
 
 	struct TcpFlagFilter
@@ -283,6 +290,7 @@ public:
 	EvaluationMode			evaluation_mode_;
 	std::optional<IpProtoFilter>	ip_proto_filter_;
 	std::optional<SynCookieFilter>	syncookie_filter_;
+	std::optional<TcpSynDropFilter> tcp_syn_drop_filter_;
 	std::optional<TcpFlagFilter>	tcp_syn_flag_filter_;
 	std::optional<TcpFlagFilter>	tcp_rst_flag_filter_;
 	TcpAnomalyFilter		anomaly_filter_;

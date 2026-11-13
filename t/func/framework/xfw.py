@@ -159,6 +159,15 @@ class XFW(NetworkStateful):
         self.__config = None
 
     @property
+    def deployment_mode(self) -> str:
+        return self._deployment_mode
+
+    @deployment_mode.setter
+    def deployment_mode(self, mode: typing.Literal["host", "gw", "scrubbing"]) -> None:
+        self._deployment_mode = mode
+        self.__config = None
+
+    @property
     def path_to_executable(self) -> str:
         return self._with_tmp_config(f"{self.build_dir}/bin/xfwctl")
 

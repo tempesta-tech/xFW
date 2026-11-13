@@ -1250,14 +1250,32 @@ async def test_flood_allowed_by_del_rule(
     tcp_server: TcpServer,
     tcp_raw_client: TcpRawClient,
     start_tcp_server_and_raw_clients,
+    metric_analyzer,
 ):
     await xfw_with_forced_syncookie.rules_set(
-        "xfw { tcp_syncookies passive_timer=0 flood_timer=0; }"
+        "xfw { tcp_syncookies passive_timer=0 flood_timer=1; }"
     )
-    await xfw_with_forced_syncookie.rules_set("xfw { tcp_syncookies/del; }")
-    await tcp_raw_client.send_packet(TCP(flags="S"))
 
-    response = await tcp_raw_client.receive_packet()
-    assert tcp_raw_client.has_flag(
-        response, "SA"
-    ), f"Unexpected reply packet with flags = {response.flags}. Expected SA"
+    # Verify that xFW generates cookies before deleting the filter.
+    tcp_raw_client.port = random.randrange(1024, 65000)
+    async with metric_analyzer.expected_metrics_diff(
+        xfw=xfw_with_forced_syncookie,
+        expected_metrics=PrometheusMetricsDiff(xfw_syncookie_generated_packets=1),
+    ):
+        await tcp_raw_client.send_packet(tcp_raw_client.valid_syn_packet)
+        response = await tcp_raw_client.receive_packet()
+        assert response is not None, "Expected SYN-ACK before deleting SYN cookies"
+        assert tcp_raw_client.has_flag(response, "SA")
+
+    await xfw_with_forced_syncookie.rules_patch("xfw { tcp_syncookies/del; }")
+
+    # A fresh tuple must be answered by the kernel without an xFW cookie.
+    tcp_raw_client.port += 1
+    async with metric_analyzer.expected_metrics_diff(
+        xfw=xfw_with_forced_syncookie,
+        expected_metrics=PrometheusMetricsDiff(xfw_syncookie_generated_packets=0),
+    ):
+        await tcp_raw_client.send_packet(tcp_raw_client.valid_syn_packet)
+        response = await tcp_raw_client.receive_packet()
+        assert response is not None, "Expected SYN-ACK after deleting SYN cookies"
+        assert tcp_raw_client.has_flag(response, "SA")

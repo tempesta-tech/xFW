@@ -310,6 +310,7 @@ BpfMapsManager::set_simple_rules(const XfwConfig &config)
 	cfg.rl_window.jiffies = rl_window_jiffies_;
 	cfg.rl_window.shift = rl_window_shift_;
 	cfg.rl_window.mask = rl_window_mask_;
+	cfg.log_limit = scale_rl_to_window(XFW_MAX_LOG_EVENTS_PER_SEC);
 
 	using BitsetT = std::decay_t<decltype(config.ip_proto_filter_->protocols_)>;
 	static_assert(
@@ -329,10 +330,30 @@ BpfMapsManager::set_simple_rules(const XfwConfig &config)
 	cfg.rules.dns.enabled = config.dns_filter_.enabled_;
 
 	cfg.rules.syncookie.enabled = config.syncookie_filter_.has_value();
+
 	if (cfg.rules.syncookie.enabled) {
+		auto secs_to_jiffies = [this](uint64_t secs) {
+			return secs * hz_;
+		};
 		const auto &data = config.syncookie_filter_.value();
-		cfg.rules.syncookie.flood_timer_jiff = data.flood_timer_ * hz_;
-		cfg.rules.syncookie.passive_timer_jiff = data.passive_timer_ * hz_;
+		cfg.rules.syncookie.flood_timer_jiff =
+			secs_to_jiffies(data.flood_timer_sec_);
+		cfg.rules.syncookie.passive_timer_jiff =
+			secs_to_jiffies(data.passive_timer_sec_);
+	}
+	cfg.rules.tcp_syn_drop.enabled = config.tcp_syn_drop_filter_.has_value();
+	if (cfg.rules.tcp_syn_drop.enabled) {
+		auto msecs_to_jiffies = [this](uint64_t msecs) {
+			return (msecs * hz_) / 1000;
+		};
+		const auto &data = config.tcp_syn_drop_filter_.value();
+		cfg.rules.tcp_syn_drop.min_delay_jiff =
+			msecs_to_jiffies(data.min_delay_ms_);
+		cfg.rules.tcp_syn_drop.max_delay_jiff =
+			msecs_to_jiffies(data.max_delay_ms_);
+		cfg.rules.tcp_syn_drop.block_timeout_jiff =
+			msecs_to_jiffies(data.block_timeout_ms_);
+		cfg.rules.tcp_syn_drop.retry_count = data.retry_count_;	
 	}
 
 	upload_config_changes(cfg, no_ratelimit_buckets);

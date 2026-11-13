@@ -173,12 +173,12 @@ Install the build and runtime dependencies on Ubuntu 24.04:
 
 ```bash
 sudo apt update
-sudo apt install -y git curl cmake make g++ pkgconf jq xdp-tools \
+sudo apt install -y git curl cmake make g++ pkgconf jq bc ethtool xdp-tools \
     clang-19 clang-tools-19 clang-tidy-19 clang-format-19 \
     libboost-all-dev flatbuffers-compiler libflatbuffers-dev \
     libprotobuf-dev libgrpc++-dev libfmt-dev libspdlog-dev \
     libmaxminddb-dev libbpf-dev libbpf-tools libgtest-dev \
-    libxxhash-dev libbenchmark-dev linux-tools-common \
+    libbenchmark-dev linux-tools-common \
     linux-tools-generic linux-cloud-tools-generic
 ```
 
@@ -218,6 +218,11 @@ For example:
     "event-logging": "off"
 }
 ```
+
+Automatic network queue and IRQ affinity configuration is enabled by default.
+To manage these settings manually, add `"auto-irq-affinity": false` to
+`xfw.json`. This skips the startup helper, including its queue, IRQ affinity,
+and irqbalance changes.
 
 Check the host and start xFW:
 

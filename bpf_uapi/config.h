@@ -58,15 +58,24 @@ typedef struct XfwRulesCfgIpProto {
 	XfwSupportedProtocolsBitset	protocols;
 } XfwRulesCfgIpProto;
 
+typedef struct XfwRulesCfgTcpSynDrop {
+	uint64_t	min_delay_jiff;
+	uint64_t	max_delay_jiff;
+	uint64_t	block_timeout_jiff;
+	uint32_t	retry_count;
+	uint8_t		enabled;
+} XfwRulesCfgTcpSynDrop;
+
 typedef struct XfwRulesCfg {
-	XfwEvaluationMode	evaluation_mode;
-	XfwRulesCfgIpProto	ip_proto;
-	XfwRulesCfgSyncookie	syncookie;
-	XfwRulesCfgTcpAnomaly	tcp_anomaly;
-	XfwRulesCfgTcpAuth	tcp_auth;
-	XfwRulesCfgDns		dns;
-	XfwActionRule		tcp_flags[XFW_FLAGS_FILTER_MAX];
-	XfwActionRule		defaults[XFW_DEFAULT_MAX];
+	XfwEvaluationMode		evaluation_mode;
+	XfwRulesCfgIpProto		ip_proto;
+	XfwRulesCfgSyncookie		syncookie;
+	XfwRulesCfgTcpSynDrop		tcp_syn_drop;
+	XfwRulesCfgTcpAnomaly		tcp_anomaly;
+	XfwRulesCfgTcpAuth		tcp_auth;
+	XfwRulesCfgDns			dns;
+	XfwActionRule			tcp_flags[XFW_FLAGS_FILTER_MAX];
+	XfwActionRule			defaults[XFW_DEFAULT_MAX];
 } __attribute__((aligned(8))) XfwRulesCfg;
 
 typedef struct XfwPacketRate {
@@ -99,6 +108,7 @@ typedef struct XfwRlWindow {
  *
  * @amap_*	- active map id, MAP_PRIMARY_IDX or MAP_SECONDARY_IDX
  * @named_rates	- named rate limits configuration
+ * @log_limit	- log events per time window
  */
 typedef struct XfwFilterCfg {
 	XfwRulesCfg		rules;
@@ -110,5 +120,6 @@ typedef struct XfwFilterCfg {
 	uint8_t			amap_prot_net;
 
 	XfwRlWindow		rl_window;
+	uint32_t		log_limit;
 	XfwPacketRate		named_rates[XFW_MAX_NAMED_RATELIMITS];
 } XfwFilterCfg;

@@ -119,6 +119,7 @@ protected:
 
 	void prepare_tcp_auth_filter();
 	void prepare_syncookie_filter();
+	void prepare_tcp_syn_drop_filter();
 
 	void prepare_tcp_flags_filter();
 
@@ -196,6 +197,7 @@ XfwConfigUpdater::prepare_update()
 
 	prepare_evaluation_mode();
 	prepare_syncookie_filter();
+	prepare_tcp_syn_drop_filter();
 
 	// Syncookies modify the workflow by creating a cookie in response and
 	// sending data back to the user (see syn_filter).
@@ -235,7 +237,7 @@ XfwConfigUpdater::prepare_defaults()
 			" allowed in proto data.");
 
 		auto ratelimit_idx = get_ratelimit_idx(rule->ratelimit());
-		
+
 		BitSet<DefaultIndex, XFW_DEFAULT_MAX> flags;
 		verify(bitset_deserialize(*rule->flags(), flags),
 		       "Unexpected bytes count at DefaultAction::flags");
@@ -269,7 +271,7 @@ void
 XfwConfigUpdater::prepare_protocols()
 {
 	using namespace TempestaRPC;
-	
+
 	if (msg_flags_.test(XFWOpt::XFWOpt_IP_PROTO_FILTER_OFF)) {
 		config_.ip_proto_filter_.reset();
 		return;
@@ -278,7 +280,7 @@ XfwConfigUpdater::prepare_protocols()
 	// There is no information about this filter in config.
 	if (!msg_.ip_proto())
 		return;
-	
+
 	verify(!!msg_.ip_proto()->protocols(), "Null 'Protocols' field is not allowed");
 
 	XfwConfig::IpProtoFilter filter;
@@ -297,11 +299,11 @@ XfwConfigUpdater::prepare_tcp_anomaly_filter()
 		config_.anomaly_filter_.enabled_= false;
 		return;
 	}
-	
+
 	// There is no information about this filter in config.
 	if (!msg_.tcp_anomaly())
 		return;
-	
+
 	verify(!!msg_.tcp_anomaly()->features(), "Null 'Features' field is not allowed");
 	BitSet<TcpAnomalyFeature, XFW_TCP_ANOMALY_FEATURE_MAX> features;
 	verify(bitset_deserialize(*msg_.tcp_anomaly()->features(), features),
@@ -309,7 +311,7 @@ XfwConfigUpdater::prepare_tcp_anomaly_filter()
 
 	if (features.test(TcpAnomalyFeature::XFW_SYN_WIHOUT_OPTIONS))
 		config_.anomaly_filter_.syn_without_opt_enabled_ = true;
-	
+
 	if (features.test(TcpAnomalyFeature::XFW_SYN_WITH_PAYLOAD))
 		config_.anomaly_filter_.syn_with_payload_enabled_ = true;
 
@@ -482,16 +484,45 @@ XfwConfigUpdater::prepare_syncookie_filter()
 {
 	using namespace TempestaRPC;
 
-	if (!msg_.syncookie())
-		return;
-
 	if (msg_flags_.test(XFWOpt::XFWOpt_TCP_SYNCOOKIE_FILTER_OFF)) {
 		config_.syncookie_filter_.reset();
 		return;
 	}
 
+	if (!msg_.syncookie())
+		return;
+
 	config_.syncookie_filter_.emplace(msg_.syncookie()->passive_timer(),
 		msg_.syncookie()->flood_timer());
+}
+
+void
+XfwConfigUpdater::prepare_tcp_syn_drop_filter()
+{
+	using namespace TempestaRPC;
+
+	if (msg_flags_.test(XFWOpt::XFWOpt_TCP_SYN_DROP_FILTER_OFF)) {
+		config_.tcp_syn_drop_filter_.reset();
+		return;
+	}
+
+	if (!msg_.tcp_syn_drop())
+		return;
+
+	const auto *filter = msg_.tcp_syn_drop();
+
+	verify(filter->min_delay() <= filter->max_delay(),
+	       "tcp_syn_drop: min_delay must not exceed max_delay");
+
+	verify(filter->retry_count() > 0,
+	       "tcp_syn_drop: retry_count must be greater than zero");
+
+	config_.tcp_syn_drop_filter_.emplace(
+		filter->min_delay(),
+		filter->max_delay(),
+		filter->block_timeout(),
+		filter->retry_count()
+	);
 }
 
 void
@@ -520,7 +551,7 @@ XfwConfigUpdater::prepare_tcp_flags_filter()
 			"field is not allowed in proto data.");
 
 		std::string_view name = rule->ratelimit()->string_view();
-		XfwConfig::RatelimitIndex ratelimit_idx = 
+		XfwConfig::RatelimitIndex ratelimit_idx =
 			config_.ratelimits_.get_active_index(name);
 
 		switch (rule->flag()) {
