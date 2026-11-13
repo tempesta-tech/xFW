@@ -80,7 +80,7 @@ techniques, observability, and performance evaluation.
 - **Volumetric flood mitigation:** TCP SYN, ACK, RST, FIN, NULL, XMAS, and other
   flag floods; UDP floods; and ICMPv4/ICMPv6 floods.
 - **TCP defenses:** high-performance SYN cookies in host mode, SYN/RST rate
-  limiting in gateway mode, handshake-aware authentication, and configurable
+  limiting in gateway mode, TCP flow tracking, and configurable
   anomaly checks.
 - **DNS protection:** protects authoritative and recursive DNS over UDP/53 from
   malformed traffic, reflection, and amplification, including unsolicited or
@@ -109,6 +109,9 @@ techniques, observability, and performance evaluation.
 | **Host** | On the protected server | xFW protects the host's own addresses and sees both directions | Web and DNS nodes, CDN edges, on-premises ADCs, and full-stack Tempesta deployments |
 | **Gateway (gate)** | On an inline Linux router | Client and return traffic pass through xFW before reaching the protected network | Transparent protection for services or network segments |
 | **Scrubbing** | On a shared mitigation node or cluster | A router redirects only attacked destinations/prefixes through xFW; unaffected traffic stays on its normal path and direct server return is supported | On-demand mitigation, shared scrubbing capacity, and failure isolation |
+
+Scrubbing mode assumes asymmetric routing, with return traffic bypassing xFW.
+`tcp_flow_filter` requires host or gateway mode and is rejected in scrubbing mode.
 
 Gateway and scrubbing deployments are both network-protection variants. A hybrid
 pass-through design can keep inexpensive ACLs, protocol checks, and coarse limits

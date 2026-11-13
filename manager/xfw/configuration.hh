@@ -92,7 +92,7 @@ public:
 		BitSet<XfwSupportedProtocols, XFW_SUPPORTED_PROTOCOL_MAX> protocols_;
 	};
 
-	struct TcpAuthFilter
+	struct TcpFlowFilter
 	{
 		bool	enabled_ = false;
 	};
@@ -294,7 +294,7 @@ public:
 	std::optional<TcpFlagFilter>	tcp_syn_flag_filter_;
 	std::optional<TcpFlagFilter>	tcp_rst_flag_filter_;
 	TcpAnomalyFilter		anomaly_filter_;
-	TcpAuthFilter			auth_filter_;
+	TcpFlowFilter			tcp_flow_filter_;
 	DnsFilter			dns_filter_;
 	NetIps				src_rules_;
 	IcmpRules			icmp_rules_;

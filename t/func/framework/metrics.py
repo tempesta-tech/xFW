@@ -136,8 +136,8 @@ class ClickhouseSingleMetric:
     blocked_during_parsing_malformed_udp_header = 1 << 29
     blocked_during_parsing_malformed_icmp_header = 1 << 30
     blocked_during_parsing_unsupported_l4_protocol = 1 << 31
-    blocked_by_tcp_auth_filter_unknown_connection = 1 << 32
-    blocked_by_tcp_auth_filter_expired_connection = 1 << 33
+    blocked_by_tcp_flow_filter_unknown_connection = 1 << 32
+    blocked_by_tcp_flow_filter_expired_connection = 1 << 33
     blocked_by_tcp_syncookies_rule_invalid_syn_cookie = 1 << 34
     blocked_during_parsing_malformed_dns_header = 1 << 35
     blocked_by_dns_anomaly_non_zero_rcode_in_dns_query = 1 << 36

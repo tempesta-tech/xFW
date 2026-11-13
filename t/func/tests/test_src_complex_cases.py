@@ -248,7 +248,7 @@ async def test_recommended_config(
             # Anti TCP Broken Packets
             tcp_anomaly_filter;
             # Anti SYN-ACK, RST Flood
-            tcp_auth_filter; 
+            tcp_flow_filter;
             
             # Ratelimit the APP
             ratelimit=whitelisted_rl pps=10000 bps=10000000;

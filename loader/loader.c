@@ -95,7 +95,8 @@ static const XfwLMapDesc tc_maps[] = {
 	{ .name = MAP_LOG_RATELIMIT_STR },
 	{ .name = MAP_RATELIMIT_STR },
 	{ .name = MAP_DNS_EGR_FD_STR, .dns_only = true },
-	{ .name = MAP_TCP_CONN_STR },
+	{ .name = MAP_TCP_CONN_IPV4_STR },
+	{ .name = MAP_TCP_CONN_IPV6_STR },
 	{ .name = MAP_DST_STR(MAP_PRIMARY_IDX) },
 	{ .name = MAP_DST_STR(MAP_SECONDARY_IDX) },
 };
@@ -320,20 +321,22 @@ reuse_map(struct bpf_object *obj, const char *map_name, const char *pin)
 	struct bpf_map *map;
 	int fd, r;
 
+	map = bpf_object__find_map_by_name(obj, map_name);
+	if (!map) {
+		fprintf(stderr, "Map '%s' was not found in object\n",
+			map_name);
+		return -ENOENT;
+	}
+	/* Do not reuse maps disabled by the selected load-time mode. */
+	if (!bpf_map__autocreate(map))
+		return 0;
+
 	fd = bpf_obj_get(pin);
 	if (fd < 0) {
 		r = -errno;
 		fprintf(stderr, "Cannot open pinned map '%s': %s\n",
 			pin, strerror(-r));
 		return r;
-	}
-
-	map = bpf_object__find_map_by_name(obj, map_name);
-	if (!map) {
-		r = -ENOENT;
-		fprintf(stderr, "Map '%s' was not found in object\n",
-			map_name);
-		goto out;
 	}
 
 	r = bpf_map__reuse_fd(map, fd);
@@ -700,6 +703,14 @@ load_program(const XfwProg *desc, const char *pin_root,
 
 	if (!mode->dns) {
 		r = disable_map(obj, MAP_DNS_EGR_FD_STR);
+		if (r)
+			goto out;
+	}
+	if (mode->deployment_mode == XFW_MODE_SCRUBBER) {
+		r = disable_map(obj, MAP_TCP_CONN_IPV4_STR);
+		if (r)
+			goto out;
+		r = disable_map(obj, MAP_TCP_CONN_IPV6_STR);
 		if (r)
 			goto out;
 	}

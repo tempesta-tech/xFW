@@ -2,12 +2,15 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import asyncio
+import socket
 
 import pytest
 from scapy.layers.inet import TCP
 
+from config import ConfigSettings
 from framework.asyn import TcpClient, TcpRawClient, TcpRawServer, TcpServer
 from framework.cmp import check_block_connection, check_connection
+from framework.fabrics import client_fabric, server_fabric
 from framework.xfw import XFW, XfwMode
 
 
@@ -23,7 +26,7 @@ async def test_normal_connection(
     It's possible to establish a new connection if
     the filter is turned on
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
 
     assert await tcp_raw_client.handshake() is True
     assert await tcp_raw_client.close_connection() is True
@@ -38,7 +41,7 @@ async def test_send_data_after_filter_turned_on(
     """
     assert await check_connection(tcp_client, tcp_server)
 
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     assert await check_connection(tcp_client, tcp_server)
 
 
@@ -54,7 +57,7 @@ async def test_block_tcp_flood_from_non_existing_session(
     Any NON-SYN packets should be blocked if the
     connection was not established with the turned on filter
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     await tcp_raw_client.send_packet(TCP(flags=tcp_flag))
 
     assert (
@@ -74,7 +77,7 @@ async def test_block_closed_session(
     If we close the connection with turned on filter,
     the NON-SYN packets should be blocked
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
 
     assert await asyncio.gather(
         tcp_raw_client.handshake(),
@@ -121,7 +124,7 @@ async def test_block_reset_session(
     If we reset the connection with turned on filter,
     the NON-SYN packets should be blocked
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
 
     assert await asyncio.gather(
         tcp_raw_client.handshake(),
@@ -158,8 +161,8 @@ async def test_unblock_non_existing_session(
     Turning off the filter have to release the flood
     packets
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
-    await xfw.rules_patch("xfw { tcp_auth_filter/del; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
+    await xfw.rules_patch("xfw { tcp_flow_filter/del; }")
 
     await tcp_raw_client.send_packet(TCP(flags="A"))
 
@@ -177,13 +180,13 @@ async def test_connection_under_filter_resetting(
     """
     assert await check_connection(tcp_client, tcp_server)
 
-    await xfw.rules_patch("xfw { tcp_auth_filter; }")
+    await xfw.rules_patch("xfw { tcp_flow_filter; }")
     assert await check_connection(tcp_client, tcp_server)
 
-    await xfw.rules_patch("xfw { tcp_auth_filter/del; }")
+    await xfw.rules_patch("xfw { tcp_flow_filter/del; }")
     assert await check_connection(tcp_client, tcp_server)
 
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     assert await check_connection(tcp_client, tcp_server)
 
 
@@ -198,11 +201,11 @@ async def test_clean_stored_session_after_xfw_restart(
     Restarting the XFW with turned on filter should reset all
     sessions
     """
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     assert await check_connection(tcp_client, tcp_server)
 
     await xfw.restart()
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     assert await check_block_connection(tcp_client, tcp_server)
 
 
@@ -217,7 +220,7 @@ async def test_allow_tcp_flood_after_connection(
     Test active filtering for connected users
     """
 
-    await xfw.rules_set("xfw { tcp_auth_filter; }")
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
     assert await asyncio.gather(
         tcp_raw_client.handshake(),
         tcp_raw_server.handshake(),
@@ -227,3 +230,126 @@ async def test_allow_tcp_flood_after_connection(
     assert (
         await tcp_raw_server.receive_tcp_flags() == tcp_flag
     ), f"TCP packet with {tcp_flag} with session is not allowed"
+
+
+@pytest.mark.only_in_gate_mode
+async def test_reset_one_connection_does_not_break_another(
+    xfw: XFW,
+    tcp_server: TcpServer,
+    tcp_client: TcpClient,
+    client_cloner,
+):
+    """
+    Resetting one tracked TCP connection must not remove the
+    tracking state of another connection to the same server endpoint.
+    """
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
+
+    tcp_server.echo_mode = True
+    await tcp_server.start()
+
+    #
+    # In gate mode xFW is placed between the clients and the server:
+    #
+    #   client1_ip:port1 -> xFW -> server_ip:port
+    #   client2_ip:port2 -> xFW -> server_ip:port
+    #
+    # Both connections share the same server endpoint but have different
+    # client addresses and ports.
+    #
+    clients = client_cloner(
+        cloner=tcp_client,
+        amount=2,
+    )
+    for client in clients:
+        await client.start()
+
+    first_client, second_client = clients
+
+    assert first_client.ip != second_client.ip
+    assert first_client.port != second_client.port
+
+    assert first_client.remote_ip == second_client.remote_ip
+    assert first_client.remote_port == second_client.remote_port
+
+    # Establish and verify both independent TCP connections.
+    await first_client.ping_pong()
+    await second_client.ping_pong()
+
+    #
+    # In gate mode TC egress sees the original client-to-server
+    # packets. With the old endpoint-only flow key, both
+    # connections were therefore represented by the same destination:
+    #
+    #   server_ip:port
+    #
+    # Resetting the first connection could remove this shared entry
+    # and break the second connection even though it was still valid.
+    #
+    first_server_transport = tcp_server.transports[0]
+    tcp_server.close_client_with_rst(first_server_transport)
+
+    await asyncio.sleep(0)
+
+    # Must use the already established second connection.
+    # No reconnect is allowed here.
+    await second_client.ping_pong()
+
+
+async def test_reset_one_connection_does_not_break_another_reuse_addr(
+    xfw: XFW, tcp_server: TcpServer, tcp_client: TcpClient, client_cloner, server_cloner
+):
+    """
+    Resetting one tracked TCP connection must not remove the
+    tracking state of another connection with the same client
+    endpoint but a different server address.
+    """
+    await xfw.rules_set("xfw { tcp_flow_filter; }")
+
+    servers = server_cloner(cloner=tcp_server, amount=2)
+    for server in servers:
+        server.echo_mode = True
+        await server.start()
+
+    clients = client_cloner(cloner=tcp_client, amount=2, reuse_endpoint=True)
+    first_client, second_client = clients
+    first_server, second_server = servers
+
+    first_client.remote_ip = first_server.ip
+    first_client.remote_port = first_server.port
+
+    second_client.remote_ip = second_server.ip
+    second_client.remote_port = second_server.port
+
+    for client in clients:
+        await client.start()
+
+    assert first_client.ip == second_client.ip
+    assert first_client.port == second_client.port
+
+    assert first_client.remote_ip != second_client.remote_ip
+    assert first_client.remote_port != second_client.remote_port
+
+    # Establish and verify both independent TCP connections.
+    await first_client.ping_pong()
+    await second_client.ping_pong()
+
+    #
+    # Reset only the first connection.
+    #
+    # With the old endpoint-only flow key, both connections had
+    # the same flow key on the server-to-client path:
+    #
+    #   client_ip:port
+    #
+    # Therefore, resetting the first connection could remove the
+    # tracking state used by the second one.
+    #
+    first_client.use_rst_for_connection_closing()
+    first_client.transport.abort()
+
+    await asyncio.sleep(0)
+
+    # Must use the already established second connection.
+    # No reconnect is allowed here.
+    await second_client.ping_pong()
