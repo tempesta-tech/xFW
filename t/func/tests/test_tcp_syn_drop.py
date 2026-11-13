@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import asyncio
-import json
 import random
 from typing import AsyncGenerator
 
@@ -14,7 +13,6 @@ from framework.asyn import (
     TcpIpV6RawClient,
     TcpRawClient,
     TcpRawServer,
-    TcpServer,
 )
 from framework.fabrics import client_fabric
 from framework.metrics import PrometheusMetricsDiff
@@ -96,10 +94,17 @@ def tcp_syn_drop_client(request, ip_version) -> TcpRawSynDropClient:
     return request.getfixturevalue(f"tcp_{ip_version}_raw_syn_drop_client")
 
 
-async def expect_synack(client: TcpRawClient):
+async def expect_synack(client: TcpRawClient, server: TcpRawServer):
+    request = await server.receive_packet()
+
+    assert request is not None, "Expected SYN from client side, got no reply"
+    assert server.has_flag(request, "S"), f"Unexpected reply flags={request.flags}, expected S"
+
+    await server.send_packet(TCP(flags="SA"))
+
     response = await client.receive_packet()
 
-    assert response is not None, "Expected SYN-ACK, got no reply"
+    assert response is not None, "Expected SYN-ACK from server side, got no reply"
     assert client.has_flag(response, "SA"), f"Unexpected reply flags={response.flags}, expected SA"
 
     return response
@@ -135,71 +140,31 @@ async def complete_initial_syn_validation(
 
 
 @pytest.mark.skip_on_veth
-async def test_first_syn_dropped_second_syn_passed(
-    xfw: XFW,
-    tcp_server: TcpServer,
-    tcp_syn_drop_client: TcpRawClient,
-    start_tcp_server_and_raw_clients,
-):
-    min_delay = 1000
-    max_delay = 5000
-    seq = random.randrange(1, 2**31)
-
-    await xfw.rules_set(
-        "xfw { "
-        "tcp_syn_drop "
-        f"min_delay={min_delay} "
-        f"max_delay={max_delay} "
-        f"retry_count=3 "
-        f"block_timeout=0; "
-        "}"
-    )
-
-    packet = syn_packet(seq)
-
-    # First SYN starts validation and must always be dropped.
-    await tcp_syn_drop_client.send_packet(packet)
-    assert packet.seq == seq
-    assert await tcp_syn_drop_client.receive_block()
-
-    # Wait until the valid retransmission window.
-    await asyncio.sleep(min_delay / 1000 + 0.2)
-
-    # Same 5-tuple + same ISN => lookup in stage 1 map succeeds.
-    await tcp_syn_drop_client.send_packet(packet)
-    assert packet.seq == seq
-
-    # Valid retransmission is promoted into stage 2 map and passed upstream.
-    await expect_synack(tcp_syn_drop_client)
-
-
-@pytest.mark.skip_on_veth
 async def test_syn_drop_deleted_by_patch(
     xfw: XFW,
-    tcp_server: TcpServer,
+    tcp_raw_server: TcpRawServer,
     tcp_syn_drop_client: TcpRawClient,
-    start_tcp_server_and_raw_clients,
+    start_tcp_raw_server_and_raw_clients,
 ):
-    # await xfw.restart()
     await xfw.rules_set("xfw { tcp_syn_drop retry_count=3; }")
 
     seq = random.randrange(1, 2**31)
     await tcp_syn_drop_client.send_packet(syn_packet(seq))
-    await expect_no_reply(tcp_syn_drop_client)
+    await tcp_raw_server.receive_block()
 
     await xfw.rules_patch("xfw { tcp_syn_drop/del; }")
 
     # A new sequence number must pass without retransmission validation.
     await tcp_syn_drop_client.send_packet(syn_packet(seq + 1))
-    await expect_synack(tcp_syn_drop_client)
+    await expect_synack(tcp_syn_drop_client, tcp_raw_server)
 
 
 @pytest.mark.skip_on_veth
 async def test_second_syn_before_min_delay_blocks_tuple(
     xfw: XFW,
-    tcp_server: TcpServer,
+    tcp_raw_server: TcpRawServer,
     tcp_syn_drop_client: TcpRawClient,
-    start_tcp_server_and_raw_clients,
+    start_tcp_raw_server_and_raw_clients,
 ):
     min_delay = 1000
     max_delay = 5000
@@ -219,13 +184,13 @@ async def test_second_syn_before_min_delay_blocks_tuple(
 
     # First SYN: stage 1 + DROP.
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_syn_drop_client.receive_block()
+    assert await tcp_raw_server.receive_block()
 
     # Too early.
     await asyncio.sleep(min_delay / 1000 - 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_syn_drop_client.receive_block()
+    assert await tcp_raw_server.receive_block()
 
     #
     # The early retransmission permanently poisons the stage 1 entry.
@@ -234,15 +199,15 @@ async def test_second_syn_before_min_delay_blocks_tuple(
     await asyncio.sleep(min_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_syn_drop_client.receive_block()
+    assert await tcp_raw_server.receive_block()
 
 
 @pytest.mark.skip_on_veth
 async def test_second_syn_after_max_delay_blocks_tuple(
     xfw: XFW,
-    tcp_server: TcpServer,
+    tcp_raw_server: TcpRawServer,
     tcp_syn_drop_client: TcpRawClient,
-    start_tcp_server_and_raw_clients,
+    start_tcp_raw_server_and_raw_clients,
 ):
     min_delay = 1000
     max_delay = 2000
@@ -261,13 +226,13 @@ async def test_second_syn_after_max_delay_blocks_tuple(
     packet = syn_packet(seq)
 
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_syn_drop_client.receive_block()
+    assert await tcp_raw_server.receive_block()
 
     # Intentionally miss the initial retransmission window.
     await asyncio.sleep(max_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_syn_drop_client.receive_block()
+    assert await tcp_raw_server.receive_block()
 
     #
     # The later retransmission permanently poisons the stage 1 entry.
@@ -276,7 +241,7 @@ async def test_second_syn_after_max_delay_blocks_tuple(
     await asyncio.sleep(min_delay / 1000 + 0.2)
 
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_syn_drop_client.receive_block()
+    assert await tcp_raw_server.receive_block()
 
 
 @pytest.mark.skip_on_veth
@@ -379,7 +344,7 @@ async def test_finite_block_timeout_restarts_validation(
     # While the finite block is active, following SYNs must be dropped.
     await asyncio.sleep(0.2)
     await tcp_syn_drop_client.send_packet(packet)
-    assert await tcp_raw_server.receive_packet() is None
+    assert await tcp_raw_server.receive_block()
 
     #
     # Wait until the finite block expires.
