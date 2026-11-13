@@ -326,7 +326,7 @@ BpfMapsManager::set_simple_rules(const XfwConfig &config)
 	std::memcpy(cfg.rules.ip_proto.protocols.data, s.raw().data(), s.byte_size());
 
 	cfg.rules.evaluation_mode.enabled = config.evaluation_mode_.enabled_;
-	cfg.rules.tcp_auth.enabled = config.auth_filter_.enabled_;
+	cfg.rules.tcp_flow.enabled = config.tcp_flow_filter_.enabled_;
 	cfg.rules.dns.enabled = config.dns_filter_.enabled_;
 
 	cfg.rules.syncookie.enabled = config.syncookie_filter_.has_value();

@@ -286,13 +286,13 @@ async def download_ddos_archive(config: ConfigSettings, conf_logger):
             True,
             """
             xfw {{ 
-                tcp_auth_filter;
+                tcp_flow_filter;
             }}
             """,
             id="tcp-syn-ack",
         ),
         # TCP SYN/ SYN-ACK packets on random DST PORT, Sec and Ack are always 0.
-        # Half of the traffic (SYN-ACK) could be blocked by the tcp_auth_filter,
+        # Half of the traffic (SYN-ACK) could be blocked by the tcp_flow_filter,
         # but we also need to ratelimit the new connection
         pytest.param(
             "amp.TCP.syn.optionallyACK.optionallysamePort.pcapng",
@@ -302,7 +302,7 @@ async def download_ddos_archive(config: ConfigSettings, conf_logger):
             True,
             """
             xfw {{ 
-                tcp_auth_filter;
+                tcp_flow_filter;
                 
                 ratelimit=syn_rl pps=10 bps=100000;
                 tcp_flags syn: ratelimit=syn_rl;
@@ -321,7 +321,7 @@ async def download_ddos_archive(config: ConfigSettings, conf_logger):
             """
             xfw {{ 
                 tcp_anomaly_filter;
-                tcp_auth_filter;
+                tcp_flow_filter;
             }}
             """,
             id="tcp-syn-rst",

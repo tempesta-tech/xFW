@@ -32,9 +32,9 @@ typedef struct XfwEvaluationMode {
 	bool			enabled;
 } XfwEvaluationMode;
 
-typedef struct XfwRulesCfgTcpAuth {
+typedef struct XfwRulesCfgTcpFlow {
 	bool			enabled;
-} XfwRulesCfgTcpAuth;
+} XfwRulesCfgTcpFlow;
 
 typedef struct XfwRulesCfgDns {
 	bool			enabled;
@@ -72,7 +72,7 @@ typedef struct XfwRulesCfg {
 	XfwRulesCfgSyncookie		syncookie;
 	XfwRulesCfgTcpSynDrop		tcp_syn_drop;
 	XfwRulesCfgTcpAnomaly		tcp_anomaly;
-	XfwRulesCfgTcpAuth		tcp_auth;
+	XfwRulesCfgTcpFlow		tcp_flow;
 	XfwRulesCfgDns			dns;
 	XfwActionRule			tcp_flags[XFW_FLAGS_FILTER_MAX];
 	XfwActionRule			defaults[XFW_DEFAULT_MAX];

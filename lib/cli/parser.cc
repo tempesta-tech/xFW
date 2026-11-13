@@ -246,15 +246,15 @@ protected:
 		XfwConf		&xfw_conf_;
 	};
 
-	struct TcpAuthSection final: public Section {
+	struct TcpFlowSection final: public Section {
 	public:
-		TcpAuthSection(XfwConf &conf)
-			: Section("tcp_auth_filter", std::unique_ptr<ActionProcessor>(),
+		TcpFlowSection(XfwConf &conf)
+			: Section("tcp_flow_filter", std::unique_ptr<ActionProcessor>(),
 				  std::make_unique<EditProcessor>())
 			, xfw_conf_(conf)
 		{}
 
-		virtual ~TcpAuthSection() override {}
+		virtual ~TcpFlowSection() override {}
 
 	private:
 		virtual void commit() override;
@@ -458,8 +458,8 @@ XfwSection::process_body()
 		return {true, std::make_shared<TcpAnomalySection>(xfw_conf_)};
 	else if (name == "dns_filter"sv)
 		return {true, std::make_shared<DnsFilterSection>(xfw_conf_)};
-	else if (name == "tcp_auth_filter"sv)
-		return {true, std::make_shared<TcpAuthSection>(xfw_conf_)};
+	else if (name == "tcp_flow_filter"sv)
+		return {true, std::make_shared<TcpFlowSection>(xfw_conf_)};
 	else if (name == "tcp_syncookies"sv)
 		return {true, std::make_shared<TcpSyncookieSection>(xfw_conf_)};
 	else if (name == "tcp_syn_drop"sv)
@@ -1136,23 +1136,23 @@ XfwSection::EvaluationModeSection::commit()
 
 /*
  * ------------------------------------------------------------------------
- *	XfwSection::TcpAuthSection section parsing
+ *	XfwSection::TcpFlowSection section parsing
  * ------------------------------------------------------------------------
  */
 void
-XfwSection::TcpAuthSection::commit()
+XfwSection::TcpFlowSection::commit()
 {
 	assert(!!edit_processor_);
 	auto edit_action = edit_processor_->get_result();
 	if (edit_action.has_value()) {
 		if (*edit_action != EditProcessor::EditType::DELETE)
-			throw Except("Operation '{}' is not allowed with tcp_auth_filter",
+			throw Except("Operation '{}' is not allowed with tcp_flow_filter",
 				     EditProcessor::to_string(edit_action.value()));
-		xfw_conf_.flags_.set(XfwConf::Opt::TCP_AUTH_FILTER_OFF);
+		xfw_conf_.flags_.set(XfwConf::Opt::TCP_FLOW_FILTER_OFF);
 		return;
 	}
 
-	xfw_conf_.flags_.set(XfwConf::Opt::TCP_AUTH_FILTER_ON);
+	xfw_conf_.flags_.set(XfwConf::Opt::TCP_FLOW_FILTER_ON);
 }
 
 /*
