@@ -110,6 +110,10 @@ techniques, observability, and performance evaluation.
 | **Gateway (gate)** | On an inline Linux router | Client and return traffic pass through xFW before reaching the protected network | Transparent protection for services or network segments |
 | **Scrubbing** | On a shared mitigation node or cluster | A router redirects only attacked destinations/prefixes through xFW; unaffected traffic stays on its normal path and direct server return is supported | On-demand mitigation, shared scrubbing capacity, and failure isolation |
 
+Scrubbing mode assumes asymmetric routing, with return traffic bypassing xFW.
+`tcp_auth_filter` requires host or gateway mode and is rejected in scrubbing
+mode.
+
 Gateway and scrubbing deployments are both network-protection variants. A hybrid
 pass-through design can keep inexpensive ACLs, protocol checks, and coarse limits
 always active, then enable more selective rules when a detector reports an attack.
