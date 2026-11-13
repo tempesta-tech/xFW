@@ -149,6 +149,12 @@ Xfw::set_config(XfwConfig &&config)
 		throw UpdateError("tcp_syn_drop requires scrubbing deployment "
 				  "mode in the loaded BPF programs");
 
+	if (config.auth_filter_.enabled_
+	    && (!has_pinned_map(MAP_TCP_CONN_IPV4_STR)
+		|| !has_pinned_map(MAP_TCP_CONN_IPV6_STR)))
+		throw UpdateError("tcp_auth_filter requires host or gateway "
+				  "deployment mode in the loaded BPF programs");
+
 	// TODO #4:
 	// Save successfully applied ratelimits into config_ immediately after
 	// not throwing set_ratelimits.

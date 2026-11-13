@@ -14,6 +14,8 @@
  *   - Manage FIN/RST events and connection expiration.
  *
  * Modes of operation:
+ *   - TCP AUTH is supported only in host and gateway deployments. Scrubbing
+ *     uses asymmetric routing and cannot observe the return traffic.
  *   - Learning mode (TCP AUTH filter is not active / rules not loaded): TC
  *     temporarily trusts and records all observed connections to avoid breaking
  *     existing flows.
@@ -252,7 +254,8 @@ tcp_auth_conn_ingress_filter(const XfwGlobalCtx *ctx, enum XfwTcpAuthEvent ev)
 {
 	struct XfwTcpAuthContext auth_ctx;
 
-	if (unlikely(!ctx->cfg->rules.tcp_auth.enabled))
+	if (deployment_mode == XFW_MODE_SCRUBBER
+	    || unlikely(!ctx->cfg->rules.tcp_auth.enabled))
 		return XFW_CTX_CONTINUE;
 
 	if (unlikely(tcp_auth_init_ctx(ctx, &auth_ctx, true)))
@@ -291,6 +294,9 @@ static __always_inline void
 tcp_auth_conn_egress_learning(const XfwGlobalCtx *ctx,
 			      bool is_upstream_direction)
 {
+	if (deployment_mode == XFW_MODE_SCRUBBER)
+		return;
+
 	struct XfwTcpAuthContext auth_ctx;
 	VERIFY_TRUE_OR_RETURN(ctx->l4_off <= L4_OFF_MAX, (void)0);
 	struct tcphdr *th = XFW_PKT_PTR(ctx, ctx->l4_off, struct tcphdr);
