@@ -5,6 +5,11 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #define BPF_PROGRAM
+/*
+ * To not to conflict local declarations with vmlinux.h,
+ * bpf_xdp_ct_lookup() and bpf_ct_release().
+ */
+#define BPF_NO_KFUNC_PROTOTYPES
 #define XFW_XDP
 #define BANNER "xdp"
 
@@ -19,6 +24,7 @@
 #include "tcp_anomaly_filter.h"
 #include "tcp_auth.h"
 #include "tcp_syncookies.h"
+#include "tcp_synproxy.h"
 
 #define SHADOW_SRC_IP_MAP(basename, key_t)				\
 	SHADOW_MAP(basename, BPF_MAP_TYPE_LPM_TRIE, XFW_MAX_SRC_IP_RULES, \
@@ -427,26 +433,11 @@ in_process_l3(XfwGlobalCtx *ctx, XfwIpLpmKey *src_ip_key)
 }
 
 /**
- * SYN without ACK received: both SYN cookies and SYN rate limiting may be enabled
- * by configuration. In this case, we run both checks before considering the
- * connection trusted.
+ * Handle SYN cookies after SYN rate limiting in tcp_flags_filter().
  */
 static __always_inline int
 tcp_rcv_syn_filter(XfwGlobalCtx *ctx, struct tcphdr *th)
 {
-	/*
-	 * Rate limit all SYNs before SYN cookies.
-	 *
-	 * A SYN cookie costs a listening socket lookup and SYN-ACK generation,
-	 * so the mechanism has limited capacity. Rate limiting all SYNs may
-	 * drop many legitimate SYNs, since a SYN flood makes up most of the
-	 * ingress SYNs, but it keeps established TCP connections and UDP
-	 * traffic alive. Otherwise, if SYN cookies alone cannot keep up with
-	 * the flood, the CPUs saturate and the NIC RX rings overflow, dropping
-	 * all traffic.
-	 */
-	CHAIN(syn_rlimit, ctx);
-
 	/* If a SYN cookie was generated, processing stops immediately. */
 	if (deployment_mode == XFW_MODE_HOST && ctx->cfg->rules.syncookie.enabled)
 		CHAIN(tcp_syncookies_syn_filter, ctx, th);
@@ -543,6 +534,39 @@ static __always_inline int
 tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
 		 const XfwSockAddr *addr)
 {
+	/*
+	 * Apply the SYN limit before selector/conntrack lookups or cookie work.
+	 * Limiting SYN flood work leaves CPU time for established TCP and UDP.
+	 * Preserve the FIN, RST, SYN-ACK precedence used below.
+	 */
+	if (th->syn && !th->ack && !th->fin && !th->rst) {
+		count_traffic_stat(ctx, XFW_SYN);
+		CHAIN(syn_rlimit, ctx);
+	}
+
+	/* Source ALLOW has already bypassed this stage, as with host cookies. */
+	if (deployment_mode == XFW_MODE_GW && synproxy_mode) {
+		enum XfwSynproxyScope scope = tcp_synproxy_scope_match(ctx, th);
+		if (scope == XFW_SYNPROXY_SCOPE_ERROR)
+			return XFW_MAKE_CTX_DROP(ctx, XFW_DROP_SYNPROXY_FAILED);
+		if (scope == XFW_SYNPROXY_SCOPE_MATCH) {
+			if (th->fin) {
+				count_traffic_stat(ctx, XFW_FIN);
+			}
+			else if (th->rst) {
+				count_traffic_stat(ctx, XFW_RST);
+				CHAIN(rst_rlimit, ctx);
+			}
+			else if (th->syn && th->ack) {
+				count_traffic_stat(ctx, XFW_SYNACK);
+			}
+			else if (th->ack) {
+				count_traffic_stat(ctx, XFW_ACK);
+			}
+			return tcp_synproxy_filter(ctx, th, addr);
+		}
+	}
+
 	/* FIN: track connection for closing. */
 	if (th->fin) {
 		count_traffic_stat(ctx, XFW_FIN);
@@ -572,7 +596,6 @@ tcp_flags_filter(XfwGlobalCtx *ctx, struct tcphdr *th,
 
 	/* SYN-only. Authenticate the connection if all checks pass. */
 	if (th->syn) {
-		count_traffic_stat(ctx, XFW_SYN);
 		return tcp_rcv_syn_filter(ctx, th);
 	}
 

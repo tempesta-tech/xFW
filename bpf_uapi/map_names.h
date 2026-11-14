@@ -1,5 +1,5 @@
 /**
- *	Tempesta bpf map names.
+ *	Tempesta BPF map names.
  *
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -41,15 +41,17 @@ next_map_idx(uint8_t idx)
 	map;									\
 })
 
-#define CHECK_MAP_NAME_LEN(name)							\
+#define CHECK_MAP_NAME_LEN(name)						\
 	STATIC_ASSERT(sizeof(name) <= BPF_OBJ_NAME_LEN, "BPF map name too long");
 
 /**
- * Map: xfw_ilog_<idx>_<cpu> — where <idx> is the map index and <cpu> is the CPU number.
+ * Map: xfw_ilog_<idx>_<cpu> — where <idx> is the map index and <cpu> is the CPU
+ * number.
  *
- * The map name must be constructed at runtime by appending the CPU ID and map index.
- * We also need to validate the final map name length at runtime to ensure it does not
- * exceed the BPF name length limit (BPF_OBJ_NAME_LEN characters).
+ * The map name must be constructed at runtime by appending the CPU ID and map
+ * index. We also need to validate the final map name length at runtime to
+ * ensure it does not exceed the BPF name length limit (BPF_OBJ_NAME_LEN
+ * characters).
  */
 #define MAP_LOG_BASENAME		ilog
 #define MAP_LOG_BASENAME_STR		REGULAR_MAP_STR(MAP_LOG_BASENAME)
@@ -91,15 +93,15 @@ CHECK_MAP_NAME_LEN(MAP_DNS_EGR_FD_STR)
 CHECK_MAP_NAME_LEN(MAP_CFG_STR)
 
 /* Map: xfw_src_ratelim */
-#define MAP_SRC_RATELIM_BASENAME		src_ratelim
-#define MAP_SRC_RATELIM_REF			REGULAR_MAP_REF(MAP_SRC_RATELIM_BASENAME)
-#define MAP_SRC_RATELIM_STR			REGULAR_MAP_STR(MAP_SRC_RATELIM_BASENAME)
+#define MAP_SRC_RATELIM_BASENAME	src_ratelim
+#define MAP_SRC_RATELIM_REF		REGULAR_MAP_REF(MAP_SRC_RATELIM_BASENAME)
+#define MAP_SRC_RATELIM_STR		REGULAR_MAP_STR(MAP_SRC_RATELIM_BASENAME)
 CHECK_MAP_NAME_LEN(MAP_SRC_RATELIM_STR)
 
 /* Map: xfw_src_port_rl */
-#define MAP_SRC_PORT_RL_BASENAME		src_port_rl
-#define MAP_SRC_PORT_RL_REF			REGULAR_MAP_REF(MAP_SRC_PORT_RL_BASENAME)
-#define MAP_SRC_PORT_RL_STR			REGULAR_MAP_STR(MAP_SRC_PORT_RL_BASENAME)
+#define MAP_SRC_PORT_RL_BASENAME	src_port_rl
+#define MAP_SRC_PORT_RL_REF		REGULAR_MAP_REF(MAP_SRC_PORT_RL_BASENAME)
+#define MAP_SRC_PORT_RL_STR		REGULAR_MAP_STR(MAP_SRC_PORT_RL_BASENAME)
 CHECK_MAP_NAME_LEN(MAP_SRC_PORT_RL_STR)
 
 /* Map: xfw_global_stats */
@@ -119,6 +121,14 @@ CHECK_MAP_NAME_LEN(MAP_RATELIMIT_STR)
 #define MAP_SYNCOOKIES_REF		REGULAR_MAP_REF(MAP_SYNCOOKIES_BASENAME)
 #define MAP_SYNCOOKIES_STR		REGULAR_MAP_STR(MAP_SYNCOOKIES_BASENAME)
 CHECK_MAP_NAME_LEN(MAP_SYNCOOKIES_STR)
+
+/* Gateway SYN proxy active and ACK-union prefix selection maps. */
+#define MAP_SYNPROXY_4_BASENAME		sp4
+#define MAP_SYNPROXY_6_BASENAME		sp6
+#define MAP_SYNPROXY_ACK_4_BASENAME	spa4
+#define MAP_SYNPROXY_ACK_6_BASENAME	spa6
+CHECK_MAP_NAME_LEN(SHADOW_MAP_STR(MAP_SYNPROXY_ACK_6_BASENAME, MAP_PRIMARY_IDX))
+CHECK_MAP_NAME_LEN(SHADOW_MAP_STR(MAP_SYNPROXY_ACK_6_BASENAME, MAP_SECONDARY_IDX))
 
 /* Shadow maps: xfw_0_src_4_udp, xfw_1_src_4_udp */
 #define MAP_SRC_4_UDP_BASENAME		src_4_udp

@@ -55,6 +55,15 @@ declare -r logger_bin_path="$project_path/sbin/$logger_name"
 declare -r logger_cfg_file="${TFW_LOG_CFG_FILE:-/etc/tempesta/xfw_logger.json}"
 declare -i start_stop_timeout=5 # 5s timeout for daemons to start/stop
 
+# Source-tree fallback keeps the helper available before installation.
+synproxy_helper="$project_path/lib/xfw/xfw_synproxy.sh"
+if [[ ! -r "$synproxy_helper" ]]; then
+	synproxy_helper="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/scripts/xfw_synproxy.sh"
+fi
+if [[ -r "$synproxy_helper" ]]; then
+	source "$synproxy_helper"
+fi
+
 PATH="${project_path}/sbin:$PATH"
 
 declare -r kconfig_file="/boot/config-$(uname -r)"
@@ -149,9 +158,11 @@ read_config()
 			.["deployment-mode"] == "gw" or
 			.["deployment-mode"] == "scrubbing"
 		else true end) and
-		(if has("dns") then (.dns | type) == "boolean" else true end)
+		(if has("dns") then (.dns | type) == "boolean" else true end) and
+		(if has("synproxy") then (.synproxy | type) == "boolean" else true end) and
+		(if .synproxy == true then .["deployment-mode"] == "gw" else true end)
 	' "$cfg_file" >/dev/null; then
-		error "Invalid JSON or deployment-mode/dns setting in $cfg_file"
+		error "Invalid JSON or deployment-mode/dns/synproxy setting in $cfg_file"
 	fi
 
 	echo "Loading configuration from $cfg_file..."
@@ -172,6 +183,10 @@ read_config()
 	bpf_load_mode="$deployment_mode"
 	if [[ "$dns" == true ]]; then
 		bpf_load_mode+=",dns"
+	fi
+	if [[ "${cfg[synproxy]:-false}" == true ]]; then
+		declare -F synproxy_prepare >/dev/null || error "SYN-proxy lifecycle helper is missing"
+		bpf_load_mode+=",synproxy"
 	fi
 
 	if [[ -v "cfg[verbose]" ]]; then
@@ -207,6 +222,7 @@ read_config()
 	echo "               -devices-mode $devmode"
 	echo "               -deployment-mode $deployment_mode"
 	echo "               -dns $dns"
+	echo "               -synproxy ${cfg[synproxy]:-false}"
 	echo "               -mgr-args $mgr_args (log path $mgr_log, pidfile $pid_file)"
 	echo "               -verbose $([ $v -eq 1 ] && echo "true" || echo "false")"
 	echo "               -event-logging $event_logging_status"
@@ -421,6 +437,16 @@ attach_tc()
 	[ "$v" -eq 1 ] && tail -n 1 "$tmp_log"
 }
 
+synproxy_failed_load()
+{
+	local result="$1"
+	trap - EXIT
+	if [[ "$result" != 0 ]]; then
+		unload_bpf || echo "ERROR: failed load left SYN-proxy state for recovery" >&2
+	fi
+	return "$result"
+}
+
 load_bpf()
 {
 	local rc
@@ -465,6 +491,16 @@ load_bpf()
 		fi
 	done
 
+	if [[ "${cfg[synproxy]:-false}" == true ]]; then
+		# A surviving manager must reopen the maps created by this load.
+		stop_mgr
+		if pgrep -x "$mgr_name" >/dev/null; then
+			error "Management daemon must stop before loading SYN-proxy maps"
+		fi
+		synproxy_prepare || error "Failed to prepare gateway SYN proxy"
+		# Cover every later error exit, including temporary-file creation.
+		trap 'synproxy_failed_load "$?"' EXIT
+	fi
 	load_xdp
 	load_tc
 
@@ -481,6 +517,9 @@ load_bpf()
 	fi
 
 	update_status $devmode
+	if [[ "${cfg[synproxy]:-false}" == true ]]; then
+		trap - EXIT
+	fi
 }
 
 detach_tc()
@@ -518,26 +557,58 @@ unload_bpf()
 {
 	local rc=0
 	local dev
+	local synproxy_cleanup=0
+	local network
 
 	read_config
+	if declare -F synproxy_release >/dev/null && [[ -e "$synproxy_prepared" ]]; then
+		stop_mgr
+		if pgrep -x "$mgr_name" >/dev/null; then
+			echo "ERROR: Management daemon must stop before unloading SYN proxy" >&2
+			return 1
+		fi
+		synproxy_lock || error "SYN-proxy lifecycle operation is busy"
+		synproxy_cleanup=1
+	fi
 
 	for dev in ${devs}; do
 		detach_xdp "$dev"
 		detach_tc "$dev"
 	done
+	if [[ "$synproxy_cleanup" == 1 ]]; then
+		network=$(bpftool net -j) || rc=1
+		if [[ "$rc" == 0 ]] && ! jq -e --arg devices "$devs" '
+			($devices | [splits("\\s+") | select(length > 0)]) as $devices |
+			all(.[]?.xdp[]?; .devname as $name | $devices | index($name) == null)
+		' <<< "$network" >/dev/null; then rc=1; fi
+		if [[ "$rc" != 0 ]]; then
+			synproxy_unlock
+			echo "ERROR: XDP detachment could not be verified; SYN-proxy state was retained" >&2
+			return 1
+		fi
+	fi
 
 	if [[ -e "$xfw_bpf_path/tc" ]]; then
 		[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader unload tc "$xfw_bpf_path"
-		"$project_path"/bin/xfw_bpf_loader unload tc "$xfw_bpf_path"
+		"$project_path"/bin/xfw_bpf_loader unload tc "$xfw_bpf_path" || rc=1
 	fi
 
 	if [[ -e "$xfw_bpf_path/xdp" ]]; then
 		[ "$v" -eq 1 ] && echo "$project_path"/bin/xfw_bpf_loader unload xdp "$xfw_bpf_path"
-		"$project_path"/bin/xfw_bpf_loader unload xdp "$xfw_bpf_path"
+		"$project_path"/bin/xfw_bpf_loader unload xdp "$xfw_bpf_path" || rc=1
 	fi
 
-	maps_clean
+	maps_clean || rc=1
 	rm -rf "$status_dir" || true
+	if [[ "$synproxy_cleanup" == 1 ]]; then
+		if [[ "$rc" == 0 ]]; then
+			synproxy_release || rc=1
+		fi
+		synproxy_unlock
+		if [[ "$rc" != 0 ]]; then
+			echo "ERROR: SYN-proxy cleanup failed; owned state was retained" >&2
+		fi
+	fi
 
 	return $rc
 }
@@ -682,6 +753,9 @@ status()
 	fi
 
 	load_and_print_status $is_bpf_loaded
+	if declare -F synproxy_status >/dev/null; then
+		synproxy_status
+	fi
 
 	if [ -r "$mgr_log" ]; then
 		echo -e "\nRecent management daemon log entries:"
@@ -725,6 +799,12 @@ check_requirements()
 	if ! dpkg-query -s libbpf1 >/dev/null 2>&1; then
 		echo "ERROR: libbpf1 package is missing" >&2
 		all_ok=0
+	fi
+	if [[ -r "${cfg_file_override:-$cfg_file}" ]]; then
+		read_config
+		if [[ "${cfg[synproxy]:-false}" == true ]]; then
+			synproxy_requirements || all_ok=0
+		fi
 	fi
 
 	if [ "$all_ok" -eq 1 ]; then
@@ -790,9 +870,22 @@ while [[ $# -gt 0 ]]; do
 			exit
 			;;
 		--reload-bpf)
-			unload_bpf
+			read_config
+			mgr_was_running=0
+			if pgrep -x "$mgr_name" >/dev/null; then
+				mgr_was_running=1
+				stop_mgr
+				if pgrep -x "$mgr_name" >/dev/null; then
+					error "Management daemon must stop before reloading BPF programs"
+				fi
+			fi
+			unload_bpf || exit 1
 			load_bpf
-			exit
+			if [[ "$mgr_was_running" == 1 ]] && ! start_mgr; then
+				unload_bpf
+				exit 1
+			fi
+			exit 0
 			;;
 		--start-mgr)
 			write_version
@@ -843,7 +936,7 @@ while [[ $# -gt 0 ]]; do
 		--restart)
 			stop_mgr
 			stop_logger
-			unload_bpf
+			unload_bpf || exit 1
 			load_bpf
 			start_logger
 			start_mgr
