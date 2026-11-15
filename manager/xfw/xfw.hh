@@ -7,10 +7,12 @@
 #pragma once
 #include <boost/core/noncopyable.hpp>
 #include <optional>
+#include <mutex>
 
 #include "configuration.hh"
 #include "maps_manager.hh"
 #include "geoip.hh"
+#include "synproxy.hh"
 
 class Xfw : private boost::noncopyable
 {
@@ -26,6 +28,11 @@ public:
 	{
 		return config_;
 	}
+	const XfwConfig::SynproxyFilter &get_synproxy_config() const noexcept
+	{
+		return synproxy_.config();
+	}
+	std::recursive_mutex &update_mutex() noexcept { return update_mutex_; }
 
 	/**
 	 * Save the provided config to the BPF map, then save that
@@ -60,6 +67,7 @@ public:
 	void
 	reload_config_if_present()
 	{
+		std::lock_guard lock(update_mutex_);
 		if (!config_.has_value()) {
 			TE_INF("There is no config to reload\n");
 			return;
@@ -71,6 +79,8 @@ public:
 private:
 	Country2IpMap				geodb_;
 	BpfMapsManager				maps_manager_;
+	SynproxyManager				synproxy_{maps_manager_};
 	std::optional<XfwConfig>		config_;
 	const std::optional<std::string>	geodb_path_;
+	std::recursive_mutex		update_mutex_;
 };

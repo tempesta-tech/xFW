@@ -145,6 +145,7 @@ struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__type(key, uint32_t);
 	__type(value, XfwFilterCfg);
+	__uint(map_flags, BPF_F_MMAPABLE);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__uint(max_entries, 1);
 } MAP_CFG_REF SEC(".maps");

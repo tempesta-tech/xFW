@@ -58,6 +58,7 @@ enum XfwDropStat {
 	XFW_DROP_DNS_RESP_ANS_OVERLIMIT,
 	XFW_DROP_DNS_BAD_RR,
 	XFW_DROP_DNS_ANSWER_ANOMALY,
+	XFW_DROP_SYNPROXY_FAILED,
 
 	XFW_DROP_STAT_MAX
 };
@@ -75,6 +76,8 @@ enum XfwDropStat {
 // initialization concise and consistent between C and C++ builds.
 #endif
 static const struct XfwStatInfo xfw_drop_stats[] = {
+	[XFW_DROP_SYNPROXY_FAILED]		= {"xfw_synproxy_failed",
+						   "Blocked by gateway SYN proxy"},
 	[XFW_DROP_ICMP_BLOCKED]			= {"xfw_icmp_blocked",
 						   "Blocked by 'icmp: block' rule"},
 	[XFW_DROP_SYN_RATE_LIMITED]		= {"xfw_syn_rate_limited",

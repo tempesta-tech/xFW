@@ -55,6 +55,9 @@ std::ostream& operator<<(std::ostream &os, const XfwConf &obj) noexcept
 		   << obj.syncookie_.value().passive_timer_
 		   << " flood_timer=" << obj.syncookie_.value().flood_timer_ << "\n";
 	}
+	if (obj.synproxy_)
+		os << "tcp_synproxy: IPv4 selectors=" << obj.synproxy_->net4s_.size()
+		   << " IPv6 selectors=" << obj.synproxy_->net6s_.size() << "\n";
 
 	os << "flags: " << obj.flags_ << "\nnet_rules_={\n";
 	for (auto it = obj.net_rules_.begin(); it != obj.net_rules_.end(); ++it) {

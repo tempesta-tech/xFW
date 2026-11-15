@@ -31,6 +31,7 @@ enum XfwTrafficStat {
 	XFW_PASSED_UPSTREAM_EGRESS,
 	XFW_SYNCOOKIE_RECEIVED,
 	XFW_SYNCOOKIE_FAILED,
+	XFW_SYNPROXY_RECEIVED,
 
 	XFW_TRAFFIC_STAT_MAX
 };
@@ -92,6 +93,8 @@ static const struct XfwStatInfo xfw_traffic_stats[] = {
 						   "Received packet with valid syncookie"},
 	[XFW_SYNCOOKIE_FAILED]			= {"xfw_syncookie_failed",
 						   "Failed syncookie verification"},
+	[XFW_SYNPROXY_RECEIVED]		= {"xfw_synproxy_received",
+						   "Gateway ACK with valid SYN proxy cookie"},
 };
 XFW_STAT_ARRAY_ASSERT(xfw_traffic_stats, XFW_TRAFFIC_STAT_MAX);
 

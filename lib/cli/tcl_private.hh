@@ -97,6 +97,13 @@ struct Net6 {
 	uint8_t		prefix_ = 128;
 };
 
+struct Synproxy {
+	enum class Operation : uint8_t { Replace, Add, Delete };
+	Operation		operation_ = Operation::Replace;
+	std::vector<Net4>	net4s_;
+	std::vector<Net6>	net6s_;
+};
+
 struct NetCode {
 	uint16_t		port_ = 0;
 	union {
@@ -307,6 +314,7 @@ public:
 	BitSet<Opt, Opt::_MAX_BIT>	flags_;
 	std::optional<IpProtoRule>	ip_proto_;
 	std::optional<Syncookie>	syncookie_;
+	std::optional<Synproxy>	synproxy_;
 	std::vector<NetRule>		net_rules_;
 	std::vector<TcpFlags>		tcp_flags_;
 	std::vector<Ratelimit>		ratelimits_;
