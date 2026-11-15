@@ -13,7 +13,7 @@ class BpfMapsManager;
 class SynproxyManager {
 public:
 	explicit SynproxyManager(BpfMapsManager &maps);
-	void validate(const XfwConfig::SynproxyFilter &scope) const;
+	void validate(const XfwConfig::SynproxyFilter &scope, bool evaluation) const;
 	void set_config(const XfwConfig::SynproxyFilter &scope);
 	const XfwConfig::SynproxyFilter &config() const noexcept { return active_; }
 

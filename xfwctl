@@ -559,6 +559,7 @@ unload_bpf()
 	local dev
 	local synproxy_cleanup=0
 	local network
+	local prepared_ifindexes="[]"
 
 	read_config
 	if declare -F synproxy_release >/dev/null && [[ -e "$synproxy_prepared" ]]; then
@@ -568,6 +569,16 @@ unload_bpf()
 			return 1
 		fi
 		synproxy_lock || error "SYN-proxy lifecycle operation is busy"
+		if ! synproxy_validate_prepared; then
+			synproxy_unlock
+			echo "ERROR: Invalid SYN-proxy preparation; state was retained" >&2
+			return 1
+		fi
+		prepared_ifindexes=$(jq -c 'if .active then .ifindexes else [] end' \
+			"$synproxy_prepared") || {
+			synproxy_unlock
+			return 1
+		}
 		synproxy_cleanup=1
 	fi
 
@@ -577,9 +588,14 @@ unload_bpf()
 	done
 	if [[ "$synproxy_cleanup" == 1 ]]; then
 		network=$(bpftool net -j) || rc=1
-		if [[ "$rc" == 0 ]] && ! jq -e --arg devices "$devs" '
+		# Names in the JSON may have changed since loading the programs.
+		if [[ "$rc" == 0 ]] && ! jq -e --arg devices "$devs" \
+			--argjson prepared "$prepared_ifindexes" '
 			($devices | [splits("\\s+") | select(length > 0)]) as $devices |
-			all(.[]?.xdp[]?; .devname as $name | $devices | index($name) == null)
+			all(.[]?.xdp[]?;
+				.devname as $name | .ifindex as $index |
+				($devices | index($name) == null) and
+				($prepared | index($index) == null))
 		' <<< "$network" >/dev/null; then rc=1; fi
 		if [[ "$rc" != 0 ]]; then
 			synproxy_unlock

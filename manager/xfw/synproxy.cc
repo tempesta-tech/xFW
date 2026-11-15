@@ -368,8 +368,12 @@ SynproxyManager::SynproxyManager(BpfMapsManager &maps) : maps_(maps)
 }
 
 void
-SynproxyManager::validate(const Scope &scope) const
+SynproxyManager::validate(const Scope &scope, bool evaluation) const
 {
+	/* Retired nft scope remains effective until an explicit cleanup update. */
+	verify(!evaluation || (scope.empty() && active_.empty() && retired_.empty()
+			       && (!available_ || !exists(pending_path))),
+	       "Disable SYN proxy and finish retirement cleanup before enabling evaluation mode");
 	verify(scope.empty() || available_,
 	       "tcp_synproxy requires gateway deployment with SYN-proxy startup capability");
 	verify(scope.size() <= XFW_SYNPROXY_MAX_TARGETS,
@@ -422,8 +426,16 @@ SynproxyManager::install_nft(const Scope &scope) const
 			}
 		}
 	}
-	batch << "add chain inet xfw_synproxy ack { type filter hook forward priority -10; policy accept; }\n"
-	      << "flush chain inet xfw_synproxy ack\n";
+	/*
+	 * Run after ordinary forwarding ACLs. SYNPROXY consumes the cookie ACK
+	 * and sends the backend SYN through LOCAL_OUT, bypassing later ACLs.
+	 * Recreate the chain atomically to migrate the earlier draft's priority;
+	 * changing an existing base chain's hook priority in place is rejected.
+	 */
+	batch << "add chain inet xfw_synproxy ack\n"
+	      << "flush chain inet xfw_synproxy ack\n"
+	      << "delete chain inet xfw_synproxy ack\n"
+	      << "add chain inet xfw_synproxy ack { type filter hook forward priority 10; policy accept; }\n";
 	if (!effective.empty())
 		batch << "add rule inet xfw_synproxy ack ct state != invalid return\n"
 		      << "add rule inet xfw_synproxy ack meta l4proto != tcp return\n"

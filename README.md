@@ -298,6 +298,11 @@ ALLOW bypasses the challenge, while blocks and rate limits retain their normal
 behavior. SYN proxy cannot be enabled in host, scrubbing or evaluation mode.
 Existing host `tcp_syncookies` configuration is unchanged.
 
+To enter evaluation mode, disable SYN proxy first. After the 120-second
+retirement grace, push `tcp_synproxy/del;` again to remove the retired nft scope.
+Evaluation is rejected while active, retired or unfinished SYN-proxy updates
+remain, because those rules can still modify or drop traffic.
+
 The fixed advertisements match current host cookies: IPv4 MSS 536, IPv6 MSS
 1220, window scale 7 and TTL/hop limit 64. Protected backends must be compatible
 with window scale 7. Timestamp-capable clients retain WSCALE, SACK and ECN;
@@ -310,6 +315,16 @@ affect other forwarded traffic. Connections established before preparation may
 need to reconnect. Include VLAN interfaces before preparation; topology changes
 require re-preparing the gateway.
 
+The owned nftables handoff runs at FORWARD priority `10`, after conventional
+priority-zero filters. Any existing forwarding ACLs must run before this handoff
+and authorize the protected destination for cookie ACKs, whose conntrack state
+is `INVALID`. Only after those access checks should such ACKs be allowed past an
+ordinary INVALID drop rule. Leaving an unconditional INVALID drop in place
+prevents new proxied connections. SYNPROXY consumes the ACK and sends the backend
+SYN through OUTPUT, so later FORWARD rules cannot enforce connection admission.
+The earlier draft's priority `-10` is migrated atomically on a manager update or
+restart; the named object remains in place for established-flow translation.
+
 Runtime disable keeps outstanding cookie handoff for at least 120 seconds and
 allows established connections to drain. Closing tuples follow Linux conntrack
 retention before reuse. Manager restart preserves and reconciles SYN-proxy state.
@@ -318,6 +333,12 @@ the saved conntrack setting when still owned, preserves conntrack entries, and
 retains a dormant owned nftables object needed for live TCP timestamp translation.
 Detaching XDP ends SYN protection. CLI, client library and daemon must be upgraded
 together because this feature uses RPC protocol version 1.
+
+Stopping verifies the saved interface indexes as well as the current configured
+names before removing maps and handoff rules. If an original interface was
+renamed or removed from the configuration and still has XDP attached, stop
+retains SYN-proxy state and reports failure. Restore its current name to the
+configuration before retrying stop.
 
 The selector uses shadow LPM tries for active targets and the active/retired ACK
 union. Generation, retirement deadline and address-family/port flags live in the

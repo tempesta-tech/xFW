@@ -132,9 +132,7 @@ void
 Xfw::set_config(XfwConfig &&config)
 {
 	std::lock_guard lock(update_mutex_);
-	synproxy_.validate(config.synproxy_filter_);
-	if (config.evaluation_mode_.enabled_ && !config.synproxy_filter_.empty())
-		throw UpdateError("SYN proxy is not allowed in evaluation mode");
+	synproxy_.validate(config.synproxy_filter_, config.evaluation_mode_.enabled_);
 	if (config.dns_filter_.enabled_ && !has_pinned_map(MAP_DNS_EGR_FD_STR))
 		throw UpdateError("dns_filter requires DNS mode in the loaded "
 				  "BPF programs");
