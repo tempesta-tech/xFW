@@ -24,6 +24,7 @@
 
 #include "compiler.h"
 #include "incident_log_maps.h"
+#include "incident_log_rate.h"
 
 /*
  * Emit a swap notification for the currently active per-CPU map.
@@ -36,8 +37,8 @@ static __always_inline void
 push_swap_event()
 {
 	const unsigned zero = 0;
-	IncidentPerCpuNotifyInfo *ev = bpf_map_lookup_elem(&MAP_LOG_EVENTS_REF,
-							   &zero);
+	IncidentLogPerCpuState *ev = bpf_map_lookup_elem(&MAP_LOG_EVENTS_REF,
+							 &zero);
 	if (unlikely(!ev))
 		return;
 
@@ -55,8 +56,8 @@ static __always_inline void
 push_swap_event_and_update_drop_cnt()
 {
 	const unsigned zero = 0;
-	IncidentPerCpuNotifyInfo *ev = bpf_map_lookup_elem(&MAP_LOG_EVENTS_REF,
-							   &zero);
+	IncidentLogPerCpuState *ev = bpf_map_lookup_elem(&MAP_LOG_EVENTS_REF,
+							 &zero);
 	if (unlikely(!ev))
 		return;
 
@@ -74,8 +75,8 @@ static __always_inline void
 update_drop_cnt()
 {
 	const unsigned zero = 0;
-	IncidentPerCpuNotifyInfo *ev = bpf_map_lookup_elem(&MAP_LOG_EVENTS_REF,
-							   &zero);
+	IncidentLogPerCpuState *ev = bpf_map_lookup_elem(&MAP_LOG_EVENTS_REF,
+							 &zero);
 	if (unlikely(!ev))
 		return;
 
@@ -161,30 +162,33 @@ register_incident(const XfwIp* ilog_addr, uint32_t pkt_sz, enum XfwDropStat reas
 		update_drop_cnt();
 }
 
-static __always_inline XfwLogRateLimit *
-get_incident_bucket()
+static __always_inline IncidentLogPerCpuState *
+get_incident_info()
 {
 	const uint32_t zero = 0;
 
-	return bpf_map_lookup_elem(&MAP_LOG_RATELIMIT_REF, &zero);
+	return bpf_map_lookup_elem(&MAP_LOG_EVENTS_REF, &zero);
 }
 
 static __always_inline bool
-allow_incident_sample(XfwLogRateLimit *bucket)
+allow_incident_sample(IncidentLogPerCpuState *info)
 {
-	if (bucket && xfw_log_sample_allow(bucket))
+	if (unlikely(!info))
+		return false;
+
+	if (xfw_log_sample_allow(&info->rate_limit))
 		return true;
 
-	update_drop_cnt();
+	info->drop_cnt++;
 
 	return false;
 }
 
 static __always_inline bool
-allow_incident_rlim(XfwLogRateLimit *bucket, uint64_t now, uint32_t shift,
+allow_incident_rlim(IncidentLogPerCpuState *info, uint64_t now, uint32_t shift,
 		    uint32_t limit)
 {
-	return bucket && xfw_log_rate_allow(bucket, now, shift, limit);
+	return info && xfw_log_rate_allow(&info->rate_limit, now, shift, limit);
 }
 
 #define REGISTER_INCIDENT(ctx, reason)					\
@@ -193,7 +197,7 @@ allow_incident_rlim(XfwLogRateLimit *bucket, uint64_t now, uint32_t shift,
 /* Log every XFW_LOG_SAMPLE_INTERVALth candidate per CPU without a rate budget. */
 #define REGISTER_INCIDENT_SAMPLE(ctx, reason)				\
 do {									\
-	if (allow_incident_sample(get_incident_bucket()))		\
+	if (allow_incident_sample(get_incident_info()))			\
 		REGISTER_INCIDENT(ctx, reason);				\
 } while (0)
 
@@ -203,10 +207,10 @@ do {									\
  */
 #define REGISTER_INCIDENT_RLIM_SA(ctx, reason)				\
 do {									\
-	XfwLogRateLimit *ilog_bucket = get_incident_bucket();		\
-	if (allow_incident_rlim(ilog_bucket, (ctx)->ts_jiff,		\
+	IncidentLogPerCpuState *ilog_info = get_incident_info();	\
+	if (allow_incident_rlim(ilog_info, (ctx)->ts_jiff,		\
 				(ctx)->cfg->rl_window.shift,		\
 				(ctx)->cfg->log_limit)			\
-	    || allow_incident_sample(ilog_bucket))			\
+	    || allow_incident_sample(ilog_info))			\
 		REGISTER_INCIDENT(ctx, reason);				\
 } while (0)

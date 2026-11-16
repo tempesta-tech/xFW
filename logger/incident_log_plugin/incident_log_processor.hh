@@ -79,17 +79,17 @@ private:
 	int handle_swap_event(uint64_t) noexcept;
 
 private:
-	using BpfIncidentPerCpuNotifyInfos = BpfPerCpuCounter<IncidentPerCpuNotifyInfo>;
+	using BpfIncidentLogPerCpuStates = BpfPerCpuCounter<IncidentLogPerCpuState>;
 
 	static uint64_t
-	get_dropped_ev_cnt(const BpfIncidentPerCpuNotifyInfos &infos) noexcept
+	get_dropped_ev_cnt(const BpfIncidentLogPerCpuStates &infos) noexcept
 	{
-		return infos.sum(&IncidentPerCpuNotifyInfo::drop_cnt);
+		return infos.sum(&IncidentLogPerCpuState::drop_cnt);
 	}
 
 private:
 	using BpfIncidentLogActiveFdMap = BpfHashMap<uint32_t, uint32_t>;
-	using BpfIncidentLogEventsMap = BpfSingleElementMap<BpfIncidentPerCpuNotifyInfos>;
+	using BpfIncidentLogEventsMap = BpfSingleElementMap<BpfIncidentLogPerCpuStates>;
 
 	const size_t				cpu_;
 	const std::chrono::milliseconds		timer_interval_ = std::chrono::seconds(1);

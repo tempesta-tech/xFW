@@ -53,18 +53,31 @@ typedef struct IncidentLogStat {
 		"Number of flags exceeds the number of bits in IncidentLogStat::reason");
 } IncidentLogStat;
 
+typedef struct XfwLogRateSlot {
+	uint64_t	window_idx;
+	uint32_t	events;
+} XfwLogRateSlot;
+
+typedef struct XfwLogRateLimit {
+	XfwLogRateSlot	slot[2];
+	uint32_t	sample_count;
+} XfwLogRateLimit;
+
 /*
  * @swap_ts	- Time is measured with bpf_ktime_get_ns().
  *		  Strictly increasing only on local CPU without NMIs.
  * @drop_cnt	- Incidents not recorded due to rate limiting, sampling or errors.
+ * @rate_limit	- BPF-owned logging budget and sampling state, preserved across
+ *		  incident-map rotations.
  */
-typedef struct IncidentPerCpuNotifyInfo {
+typedef struct IncidentLogPerCpuState {
 	uint64_t		swap_ts;
 	uint64_t		drop_cnt;
+	XfwLogRateLimit		rate_limit;
 
 #ifdef __cplusplus
-	IncidentPerCpuNotifyInfo()
-		: swap_ts{0}, drop_cnt{0}
+	IncidentLogPerCpuState()
+		: swap_ts{0}, drop_cnt{0}, rate_limit{}
 	{}
 #endif
-} __attribute__((aligned(64))) IncidentPerCpuNotifyInfo;
+} __attribute__((aligned(64))) IncidentLogPerCpuState;
