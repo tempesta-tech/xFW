@@ -1,8 +1,8 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-/*
+/**
  * Per-CPU sliding-window budget and sampling for incident logging.
  *
  * SPDX-FileCopyrightText: © 2026 Tempesta Technologies, Inc.
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #pragma once
 
