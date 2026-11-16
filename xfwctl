@@ -469,14 +469,6 @@ load_bpf()
 		fi
 	done
 
-	# Configure queue IRQs without enabling RPS.
-	if [[ ${cfg[auto-irq-affinity]:-true} == true ]]; then
-		"$project_path/lib/set_irq_affinity.sh" --no-rps "$devs" ||
-			echo "WARNING: IRQ affinity is not properly configured for devices: $devs. Continuing startup, but at least tcp_syn_drop and syn_cookies will not work correctly." >&2
-	else
-		echo "Automatic IRQ affinity configuration is disabled."
-	fi
-
 	load_xdp
 	load_tc
 
@@ -490,6 +482,14 @@ load_bpf()
 	if [[ $rc -ne 0 ]]; then
 		unload_bpf
 		error "BPF map validation failed"
+	fi
+
+	# XDP attachment can recreate IRQs, so pin the final vectors.
+	if [[ ${cfg[auto-irq-affinity]:-true} == true ]]; then
+		"$project_path/lib/set_irq_affinity.sh" --no-rps --keep-queues "$devs" ||
+			echo "WARNING: IRQ affinity is not properly configured for devices: $devs. Continuing startup, but at least tcp_syn_drop and syn_cookies will not work correctly." >&2
+	else
+		echo "Automatic IRQ affinity configuration is disabled."
 	fi
 
 	update_status $devmode

@@ -219,10 +219,10 @@ For example:
 }
 ```
 
-Automatic network queue and IRQ affinity configuration is enabled by default.
-To manage these settings manually, add `"auto-irq-affinity": false` to
-`xfw.json`. This skips the startup helper, including its queue, IRQ affinity,
-and irqbalance changes.
+Automatic IRQ affinity configuration is enabled by default and runs after XDP
+attachment, preserving the current network queue counts. To manage IRQ affinity
+manually, add `"auto-irq-affinity": false` to `xfw.json`. This skips the startup
+helper, including its IRQ affinity and irqbalance changes.
 
 Check the host and start xFW:
 
