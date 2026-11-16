@@ -21,7 +21,7 @@
 /* Count every blocked SYN independently of incident logging. */
 #define XFW_SYN_DROP_SAMPLE_EXT(ctx, postfix, args...)			\
 ({									\
-	count_traffic_stat(ctx, XFW_SYN_DROP_BLOCKED);			\
+	count_traffic_stat(ctx, XFW_SCRUB_SYN_DROP_BLOCKED);		\
 	XFW_MAKE_CTX_DROP_SAMPLE_EXT(ctx, XFW_DROP_SYN_BLOCKED,		\
 				     postfix, ##args);			\
 })
@@ -31,7 +31,7 @@
 
 #define XFW_SYN_DROP_RLIM_SA_EXT(ctx, postfix, args...)			\
 ({									\
-	count_traffic_stat(ctx, XFW_SYN_DROP_BLOCKED);			\
+	count_traffic_stat(ctx, XFW_SCRUB_SYN_DROP_BLOCKED);		\
 	XFW_MAKE_CTX_DROP_RLIM_SA_EXT(ctx, XFW_DROP_SYN_BLOCKED,	\
 				      postfix, ##args);			\
 })
@@ -42,7 +42,7 @@
 /* Count every passed SYN. */
 #define XFW_SYN_DROP_PASS(ctx)						\
 ({									\
-	count_traffic_stat(ctx, XFW_SYN_DROP_PASSED);			\
+	count_traffic_stat(ctx, XFW_SCRUB_SYN_DROP_PASSED);		\
 	XFW_CTX_CONTINUE;						\
 })
 
