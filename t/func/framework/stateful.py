@@ -507,11 +507,7 @@ class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
             formatted_ip = self.ip_format(self.ip)
             formatted_remote_ip = self.ip_format(self.remote_ip)
 
-            cmd = (
-                f"ss -tan "
-                f'| grep "{formatted_ip}:{self.port}" '
-                f'| grep "{formatted_remote_ip}:{self.remote_port}"'
-            )
+            cmd = f'ss -tan | grep -F "{formatted_remote_ip}:{self.remote_port}"'
         elif self.socket_type == socket.SOCK_DGRAM:
             cmd = "ss -uan"
         elif self.socket_type == socket.SOCK_RAW:
