@@ -151,6 +151,8 @@ class ClickhouseSingleMetric:
     blocked_by_dns_anomaly_dns_response_contains_too_many_answers = 1 << 44
     blocked_during_parsing_malformed_dns_resource_record = 1 << 45
     blocked_by_dns_anomaly_invalid_ttl_in_dns_answer = 1 << 46
+    blocked_by_tcp_syn_drop_blocked = 1 << 47
+    blocked_by_tcp_syn_drop_cpu_affinity_error = 1 << 48
 
 
 @dataclass
