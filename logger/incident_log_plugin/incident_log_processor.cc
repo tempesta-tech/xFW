@@ -37,7 +37,7 @@ IncidentLogProcessor::IncidentLogProcessor(unsigned cpu,
 
 IncidentLogProcessor::~IncidentLogProcessor()
 {
-	BpfIncidentPerCpuNotifyInfos events;
+	BpfIncidentLogPerCpuStates events;
 	if (incident_log_events_.get(events) < 0)
 		return;
 
@@ -68,7 +68,7 @@ IncidentLogProcessor::consume(size_t *cnt) noexcept
 	if (stopped_) [[unlikely]]
 		return 0;
 
-	BpfIncidentPerCpuNotifyInfos events;
+	BpfIncidentLogPerCpuStates events;
 	if (incident_log_events_.get(events) < 0 || cpu_ >= events.size()) {
 		/* 
 		 * The error codes come from the libtus library. We plan to introduce
@@ -145,7 +145,7 @@ IncidentLogProcessor::create_incident_map(size_t cpu, bool active)
 void
 IncidentLogProcessor::populate_percpu_maps()
 {
-	BpfIncidentPerCpuNotifyInfos events;
+	BpfIncidentLogPerCpuStates events;
 	int err = incident_log_events_.get(events);
 	if (err < 0 || cpu_ >= events.size())
 		throw Except("[CPU {}] Can't get bpf-events for cpu.",  cpu_);

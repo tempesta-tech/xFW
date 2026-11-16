@@ -65,16 +65,6 @@
 #pragma once
 
 #include "../bpf_uapi/incident_log_types.h"
-#include "incident_log_rate.h"
-
-/* Shared XDP/TC logging budget and sampling state per CPU. */
-struct {
-	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-	__uint(max_entries, 1);
-	__type(key, uint32_t);
-	__type(value, XfwLogRateLimit);
-	__uint(pinning, LIBBPF_PIN_BY_NAME);
-} MAP_LOG_RATELIMIT_REF SEC(".maps");
 
 /**
  * These BPF_MAP_TYPE_HASH maps hold per-CPU decision statistics.
@@ -102,17 +92,22 @@ struct {
 
 /**
  * Used for asynchronous notifications from kernel to user space. Each time a CPU
- * swaps its incident log map, a small `IncidentPerCpuNotifyInfo` record is pushed.
+ * swaps its incident log map, a small `IncidentLogPerCpuState` record is pushed.
  * The record stores the **monotonic timestamp** of the swap event.
  * The user-space loop consumes these events and can determine:
  *   - how many events were dropped during the previous map’s lifetime,
  *   - and whether a swap has occurred since the last observed event.
+ *
+ * The same per-CPU value also holds the logging rate budget and sampling
+ * counter shared by XDP and TC. These fields are maintained only by BPF.
+ * Map rotation does not clear this value: drop_cnt remains cumulative, and
+ * the logging budget and sampling progress survive rotation.
  */
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(max_entries, 1);
 	__type(key, u32);
-	__type(value, struct IncidentPerCpuNotifyInfo);
+	__type(value, struct IncidentLogPerCpuState);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 } MAP_LOG_EVENTS_REF SEC(".maps");
 

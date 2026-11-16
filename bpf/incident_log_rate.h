@@ -14,16 +14,7 @@
 #endif
 
 #include "../bpf_uapi/limits.h"
-
-typedef struct XfwLogRateSlot {
-	uint64_t	window_idx;
-	uint32_t	events;
-} XfwLogRateSlot;
-
-typedef struct XfwLogRateLimit {
-	XfwLogRateSlot	slot[2];
-	uint32_t	sample_count;
-} __attribute__((aligned(64))) XfwLogRateLimit;
+#include "../bpf_uapi/incident_log_types.h"
 
 static __always_inline bool
 xfw_log_sample_allow(XfwLogRateLimit *bucket)
